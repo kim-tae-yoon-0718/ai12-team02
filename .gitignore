@@ -216,3 +216,47 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+# ===== 프로젝트 전용 규칙 =====
+
+# API 키 / 인증정보 (절대 커밋 금지)
+.env
+.env.*
+*.key
+*.pem
+secrets/
+credentials/
+service-account*.json
+
+# 원본 RFP 데이터 (비밀유지계약 - 외부 공유 금지)
+data/
+
+# 벡터 DB / 인덱스
+vectorstore/
+faiss_index/
+chroma_db/
+*.faiss
+*.index
+
+# 모델 가중치 / 캡체크포인트
+models/
+checkpoints/
+*.pt
+*.pth
+*.bin
+*.safetensors
+
+# 실험 로그 / 산출물
+runs/
+logs/
+outputs/
+wandb/
+
+# 캐시
+.cache/
+huggingface/
+
+# OS
+.DS_Store
+Thumbs.db
