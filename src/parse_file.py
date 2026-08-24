@@ -5,9 +5,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-DATA_DIR  = "/srv/rfp/shared_data/raw/files/"            # 원본 RFP 폴더
-META_PATH = "/srv/rfp/shared_data/raw/data_list.csv"     # 메타데이터
-OUT_DIR   = "/srv/rfp/shared_data/interim/md"            # 중간 산출물 저장위치
+DATA_DIR  = Path("/srv/rfp/shared_data/raw/files/")            # 원본 RFP 폴더
+META_PATH = Path("/srv/rfp/shared_data/raw/data_list.csv")     # 메타데이터
+OUT_DIR   = Path("/srv/rfp/shared_data/interim/md")            # 중간 산출물 저장위치
 KORDOC = Path.home() / "tools" / "kordoc-run"            # kordoc 설치된 위치
 BATCH = 10
 
@@ -15,27 +15,28 @@ BATCH = 10
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
+    all_files = list(DATA_DIR.iterdir())
     targets = [
-        f for f in sorted(DATA_DIR.iterdir())
-        if f.suffix.lower() in (".hwp", ".hwpx", "pdf")
+        f for f in sorted(all_files)
+        if f.suffix.lower() in (".hwp", ".hwpx", ".pdf")
         and not (OUT_DIR / f"{f.stem}.md").exists()      # 이미 반환된 것 제외
     ]
-    print(f"원본 RFP: {len(list(DATA_DIR.iterdir()))}건 / 변환 대상 {len(targets)}건")
+    print(f"원본 RFP: {len(list(all_files))}건 / 변환 대상 {len(targets)}건")
     if not targets:
         return
 
     failed = []
     for i in range(0, len(targets), BATCH):
-        batch = targets[i: BATCH + 1]
+        batch = targets[i: BATCH + i]
         r = subprocess.run(
             ["npx", "kordoc", *[str(f) for f in batch], "-d", f"{OUT_DIR}/"],
             cwd=KORDOC,
             capture_output=True,
             text=True
         )
-        for f in batch:
+        for j, f in enumerate(batch):
             ok = (OUT_DIR / f"{f.stem}.md").exists()
-            print(f"[{batch + i.index(f) + 1} / {len(targets)}] {f.name} ... {'OK' if ok else 'FAIL'}")
+            print(f"[{i + j + 1} / {len(targets)}] {f.name} ... {'OK' if ok else 'FAIL'}")
             if not ok:
                 failed.append(f.name)
         if r.returncode != 0 and not any((OUT_DIR / f"{f.stem}.md").exists() for f in batch):
