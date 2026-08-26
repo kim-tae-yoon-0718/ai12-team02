@@ -1,0 +1,108 @@
+# config/base.yaml — baseline 기본값 (2026-08-26 보완)
+# 팀 실험 인프라 규약 기준. 이 파일은 리포에 포함(공용 기본값, 유일한 커밋 예외).
+# 실험별 config.yaml은 바뀐 줄만 적고, 이 파일 위에 덮어씀.
+#
+# [값 상태 표기]
+#   확정      — 이 값 그대로 씀
+#   확정(잠정) — 지금은 이 값으로 가되, 명시된 시점에 재확인
+#   TODO      — 실측/합의 대기. 담당자·선행 항목 명시. 채워지기 전엔 baseline 실행 불가
+#   auto      — 실행 시 코드가 자동으로 채움. 사람이 적지 않음
+
+# ─────────────────────────────
+# ⓪ 실험 신원 (실험별 config에서 채움. base에는 자리만)
+# ─────────────────────────────
+name: null            # 예: tm001_I_chunk500  — 사람_번호_무게_바꾼것
+weight: null          # F(무료) / I(재인덱싱) / R(재추출)
+changed: null         # 예: "chunk_size 700→500"  — 한 줄만. 두 줄이면 규칙 위반
+git_commit: null      # auto — 실행 진입점에서 git log -1 --format=%h
+git_dirty: null       # auto — git status --short 가 비어있지 않으면 true
+                      #        ⭐true면 그 실험은 재현 불가. 최종 실험은 false여야 함
+
+# ─────────────────────────────
+# ① 재료 버전 6칸 (필드명 고정 — 절대 개명 금지)
+# ─────────────────────────────
+corpus: v1            # 확정 — shared_data/processed/corpus_v1
+preprocess: v1        # 확정
+table: v1             # TODO — 1-12-1 필드 확정 → 추출 실행 후 버전 부여 (박예진)
+index: v1             # 확정 — 폴더는 v1로 시작. 실제 생성은 chunk/embedding 확정 후
+evalset: v1           # TODO — 임현진 평가셋 동결 시점에 확정
+scorer: v1            # TODO — 김하루 채점기 확정 시점에 확정
+
+# ─────────────────────────────
+# ② 청킹 (4-7, 4-7-1) — 박예진 담당
+# ─────────────────────────────
+chunk_size: null              # TODO — 1-15 토큰 분포 실측 대기
+chunk_overlap: null           # TODO — chunk_size와 함께 결정
+chunk_unit: "char"            # 확정(잠정) — 글자 수 기준.
+                              #   ⭐1-15 완료 시 "token"으로 전환 (1-15의 목적이 토큰 측정)
+table_chunk_threshold: 1000   # 확정 — 1000자 이하 통째(74%), 초과 시 제목·헤더 복제 분할(26%)
+table_format: "html"          # 확정 — 병합 셀 100%라 마크다운 변환 원천 불가 (1-13-1)
+table_empty_cell: "skip_in_search"   # 확정 — 검색 텍스트에서만 빈 셀 무시.
+                                     #   ⚠️HTML 원본 수정 금지(빈 행 47%가 rowspan 영향권)
+table_degraded_threshold: 0.6 # 확정 — 빈 셀 60% 초과 표는 degraded 표시 (간트차트 643개)
+                              #   degraded 청크는 값을 만들지 않고 원문 위치만 안내
+
+# ─────────────────────────────
+# ③ 임베딩 (4-8) — 이태민 담당
+# ─────────────────────────────
+embedding_model: null         # TODO — 1-15 한국어 토큰 효율 실측 후 확정
+                              #   후보 4종 전부 생존 (table_chunk_threshold=1000 덕분):
+                              #   bge-m3(8192) / KURE-v1(8192) /
+                              #   multilingual-e5-large(512) / KoE5(512)
+embedding_max_length: null    # TODO — 선택 모델의 규약값
+embedding_prefix_query: null  # TODO — e5 계열은 "query: " 접두어 규약 있음. 모델 확정 후
+embedding_prefix_doc: null    # TODO — 위와 동일. 안 지키면 성능이 조용히 떨어짐
+
+# ─────────────────────────────
+# ④ 검색 (4-9-x) — 이태민 담당
+# ─────────────────────────────
+similarity_metric: "cosine"   # 확정(잠정) — 임베딩 모델 규약과 대조. 모델 확정 시 재확인
+top_k: null                   # TODO — 김하루 3-2와 값 통일 필요 + 1-15 토큰 분포로 상한 확인
+                              #   시작 후보 5. 확정 전까지 baseline 실행 불가
+hybrid_search: false          # 확정 — baseline은 벡터 단독.
+                              #   투입은 1-14 표현 성격 + 3-2 recall 결과 확인 후
+hybrid_fusion: "rrf"          # 확정 — 결합은 RRF(순위 결합), 가중합 아님 (4-9-4)
+routing_method: "rule_based"  # 확정(잠정) — F-0 경로 분기. 1-2·1-18 도착 시 재검토 (4-10-1)
+routing_fallback: "qa"        # 확정 — 분기 실패 시 QA형 + 재시도 (4-10-1)
+active_doc_state: true        # 확정 — 대화 이력 대신 활성 문서 ID 상태 유지 (4-14)
+
+# ─────────────────────────────
+# ⑤ 생성 (4-12, 4-12-1) — 이태민 담당
+# ─────────────────────────────
+generation_model: null        # TODO — 후보 5종 중 선택.
+                              #   ⚠️EXAONE-3.5는 비상업 라이선스(NC) — 선택 시 사유 기록
+temperature: 0                # 확정 — 재현성 확보. 실험 간 비교의 성립 조건
+max_tokens: null              # TODO — 모델 선택 후 결정. 잘림 확인 필수
+abstain_layers: ["prompt"]    # 확정 — baseline은 프롬프트 지시만.
+                              #   검색상태 판정·생성후 검증은 baseline 이후
+
+# ─────────────────────────────
+# ⑥ 프롬프트 5종 (파일명만 적음. 버전은 파일명에)
+# ─────────────────────────────
+prompt_extract:   "extract_v1.txt"     # B-2 구조화 추출  — 박예진  ⭐호출 수 최다, 비용 최대
+prompt_route:     "route_v1.txt"       # F-0 경로 분기    — 이태민
+prompt_condition: "condition_v1.txt"   # G-2 조건 번역    — 이태민
+prompt_generate:  "generate_v1.txt"    # J  답변 생성     — 이태민
+prompt_score:     "score_v1.txt"       # 3-8 LLM 채점     — 김하루
+# ⚠️ 파일은 src/prompts/ 아래. 수정 시 같은 파일을 고치지 말고 _v2 를 새로 만든다
+# ⚠️ few-shot 예시가 평가셋 문항과 겹치면 부정행위. 파일 상단에 예시 출처 주석 필수
+
+# ─────────────────────────────
+# ⑦ 실행 시점 정보 (4-10-2)
+# ─────────────────────────────
+reference_datetime_source: "external"  # 확정 — 코드가 현재 시각을 직접 읽지 않고 외부 주입
+reference_datetime: null               # TODO — 코퍼스 스냅샷 기준일(상수).
+                                       #   ⭐now 금지. 평가셋이 저절로 틀려짐 (1-9 ④)
+deadline_filter_default:               # 확정 — 태스크별 마감 필터 기본값 (1-9 ④)
+  select: true                         #   선별형: 필터 켬
+  extract: false                       #   추출형: 필터 끔
+  qa: false                            #   QA형:   필터 끔
+  compare: false                       #   비교형: 필터 끔
+
+# ─────────────────────────────
+# [참고] config 범위 밖 — 채점기(scorer) 쪽 설정
+# ─────────────────────────────
+# - 4-11-1 출력 형식 위반 채점 (확정: 감점 포함)
+# - 4-12-1 기권율 분리 집계 (과잉거절 / 정탐)
+# - 4-13  좌표 채점 (문서+장절+표번호 대조)
+# - 3-4-1 선별형 채점: recall 가중 + 보조지표 "완전 재현 비율"
