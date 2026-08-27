@@ -56,6 +56,14 @@ embedding_prefix_doc: null    # TODO — 위와 동일. 안 지키면 성능이 
 # ─────────────────────────────
 # ④ 검색 (4-9-x) — 이태민 담당
 # ─────────────────────────────
+vector_store_type: "lightweight"   # 확정(잠정) 2026-08-26 (4-9-1) — 조각 수 약 1만개
+                                   #   추정 규모(md median 102,368자 × 100문서 기준)라
+                                   #   전용 벡터DB 없이도 가벼운 방식 가능한 수준
+vector_store_upsert: true          # 확정 (4-9-1) — 문서 단위 upsert 지원 필수
+vector_store_delete: false         # 확정 (4-9-1) — 물리 삭제 불필요, 상태 플래그로 흡수
+vector_store_soft_delete: true     # 확정 (4-9-1) — 상태 플래그(비활성화) 지원 필수.
+                                   #   갱신 범위(추가+수정만)·마감 경과 처리와 같은 메커니즘 재사용
+vector_store_metadata_filter: null # TODO — 4-9-5(필터 사용 여부) 확정 후. 1-18 대기
 similarity_metric: "cosine"   # 확정(잠정) — 임베딩 모델 규약과 대조. 모델 확정 시 재확인
 top_k: null                   # TODO — 김하루 3-2와 값 통일 필요 + 1-15 토큰 분포로 상한 확인
                               #   시작 후보 5. 확정 전까지 baseline 실행 불가
@@ -91,8 +99,9 @@ prompt_score:     "score_v1.txt"       # 3-8 LLM 채점     — 김하루
 # ⑦ 실행 시점 정보 (4-10-2)
 # ─────────────────────────────
 reference_datetime_source: "external"  # 확정 — 코드가 현재 시각을 직접 읽지 않고 외부 주입
-reference_datetime: 2024-06-01               # TODO — 코퍼스 스냅샷 기준일(상수).
+reference_datetime: "2024-06-01"       # 확정 2026-08-26 (박예진 1-9 실측) — 코퍼스 스냅샷 기준일
                                        #   ⭐now 금지. 평가셋이 저절로 틀려짐 (1-9 ④)
+deadline_missing_policy: "show_as_unknown"  # 확정 — 마감일 미상 8건은 "미상" 표시 후 통과(제외 안 함)
 deadline_filter_default:               # 확정 — 태스크별 마감 필터 기본값 (1-9 ④)
   select: true                         #   선별형: 필터 켬
   extract: false                       #   추출형: 필터 끔
