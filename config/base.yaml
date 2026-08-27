@@ -91,7 +91,7 @@ prompt_score:     "score_v1.txt"       # 3-8 LLM 채점     — 김하루
 # ⑦ 실행 시점 정보 (4-10-2)
 # ─────────────────────────────
 reference_datetime_source: "external"  # 확정 — 코드가 현재 시각을 직접 읽지 않고 외부 주입
-reference_datetime: null               # TODO — 코퍼스 스냅샷 기준일(상수).
+reference_datetime: 2024-06-01               # TODO — 코퍼스 스냅샷 기준일(상수).
                                        #   ⭐now 금지. 평가셋이 저절로 틀려짐 (1-9 ④)
 deadline_filter_default:               # 확정 — 태스크별 마감 필터 기본값 (1-9 ④)
   select: true                         #   선별형: 필터 켬
