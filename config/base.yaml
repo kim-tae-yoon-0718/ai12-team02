@@ -21,9 +21,9 @@ git_dirty: null       # auto — git status --short 가 비어있지 않으면 t
 # ─────────────────────────────
 # ① 재료 버전 6칸 (필드명 고정 — 절대 개명 금지)
 # ─────────────────────────────
-corpus: v1            # 확정 — shared_data/processed/corpus_v1
-preprocess: v1        # 확정
-table: v1             # TODO — 1-12-1 필드 확정 → 추출 실행 후 버전 부여 (박예진)
+corpus: v2            # 확정 — shared_data/processed/corpus_vN
+preprocess: v2        # 확정
+table: v2             # 확정 — rfp_extraction_table_v2, 1,200행·5상태·검수 대기 0
 index: v1             # 확정 — 폴더는 v1로 시작. 실제 생성은 chunk/embedding 확정 후
 evalset: v1           # TODO — 임현진 평가셋 동결 시점에 확정
 scorer: v1            # TODO — 김하루 채점기 확정 시점에 확정
@@ -31,16 +31,20 @@ scorer: v1            # TODO — 김하루 채점기 확정 시점에 확정
 # ─────────────────────────────
 # ② 청킹 (4-7, 4-7-1) — 박예진 담당
 # ─────────────────────────────
-chunk_size: null              # TODO — 1-15 토큰 분포 실측 대기
-chunk_overlap: null           # TODO — chunk_size와 함께 결정
+chunk_size: 1500              # 확정 2026-08-31 (C-1 ①) — 글자 기준.
+                              #   장절 접두(C-3 ③)를 포함한 값. 실제 본문은 약 1,400자
+chunk_overlap: 150            # 확정 2026-08-31 (C-1 ②) — 문단 p90 107자 기준 10%
+chunking_version: v1          # 확정 2026-08-31 (C-3 ②) — 청킹 설정 버전.
+                              #   processed/chunks_v1 폴더명과 같은 번호를 쓴다
 chunk_unit: "char"            # 확정(잠정) — 글자 수 기준.
-                              #   ⭐1-15 완료 시 "token"으로 전환 (1-15의 목적이 토큰 측정)
-table_chunk_threshold: 1000   # 확정 — 1000자 이하 통째(74%), 초과 시 제목·헤더 복제 분할(26%)
+table_chunk_threshold: 1500   # 확정 2026-08-31 (C-2 ①) — 1000에서 변경.
+                              #   실측: 1,500자 이하 통째 유지 86.7%, 분할 대상 절반으로 감소
 table_format: "html"          # 확정 — 병합 셀 100%라 마크다운 변환 원천 불가 (1-13-1)
 table_empty_cell: "skip_in_search"   # 확정 — 검색 텍스트에서만 빈 셀 무시.
-                                     #   ⚠️HTML 원본 수정 금지(빈 행 47%가 rowspan 영향권)
-table_degraded_threshold: 0.6 # 확정 — 빈 셀 60% 초과 표는 degraded 표시 (간트차트 643개)
-                              #   degraded 청크는 값을 만들지 않고 원문 위치만 안내
+                                     #   행 구조는 유지(C-2 ④). ⚠️HTML 원본 수정 금지
+                                     #   — rowspan 14,870 / colspan 57,796으로 병합이 대량
+table_degraded_threshold: 0.6 # 확정 2026-08-31 (C-2 ②) — 실측 p90 0.597.
+                              #   판정은 검색 대상 표에만 적용(별첨·서식 264개 제외 → 본문 517개)
 
 # ─────────────────────────────
 # ③ 임베딩 (4-8) — 이태민 담당
