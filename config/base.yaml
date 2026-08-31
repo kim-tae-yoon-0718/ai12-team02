@@ -21,37 +21,66 @@ git_dirty: null       # auto — git status --short 가 비어있지 않으면 t
 # ─────────────────────────────
 # ① 재료 버전 6칸 (필드명 고정 — 절대 개명 금지)
 # ─────────────────────────────
-corpus: v1            # 확정 — shared_data/processed/corpus_v1
-preprocess: v1        # 확정
-table: v1             # TODO — 1-12-1 필드 확정 → 추출 실행 후 버전 부여 (박예진)
+corpus: v2            # 확정 2026-08-30 (박예진) — shared_data/processed/corpus_v2
+                      #   (v1에서 승격. interim/md 아닌 공식 전처리 코퍼스가 정본)
+                      #   ⚠️ interim/md(미가공)와 다름. 전처리 완료 후 산출물만
+                      #   "코퍼스"로 취급 (2026-08-27 박예진 확정)
+preprocess: v2        # 확정 2026-08-31 (박예진) — v1에서 승격
+table: v2             # 확정 2026-08-30 (박예진) — shared_data/processed/
+                      #   rfp_extraction_table_v2. 100문서×12필드, 1200행.
+                      #   상태 5종: value_present(901)/field_absent(261)/
+                      #   external_reference(35)/not_disclosed(2)/conflict(1)/
+                      #   extraction_failed(0)
 index: v1             # 확정 — 폴더는 v1로 시작. 실제 생성은 chunk/embedding 확정 후
+index_build_timestamp: null   # auto — 인덱스 생성 시각. 4-9-2 꼬리표, 5명 병렬 작업
+                              #   버전 구분용. reference_datetime과 무관(별개 값)
 evalset: v1           # TODO — 임현진 평가셋 동결 시점에 확정
 scorer: v1            # TODO — 김하루 채점기 확정 시점에 확정
 
 # ─────────────────────────────
 # ② 청킹 (4-7, 4-7-1) — 박예진 담당
 # ─────────────────────────────
-chunk_size: null              # TODO — 1-15 토큰 분포 실측 대기
-chunk_overlap: null           # TODO — chunk_size와 함께 결정
-chunk_unit: "char"            # 확정(잠정) — 글자 수 기준.
-                              #   ⭐1-15 완료 시 "token"으로 전환 (1-15의 목적이 토큰 측정)
-table_chunk_threshold: 1000   # 확정 — 1000자 이하 통째(74%), 초과 시 제목·헤더 복제 분할(26%)
+chunk_size: 1500              # 확정 2026-08-31 (C-1 ①, 박예진) — 글자 기준.
+                              #   장절 접두(C-3 ③)를 포함한 값. 실제 본문은 약 1,400자
+chunk_overlap: 150            # 확정 2026-08-31 (C-1 ②, 박예진) — 문단 p90 107자 기준 10%
+chunking_version: v1          # 확정 2026-08-31 (C-3 ②, 박예진) — 청킹 설정 버전.
+                              #   processed/chunks_v1 폴더명과 같은 번호를 쓴다
+chunk_unit: "char"            # 확정 — 글자 수 기준. 1-15 완료 후에도 char 단위 유지로 확정
+                              #   (토큰 환산은 참고 지표로만 사용, 실제 자르는 기준은 글자 수)
+table_chunk_threshold: 1500   # 확정 2026-08-31 (C-2 ①, 박예진) — 1000에서 변경.
+                              #   실측: 1,500자 이하 통째 유지 86.7%, 분할 대상 절반으로 감소
+                              #   (8/27 "재측정 예정" 캐비어트 — 이 실측으로 해소됨)
 table_format: "html"          # 확정 — 병합 셀 100%라 마크다운 변환 원천 불가 (1-13-1)
 table_empty_cell: "skip_in_search"   # 확정 — 검색 텍스트에서만 빈 셀 무시.
-                                     #   ⚠️HTML 원본 수정 금지(빈 행 47%가 rowspan 영향권)
-table_degraded_threshold: 0.6 # 확정 — 빈 셀 60% 초과 표는 degraded 표시 (간트차트 643개)
-                              #   degraded 청크는 값을 만들지 않고 원문 위치만 안내
+                                     #   행 구조는 유지(C-2 ④, 박예진). ⚠️HTML 원본 수정
+                                     #   금지 — rowspan 14,870 / colspan 57,796으로 병합 대량
+table_degraded_threshold: 0.6 # 확정 2026-08-31 (C-2 ②, 박예진 실측) — 실측 p90 0.597로
+                              #   0.6 임계값의 근거가 확보됨(8/27 "임시값, 수정 필요"
+                              #   캐비어트 해소). 판정은 검색 대상 표에만 적용(별첨·서식
+                              #   264개 제외 → 본문 517개). degraded 청크는 값을 만들지
+                              #   않고 원문 위치만 안내
 
 # ─────────────────────────────
 # ③ 임베딩 (4-8) — 이태민 담당
 # ─────────────────────────────
-embedding_model: null         # TODO — 1-15 한국어 토큰 효율 실측 후 확정
-                              #   후보 4종 전부 생존 (table_chunk_threshold=1000 덕분):
-                              #   bge-m3(8192) / KURE-v1(8192) /
-                              #   multilingual-e5-large(512) / KoE5(512)
+# ⭐ 2026-08-31 방향 전환: 원래 목표가 "오픈AI vs 로컬 모델 비교"였음. 로컬
+#   트랙 속도 문제로, 이태민은 오픈AI 트랙을 먼저 진행 (로컬 트랙은 김태윤이
+#   이어감). 담당·파이프라인 구조는 그대로, 모델 트랙만 전환.
+embedding_provider: "openai"  # 확정 2026-08-31 — 저비용 시작 원칙(측정 먼저,
+                              #   승격 나중)에 따라 오픈AI 임베딩으로 우선 진행
+embedding_model: null         # TODO — 오픈AI 후보: text-embedding-3-small(저비용
+                              #   시작) → 필요시 text-embedding-3-large로 승격 검토.
+                              #   로컬 후보 실측 기록(참고용, 김태윤 트랙에서 이어감):
+                              #   bge-m3/KURE-v1(p95 일반631·표1550), Qwen3-8B(688/1401),
+                              #   EXAONE(597/1350), HyperCLOVA(595/1324), Gemma(615/1120)
+                              #   — e5-large/KoE5는 512토큰 제한으로 표 청크 92% 초과,
+                              #   로컬 트랙에서도 사실상 배제 쪽
 embedding_max_length: null    # TODO — 선택 모델의 규약값
-embedding_prefix_query: null  # TODO — e5 계열은 "query: " 접두어 규약 있음. 모델 확정 후
-embedding_prefix_doc: null    # TODO — 위와 동일. 안 지키면 성능이 조용히 떨어짐
+embedding_prefix_query: null  # TODO — 오픈AI 임베딩은 접두어 규약 없음 (e5 계열만 해당)
+embedding_prefix_doc: null    # TODO — 위와 동일
+data_egress_confirmed: false  # ⚠️ 대기 — RFP 문서를 오픈AI API로 전송하는 것에
+                              #   대한 명시적 확인 필요(공개 입찰 자료라 문제 적을
+                              #   가능성 높으나 미확인). baseline 실행 전 확인 필요
 
 # ─────────────────────────────
 # ④ 검색 (4-9-x) — 이태민 담당
@@ -63,10 +92,39 @@ vector_store_upsert: true          # 확정 (4-9-1) — 문서 단위 upsert 지
 vector_store_delete: false         # 확정 (4-9-1) — 물리 삭제 불필요, 상태 플래그로 흡수
 vector_store_soft_delete: true     # 확정 (4-9-1) — 상태 플래그(비활성화) 지원 필수.
                                    #   갱신 범위(추가+수정만)·마감 경과 처리와 같은 메커니즘 재사용
-vector_store_metadata_filter: null # TODO — 4-9-5(필터 사용 여부) 확정 후. 1-18 대기
+vector_store_metadata_filter: ["사업명", "입찰_참여_마감일"]  # 확정 2026-08-27 (4-9-5)
+                                   #   baseline 필터 필드. 발주기관은 대기(기관명
+                                   #   매칭 정규화 필요 수준이 임현진 2-2-2에 달림 —
+                                   #   이태민 단독 결정 아님). 사업금액·공고번호·
+                                   #   입찰 참여 시작일은 신뢰도 낮아 제외
+vector_store_per_doc_metadata: ["doc_id", "corpus_version", "duplicate_name_flag", "content_duplicate_of"]
+                                   # 확정 2026-08-27, 보완 2026-08-30 (박예진 doc_id 발급)
+                                   #   doc_id/corpus_version — 문서 증가는 정상 동작이라
+                                   #   어느 문서가 어느 코퍼스 버전인지 구분 필요.
+                                   #   doc_id 형식: RFP-000001~RFP-000100(예진님 발급,
+                                   #   문서 등록부 v2 기준, 파일명·정렬과 무관하게 고정)
+                                   #   duplicate_name_flag — 사업명 중복 사업 표시(현재
+                                   #   1쌍 발견, 메타데이터 레벨). 질의 매칭 시 이 플래그
+                                   #   있는 문서만 발주기관까지 추가 대조, 나머지는
+                                   #   사업명만으로 매칭.
+                                   #   content_duplicate_of — 콘텐츠 레벨 중복(수집 경로만
+                                   #   다른 동일 문서). 현재 2쌍: RFP-000006→RFP-000075,
+                                   #   RFP-000017→RFP-000098. 검색 대상에서 제외(활성
+                                   #   100건 중 98건만 검색). duplicate_name_flag와
+                                   #   별개 메커니즘 — 하나가 다른 하나를 대체 안 함.
+                                   #   청킹/임베딩 설정은 문서 단위로 안 남김
+                                   #   (아래 config_mismatch_check가 사전에 막음)
+duplicate_name_check_on_upsert: true  # 확정 2026-08-27 — 사업명 중복 검사는 최초
+                                   #   인덱싱뿐 아니라 문서 추가(upsert)마다 재실행.
+                                   #   신규 문서가 기존과 겹치면 양쪽 다 플래그 갱신
+                                   #   (별도 배치 아님, upsert 로직에 포함)
+config_mismatch_check: true       # 확정 2026-08-27 — 인덱싱 시작 전 인덱스 꼬리표의
+                                   #   chunk_size 등과 현재 config 비교, 다르면 중단하고
+                                   #   "index_v2를 만드세요" 안내. 섞임을 사전 차단
 similarity_metric: "cosine"   # 확정(잠정) — 임베딩 모델 규약과 대조. 모델 확정 시 재확인
-top_k: null                   # TODO — 김하루 3-2와 값 통일 필요 + 1-15 토큰 분포로 상한 확인
-                              #   시작 후보 5. 확정 전까지 baseline 실행 불가
+top_k: 5                      # 확정(잠정) 2026-08-27 — baseline 시작값. 채점(3-2)은
+                              #   이 결과를 k=3/5 등 여러 단계로 잘라 별도 분석 (김하루 협의).
+                              #   1-15 토큰 분포 도착 시 재확인
 hybrid_search: false          # 확정 — baseline은 벡터 단독.
                               #   투입은 1-14 표현 성격 + 3-2 recall 결과 확인 후
 hybrid_fusion: "rrf"          # 확정 — 결합은 RRF(순위 결합), 가중합 아님 (4-9-4)
@@ -77,8 +135,15 @@ active_doc_state: true        # 확정 — 대화 이력 대신 활성 문서 ID
 # ─────────────────────────────
 # ⑤ 생성 (4-12, 4-12-1) — 이태민 담당
 # ─────────────────────────────
-generation_model: null        # TODO — 후보 5종 중 선택.
-                              #   ⚠️EXAONE-3.5는 비상업 라이선스(NC) — 선택 시 사유 기록
+generation_provider: "openai"  # 확정 2026-08-31 — 오픈AI 트랙 우선 진행
+generation_model: null        # TODO — 오픈AI 후보: gpt-4o-mini(저비용 시작, 예산 $20
+                              #   충분 판단) → 필요시 gpt-4o로 승격 검토("측정 먼저,
+                              #   승격 나중" 원칙 적용).
+                              #   로컬 후보(참고용, 김태윤 트랙에서 이어감): Qwen/Qwen3-8B,
+                              #   LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct(NC 배제 대상),
+                              #   naver-hyperclovax/HyperCLOVAX-SEED-Text-Instruct-1.5B,
+                              #   google/gemma-3-12b-it, meta-llama/Llama-3.1-8B-Instruct
+                              #   (HF 접근 승인 대기)
 temperature: 0                # 확정 — 재현성 확보. 실험 간 비교의 성립 조건
 max_tokens: null              # TODO — 모델 선택 후 결정. 잘림 확인 필수
 abstain_layers: ["prompt"]    # 확정 — baseline은 프롬프트 지시만.
@@ -88,19 +153,53 @@ abstain_layers: ["prompt"]    # 확정 — baseline은 프롬프트 지시만.
 # ⑥ 프롬프트 5종 (파일명만 적음. 버전은 파일명에)
 # ─────────────────────────────
 prompt_extract:   "extract_v1.txt"     # B-2 구조화 추출  — 박예진  ⭐호출 수 최다, 비용 최대
+                                       #   baseline에서는 이미 완성된 추출표 사용, 재호출 안 함
 prompt_route:     "route_v1.txt"       # F-0 경로 분기    — 이태민
+                                       #   ⚠️ baseline은 규칙 기반이라 이 파일 미호출.
+                                       #   LLM 방식으로 승격할 때만 사용
 prompt_condition: "condition_v1.txt"   # G-2 조건 번역    — 이태민
-prompt_generate:  "generate_v1.txt"    # J  답변 생성     — 이태민
-prompt_score:     "score_v1.txt"       # 3-8 LLM 채점     — 김하루
+                                       #   ⚠️ baseline은 규칙 기반이라 이 파일 미호출.
+                                       #   자연어→필드/연산자 변환을 LLM으로 할 때만 사용
+prompt_generate:  "generate_v1.txt"    # J  답변 생성     — 이태민 (baseline에서 실제 사용)
+# prompt_score는 없음 — 확정 2026-08-31: 체크리스트3(김하루) 실제 채점 프롬프트
+#   (judge_checkpoint.v1.md, judge_faithfulness.v1.md, judge_list_item.v1.md)를
+#   그대로 사용. 체크리스트4 쪽 score_v1.txt는 별도로 만들지 않음
 # ⚠️ 파일은 src/prompts/ 아래. 수정 시 같은 파일을 고치지 말고 _v2 를 새로 만든다
 # ⚠️ few-shot 예시가 평가셋 문항과 겹치면 부정행위. 파일 상단에 예시 출처 주석 필수
+
+# ─────────────────────────────
+# ⑦ 문서·버전 추적 (4-9-2·4-7-2, C→D 연결 필수 필드)
+# ─────────────────────────────
+retrieval_eligible_only: true  # 확정 2026-08-31 — 검색은 document_registry_v2의
+                              #   retrieval_eligible=true인 98문서만 대상(중복 2건 제외)
+track_document_version: true  # 확정 — 모든 청크·벡터에 document_id, document_version,
+                              #   processed_sha256(전처리 md 해시), sidecar_sha256
+                              #   (위치정보 해시) 저장. 같은 document_id에 버전/해시
+                              #   섞이면 인덱싱 중단
+extraction_version: "v2"      # 확정 — rfp_extraction_table_v2 기준
+schema_version: null          # TODO — 추출 스키마 버전, 예진님 쪽 명명 확인 필요
+
+
 
 # ─────────────────────────────
 # ⑦ 실행 시점 정보 (4-10-2)
 # ─────────────────────────────
 reference_datetime_source: "external"  # 확정 — 코드가 현재 시각을 직접 읽지 않고 외부 주입
-reference_datetime: "2024-06-01"       # 확정 2026-08-26 (박예진 1-9 실측) — 코퍼스 스냅샷 기준일
+reference_datetime: "2024-06-01"       # 확정 2026-08-26 (박예진 1-9 실측) +
+                                       #   2026-08-27 임현진(2-6-2) 공식 확정 — 값 일치 확인
                                        #   ⭐now 금지. 평가셋이 저절로 틀려짐 (1-9 ④)
+deadline_filter_field: "입찰 참여 마감일"  # 확정 2026-08-27, 2026-08-27 정정(김태윤) —
+                                       #   CSV 실제 컬럼명 그대로 사용(지어내지 않음).
+                                       #   CSV 92건 확보·검증 표본은 7건뿐(85건 교차검증 불가,
+                                       #   CSV 오기 2건 확인: 15행 금액오류, 94행 다른 필드 혼입).
+                                       #   본문 확보 가능 7건도 예외 없이 이 컬럼 사용(일관성)
+deadline_filter_disclosure: true      # 확정, 정정(김태윤) — 단순 고지가 아니라 아래
+                                       #   메시지를 코드로 고정 부착(모델 판단 아님,
+                                       #   1-4-1② 좌표 기계부착과 동일 원칙)
+deadline_filter_disclosure_message: "입찰 마감 기준입니다. 이 필터는 느슨한 방향으로 틀릴 수 있습니다 — 제안서 제출은 이미 마감됐는데 입찰이 끝나지 않아 '지원 가능'으로 표시되는 경우가 있습니다."
+                                       # 위험 방향: 필터가 느슨하게 틀림(놓침이 아니라
+                                       #   못하는 걸 할 수 있다고 보여줌 — 1-2④ 실행단계,
+                                       #   피해 최대 지점의 사고)
 deadline_missing_policy: "show_as_unknown"  # 확정 — 마감일 미상 8건은 "미상" 표시 후 통과(제외 안 함)
 deadline_filter_default:               # 확정 — 태스크별 마감 필터 기본값 (1-9 ④)
   select: true                         #   선별형: 필터 켬
