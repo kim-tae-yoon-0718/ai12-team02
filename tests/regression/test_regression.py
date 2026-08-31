@@ -1,4 +1,4 @@
-from grader.regression import (
+from grader.diagnostics import (
     RegressionPolicy,
     attribute_change,
     judge_regression,

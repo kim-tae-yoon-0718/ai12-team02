@@ -5,7 +5,7 @@ import os
 import sys
 
 from . import diagnostics as diag
-from . import regression as reg
+from .diagnostics import regression as reg
 from .config import load_config
 from .prompts import PromptRepository
 from .providers import build_provider
@@ -29,7 +29,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--evaluation-set", required=True)
     run.add_argument("--responses", help="4/5층 채점에 필요. checks 모드는 생략 가능")
     run.add_argument("--mode", choices=["checks", "ci", "development", "final"], default="development")
-    run.add_argument("--config", default="configs/grader.yaml")
+    run.add_argument("--config", default="configs/default.yaml")
+    run.add_argument("--overlay", default=None,
+                     help="실험별 오버레이(configs/ci.yaml 등) — default.yaml 위에 바뀐 줄만 덮음")
     run.add_argument("--out-dir", default=None, help="기본값은 설정 파일의 out_dir")
     # 팀 확정 6-자산 provenance. scorer 는 채점기 코드 + 심판 프롬프트에서 자동 도출.
     run.add_argument("--corpus", default=None, help="6-자산 ① 원문 코퍼스 버전")
@@ -62,13 +64,13 @@ def build_parser() -> argparse.ArgumentParser:
     regression.add_argument("--current", default=None)
     regression.add_argument("--variance", default=None)
     regression.add_argument("--n-sigma", type=float, default=2.0)
-    regression.add_argument("--out", default="artifacts/variance.json")
+    regression.add_argument("--out", default="artifacts/regression/variance.json")
 
     return parser
 
 
 def _build_runner(args) -> GraderRunner:
-    config = load_config(args.config)
+    config = load_config(args.config, overlay=getattr(args, "overlay", None))
     provider = build_provider(config.runtime)
     prompt_repo = PromptRepository(config.judge.prompt_files)
     return GraderRunner(

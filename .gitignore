@@ -229,8 +229,11 @@ secrets/
 credentials/
 service-account*.json
 
-# 원본 RFP 데이터 (비밀유지계약 - 외부 공유 금지)
-data/
+# 원본 RFP 데이터 (비밀유지계약) + 실행 결과 — 디렉토리 구조(.gitkeep)만 커밋, 내용물 무시
+/data/**
+!/data/**/
+!/data/**/.gitkeep
+!/data/README.md
 
 # 벡터 DB / 인덱스
 vectorstore/
@@ -261,5 +264,12 @@ huggingface/
 .DS_Store
 Thumbs.db
 
-# grader 산출물 (report.json / per_item.jsonl)
-artifacts/
+# 실행 산출물 (scores/diagnostics/extraction_audit/regression) — 구조만 커밋
+/artifacts/**
+!/artifacts/**/
+!/artifacts/**/.gitkeep
+
+# data/ 하위 디렉토리 구조는 표준 무시 규칙(outputs/ 등)보다 우선 유지
+!/data/**/
+!/data/**/.gitkeep
+!/data/README.md

@@ -1,0 +1,10 @@
+# configs/ci.yaml — CI 실행 오버레이 (default.yaml 위에 바뀐 줄만).
+#   python -m grader.cli run --config configs/default.yaml --overlay configs/ci.yaml --mode ci ...
+# ★ mode=ci 는 practice_items.jsonl(--practice-set) 필수 — 없으면 하드 실패(exit 1, 임현진 2-17).
+
+use_stub_judge: true      # CI 는 값싼 검사만 — 실제 심판 호출 안 함
+enforce_gates: true       # 게이트 위반 시 exit 1
+ci_subset_size: 20
+
+provenance:
+  scorer: v1              # 채점기 버전 — 확정/변경 시 올림

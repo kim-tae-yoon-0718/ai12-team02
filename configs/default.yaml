@@ -72,7 +72,7 @@ gate:
 
   # [2026-08-27 갱신 — 값은 확정, 적용은 보류] 임현진 2-12 확정: v1 총 50문항 =
   # selection 25 / extraction 15 / qa 10. 다만 이 저장소의
-  # examples/evaluation_set.jsonl은 아직 실제 50문항이 아니라 배관 점검용
+  # tests/fixtures/evaluation_set.jsonl은 아직 실제 50문항이 아니라 배관 점검용
   # 샘플(1문항)이다 — 여기서 task_quota를 채우면 validation.check_evalset_integrity의
   # 할당량 검사가 그 샘플/스모크 테스트 픽스처를 즉시 "할당량 위반"으로 잡아버려
   # CI 스모크 테스트가 깨진다. 그래서 기본값은 비워 두고, 실제 50문항 평가셋을
@@ -131,7 +131,7 @@ provenance:
   evalset: UNKNOWN       # ⑤ 평가셋(Ground Truth) — VERSION.txt 자동 조회
   scorer: v1             # ⑥ 채점기 버전 — 김하루가 채점기 확정/변경 시 올림
 
-out_dir: artifacts
+out_dir: artifacts/scores
 use_stub_judge: true   # ★dev/CI 값싼 검사 전용 — StubJudge는 심판이 아니다. tier=final에는 못 쓴다.
 ci_subset_size: 20
 dev_subset_size: 60

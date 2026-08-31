@@ -17,7 +17,7 @@ import os
 from dataclasses import dataclass, field
 from statistics import mean, pstdev
 
-from .models import PROVENANCE_ASSETS, PROVENANCE_FIELDS
+from ..models import PROVENANCE_ASSETS, PROVENANCE_FIELDS
 
 
 # ------------------------------------------------------------------ 3-13

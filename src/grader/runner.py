@@ -110,7 +110,7 @@ class GraderRunner:
         self.config = config
         self.provider = provider
         self.prompt_repo = prompt_repo
-        # 팀 확정 6-자산 provenance (base.yaml §① 6칸): CLI 인자 > configs/grader.yaml
+        # 팀 확정 6-자산 provenance (base.yaml §① 6칸): CLI 인자 > configs/default.yaml
         # 기본값 > $RAG_ROOT/evalset/v1/VERSION.txt(corpus·evalset 자동) 순.
         # 어디에도 없으면 models.Provenance 가 "UNKNOWN"으로 채운다.
         versions = read_versions()
@@ -475,7 +475,7 @@ def execute(
             # 걸러지지 않는다 — final에서는 여기서 명시적으로 막는다(3-8).
             return _finish(EXIT_CONFIG, layers, manifest, out_dir,
                            "★use_stub_judge=true 로는 tier=final 실행 불가 — StubJudge는 "
-                           "심판이 아니라 배관 점검용이다. configs/grader.yaml 에서 끄고 "
+                           "심판이 아니라 배관 점검용이다. configs/default.yaml 에서 끄고 "
                            "실제 심판을 연결하라.")
         try:
             runner.judge.assert_ready(generator_family=None, strict=True)

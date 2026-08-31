@@ -16,7 +16,7 @@ def test_runner_with_mock(tmp_path: Path):
         encoding="utf-8",
     )
 
-    cfg = load_config("configs/grader.yaml")
+    cfg = load_config("configs/default.yaml")
     # 테스트에서는 실제 provider(mock)가 호출되는 경로를 보기 위해 StubJudge를 끈다.
     cfg = replace(
         cfg,
@@ -78,7 +78,7 @@ def test_stratified_subset_keeps_every_task_type():
 
 def test_execute_checks_mode_smoke(tmp_path: Path):
     """1~3층만 도는 값싼 검사 — data_manifest/extraction_audit 없이도 SKIP으로 통과해야 한다."""
-    cfg = load_config("configs/grader.yaml")
+    cfg = load_config("configs/default.yaml")
     cfg = replace(cfg, use_stub_judge=True)
     runner = GraderRunner(
         config=cfg,
@@ -88,7 +88,7 @@ def test_execute_checks_mode_smoke(tmp_path: Path):
     )
     code, report = execute(
         runner,
-        evaluation_set_path="examples/evaluation_set.jsonl",
+        evaluation_set_path="tests/fixtures/evaluation_set.jsonl",
         responses_path=None,
         mode="checks",
         allow_final=False,
@@ -113,13 +113,13 @@ def _passing_audit(tmp_path: Path) -> str:
 
 def test_execute_final_mode_requires_independent_extraction_audit(tmp_path: Path):
     """★순환 방지(5): 최종 평가는 독립 원문 표본 대조 없이 허용되지 않는다."""
-    cfg = replace(load_config("configs/grader.yaml"), use_stub_judge=True)
+    cfg = replace(load_config("configs/default.yaml"), use_stub_judge=True)
     runner = GraderRunner(config=cfg, provider=MockJudgeProvider(),
                           prompt_repo=PromptRepository(cfg.judge.prompt_files),
                           corpus="corpus-test", table="ext-test")
     code, report = execute(
-        runner, evaluation_set_path="examples/evaluation_set.jsonl",
-        responses_path="examples/model_responses.jsonl",
+        runner, evaluation_set_path="tests/fixtures/evaluation_set.jsonl",
+        responses_path="tests/fixtures/model_responses.jsonl",
         mode="final", allow_final=True, runner_name="pytest",
         out_dir=str(tmp_path),  # extraction_audit_path 주지 않음 → L3 SKIP
     )
@@ -131,7 +131,7 @@ def test_execute_final_mode_requires_independent_extraction_audit(tmp_path: Path
 def test_execute_final_mode_rejects_stub_judge(tmp_path: Path):
     """★use_stub_judge=true 로는 tier=final을 실행할 수 없다 — StubJudge는 심판이 아니다.
     (독립 표본 대조는 통과시킨 뒤 심판 가드가 걸리는지 확인)"""
-    cfg = load_config("configs/grader.yaml")
+    cfg = load_config("configs/default.yaml")
     cfg = replace(cfg, use_stub_judge=True)
     runner = GraderRunner(
         config=cfg,
@@ -141,8 +141,8 @@ def test_execute_final_mode_rejects_stub_judge(tmp_path: Path):
     )
     code, report = execute(
         runner,
-        evaluation_set_path="examples/evaluation_set.jsonl",
-        responses_path="examples/model_responses.jsonl",
+        evaluation_set_path="tests/fixtures/evaluation_set.jsonl",
+        responses_path="tests/fixtures/model_responses.jsonl",
         mode="final",
         allow_final=True,
         runner_name="pytest",
@@ -164,7 +164,7 @@ def test_layer1_warning_does_not_block_execution(tmp_path: Path):
         "zero_table_doc_count": 3,
     }, ensure_ascii=False), encoding="utf-8")
 
-    cfg = load_config("configs/grader.yaml")
+    cfg = load_config("configs/default.yaml")
     from dataclasses import replace as _replace
     cfg = _replace(cfg, use_stub_judge=True, gate=_replace(
         cfg.gate, data_warn_thresholds={"max_zero_table_docs": 0}))
@@ -175,7 +175,7 @@ def test_layer1_warning_does_not_block_execution(tmp_path: Path):
     )
     code, report = execute(
         runner,
-        evaluation_set_path="examples/evaluation_set.jsonl",
+        evaluation_set_path="tests/fixtures/evaluation_set.jsonl",
         responses_path=None, mode="checks", allow_final=False, runner_name="pytest",
         data_manifest_path=str(manifest), out_dir=str(tmp_path),
     )
@@ -188,7 +188,7 @@ def test_layer1_warning_does_not_block_execution(tmp_path: Path):
 def test_ci_mode_without_practice_set_hard_fails(tmp_path: Path):
     """★임현진 확정 방향 — practice 세트가 없으면 최종셋으로 조용히 폴백하지 않고
     exit 1 로 즉시 실패한다(유출은 경고로 뭉갤 문제가 아님)."""
-    cfg = load_config("configs/grader.yaml")
+    cfg = load_config("configs/default.yaml")
     cfg = replace(cfg, use_stub_judge=True)
     runner = GraderRunner(
         config=cfg, provider=MockJudgeProvider(),
@@ -197,8 +197,8 @@ def test_ci_mode_without_practice_set_hard_fails(tmp_path: Path):
     )
     code, report = execute(
         runner,
-        evaluation_set_path="examples/evaluation_set.jsonl",
-        responses_path="examples/model_responses.jsonl",
+        evaluation_set_path="tests/fixtures/evaluation_set.jsonl",
+        responses_path="tests/fixtures/model_responses.jsonl",
         mode="ci", allow_final=False, runner_name="pytest",
         out_dir=str(tmp_path),
     )
@@ -226,7 +226,7 @@ def test_ci_mode_uses_practice_set_when_provided(tmp_path: Path):
         encoding="utf-8",
     )
 
-    cfg = load_config("configs/grader.yaml")
+    cfg = load_config("configs/default.yaml")
     cfg = replace(cfg, use_stub_judge=True)
     runner = GraderRunner(
         config=cfg, provider=MockJudgeProvider(),
@@ -235,7 +235,7 @@ def test_ci_mode_uses_practice_set_when_provided(tmp_path: Path):
     )
     code, report = execute(
         runner,
-        evaluation_set_path="examples/evaluation_set.jsonl",  # 최종셋(구조 검증용)
+        evaluation_set_path="tests/fixtures/evaluation_set.jsonl",  # 최종셋(구조 검증용)
         responses_path=str(responses),
         mode="ci", allow_final=False, runner_name="pytest",
         practice_set_path=str(dev_set),
@@ -249,14 +249,14 @@ def test_ci_mode_uses_practice_set_when_provided(tmp_path: Path):
 
 
 def test_execute_final_mode_without_allow_final_is_blocked(tmp_path: Path):
-    cfg = load_config("configs/grader.yaml")
+    cfg = load_config("configs/default.yaml")
     runner = GraderRunner(
         config=cfg, provider=MockJudgeProvider(),
         prompt_repo=PromptRepository(cfg.judge.prompt_files),
         corpus="corpus-test", table="ext-test",
     )
     code, report = execute(
-        runner, evaluation_set_path="examples/evaluation_set.jsonl",
+        runner, evaluation_set_path="tests/fixtures/evaluation_set.jsonl",
         responses_path=None, mode="final", allow_final=False, runner_name="pytest",
         out_dir=str(tmp_path),
     )

@@ -28,7 +28,8 @@ from grader.models import (
 )
 from grader.prompts import PromptRepository
 from grader.providers import MockJudgeProvider
-from grader.regression import CHANGE_AXES, attribute_change
+from grader.diagnostics.regression import CHANGE_AXES
+from grader.diagnostics import attribute_change
 from grader.runner import GraderRunner, execute
 
 EXPECTED_FIELDS = {"corpus", "preprocess", "table", "index", "evalset", "scorer"}
@@ -74,7 +75,7 @@ def test_field_names_match_base_yaml_six_slots():
 # ------------------------------------------------------------------ 입력값 자동 복사
 
 def _runner(**over):
-    cfg = load_config("configs/grader.yaml")
+    cfg = load_config("configs/default.yaml")
     cfg = replace(cfg, use_stub_judge=True, dev_subset_size=10)
     kwargs = dict(
         config=cfg,
@@ -88,8 +89,8 @@ def _runner(**over):
 def _run_dev(tmp_path: Path, runner: GraderRunner):
     code, report = execute(
         runner,
-        evaluation_set_path="examples/evaluation_set.jsonl",
-        responses_path="examples/model_responses.jsonl",
+        evaluation_set_path="tests/fixtures/evaluation_set.jsonl",
+        responses_path="tests/fixtures/model_responses.jsonl",
         mode="development",
         allow_final=False,
         runner_name="pytest",
@@ -131,14 +132,14 @@ def test_input_versions_are_copied_into_report_and_per_item(tmp_path: Path):
 
 
 def test_missing_versions_fall_back_to_unknown_without_dropping_fields(tmp_path: Path):
-    runner = _runner()  # 버전 인자 전혀 안 줌 + configs/grader.yaml 은 UNKNOWN(scorer 만 v1)
+    runner = _runner()  # 버전 인자 전혀 안 줌 + configs/default.yaml 은 UNKNOWN(scorer 만 v1)
     report, per_item = _run_dev(tmp_path, runner)
 
     prov = report["manifest"]["provenance"]
     assert set(prov) == EXPECTED_FIELDS  # 6축 전부 존재
     for k in ("corpus", "preprocess", "table", "index", "evalset"):
         assert prov[k] == "UNKNOWN"
-    assert prov["scorer"] == "v1"  # configs/grader.yaml 기본값
+    assert prov["scorer"] == "v1"  # configs/default.yaml 기본값
 
     for row in per_item:
         assert set(row["provenance"]) == EXPECTED_FIELDS

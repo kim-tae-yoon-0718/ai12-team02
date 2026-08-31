@@ -120,11 +120,27 @@ def _judge_prompt_path(entry: dict, base_dir: Path) -> Path:
     return p if p.is_absolute() else (base_dir / p)
 
 
-def load_config(path: str | Path) -> GraderConfig:
+def _deep_merge(base: dict, overlay: dict) -> dict:
+    """overlay 의 키만 base 위에 덮는다(중첩 dict 는 재귀). 실험별 config 규약."""
+    out = dict(base)
+    for k, v in overlay.items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
+def load_config(path: str | Path = "configs/default.yaml",
+                overlay: str | Path | None = None) -> GraderConfig:
+    """configs/default.yaml 을 읽고, overlay(configs/ci.yaml 등)가 있으면 바뀐 줄만 덮는다."""
     load_dotenv()
     path = Path(path)
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-    base_dir = path.resolve().parent.parent  # configs/grader.yaml -> 프로젝트 루트
+    if overlay is not None:
+        ov = yaml.safe_load(Path(overlay).read_text(encoding="utf-8")) or {}
+        raw = _deep_merge(raw, ov)
+    base_dir = path.resolve().parent.parent  # configs/default.yaml -> 프로젝트 루트
 
     judge_raw = raw["judge"]
     judge_entries = judge_raw["judges"]

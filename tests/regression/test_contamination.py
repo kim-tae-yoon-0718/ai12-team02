@@ -1,4 +1,4 @@
-from grader.contamination import ExperimentRecord, check_contamination
+from grader.diagnostics import ExperimentRecord, check_contamination
 
 
 def test_declaration_without_target_metrics_is_rejected():

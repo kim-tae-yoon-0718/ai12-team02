@@ -60,7 +60,7 @@ def test_development_layer_end_to_end(tmp_path: Path):
     _write_jsonl(evalset_path, EVALSET)
     _write_jsonl(responses_path, RESPONSES)
 
-    cfg = load_config("configs/grader.yaml")
+    cfg = load_config("configs/default.yaml")
     cfg = replace(cfg, use_stub_judge=True, dev_subset_size=10)
     runner = GraderRunner(
         config=cfg,
