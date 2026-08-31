@@ -1,41 +1,72 @@
 """
-grader.versioning — 평가셋 schema_version의 새 출처.
+grader.versioning — 평가셋 버전의 출처(VERSION.txt).
 
-v0.1에서는 EvaluationItem.schema_version(문항마다 반복)이 출처였다.
-v0.2(2026-08-27, 임현진)에서 이 필드가 폐지되고 저장소 루트의 VERSION.txt
-하나로 옮겨졌다 — 문항마다 같은 문자열을 반복해서 들고 다닐 이유가 없었기 때문.
+v0.2(임현진)에서 문항 레벨 `schema_version` 필드가 폐지되고 **파일 단위**
+`VERSION.txt` 로 이동했다. 팀 확정 위치·포맷(2026-08-30):
 
-[가정 — 팀 확인 필요] VERSION.txt의 정확한 경로/포맷은 이번 마이그레이션
-요청(필드 제거) 범위에 명시되지 않아 임시로 다음과 같이 잡았다:
-  - 위치: 프로젝트 루트(pyproject.toml과 같은 위치)의 VERSION.txt
-  - 포맷: 공백 없이 버전 문자열 한 줄(예: "v0.2")
-파일이 없으면 예외를 던지지 않고 "UNKNOWN"으로 안전하게 폴백한다 — 이 저장소가
-아직 VERSION.txt를 받지 못한 개발 단계에서 전체 배관이 죽지 않게 하기 위함이다
-(check_data_sanity의 "버전 꼬리표 없음" 폴백과 같은 원칙).
+    $RAG_ROOT/evalset/v1/VERSION.txt
 
-configs/grader.yaml 최상단의 schema_version 키(GraderConfig.schema_version)는
-이번에 다루는 "문항 레벨" schema_version과는 별개의, 현재 코드 어디에서도
-소비되지 않는 값이다 — 이번 리팩터에서는 건드리지 않았다. VERSION.txt와
-합칠지는 팀 확인이 필요하다.
+        evalset: v1
+        corpus: [대기]
+        created: 2026-08-30
+
+`key: value` 여러 줄 포맷이다(구 단일 문자열 포맷도 계속 읽는다).
+
+★경로 규칙(팀 실험 인프라 규약 §2-3): 절대 경로 하드코딩 금지 — `RAG_ROOT`
+환경변수 + 코드 조립. `RAG_ROOT` 가 없으면 저장소 루트의 `VERSION.txt` 로 폴백해
+개발/테스트에서 배관이 죽지 않게 한다. 아무 데도 없으면 "UNKNOWN".
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
-_DEFAULT_FILENAME = "VERSION.txt"
+_FILENAME = "VERSION.txt"
+_EVALSET_SUBPATH = ("evalset", "v1")
 _FALLBACK = "UNKNOWN"
 
 
-def read_schema_version(root: str | Path | None = None) -> str:
-    """root/VERSION.txt를 읽어 공백을 제거한 문자열로 반환한다.
+def _candidate_paths(path: str | Path | None) -> list[Path]:
+    if path is not None:
+        return [Path(path)]
+    out: list[Path] = []
+    rag_root = os.environ.get("RAG_ROOT")
+    if rag_root:
+        out.append(Path(rag_root, *_EVALSET_SUBPATH, _FILENAME))
+    # 개발/테스트 폴백 — 저장소 루트 (src/grader/../..)
+    out.append(Path(__file__).resolve().parent.parent.parent / _FILENAME)
+    return out
 
-    root를 생략하면 이 파일 기준 프로젝트 루트(src/grader/../..)를 쓴다.
-    파일이 없거나 비어 있으면 "UNKNOWN"을 반환한다.
+
+def read_versions(path: str | Path | None = None) -> dict[str, str]:
+    """VERSION.txt 를 파싱해 {key: value} 로 돌려준다.
+
+    `key: value` 줄들을 읽는다. 구 포맷(버전 문자열 한 줄)은 {"schema_version": "<줄>"}
+    로 담는다. 파일이 없으면 빈 dict.
     """
-    base = Path(root) if root is not None else Path(__file__).resolve().parent.parent.parent
-    path = base / _DEFAULT_FILENAME
-    if not path.exists():
-        return _FALLBACK
-    content = path.read_text(encoding="utf-8").strip()
-    return content or _FALLBACK
+    for p in _candidate_paths(path):
+        if not p.exists():
+            continue
+        raw = p.read_text(encoding="utf-8-sig").strip()
+        if not raw:
+            return {}
+        out: dict[str, str] = {}
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if ":" in line:
+                k, _, v = line.partition(":")
+                out[k.strip()] = v.strip()
+            elif "schema_version" not in out:
+                out["schema_version"] = line
+        return out
+    return {}
+
+
+def read_schema_version(path: str | Path | None = None) -> str:
+    """평가셋 버전 문자열. VERSION.txt 의 `evalset:` → `schema_version:` 순으로 찾고,
+    없으면 "UNKNOWN"."""
+    v = read_versions(path)
+    return v.get("evalset") or v.get("schema_version") or _FALLBACK

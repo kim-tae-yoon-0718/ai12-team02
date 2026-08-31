@@ -36,7 +36,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--preprocess", default=None, help="6-자산 ② 전처리(파싱·정제·청킹) 버전")
     run.add_argument("--table", default=None, help="6-자산 ③ 구조화 추출 테이블 버전")
     run.add_argument("--index", default=None, help="6-자산 ④ 검색 인덱스(RAG 검색계, 4번) 버전")
-    run.add_argument("--evalset", default=None, help="6-자산 ⑤ 평가셋 버전")
+    run.add_argument("--evalset", default=None, help="6-자산 ⑤ 평가셋 버전(미지정 시 VERSION.txt)")
+    run.add_argument("--scorer", default=None, help="6-자산 ⑥ 채점기 버전")
     run.add_argument("--corpus-doc-ids", default=None, help="2-17 참조 무결성 검사용(JSON 배열)")
     run.add_argument("--excluded-doc-ids", default=None,
                      help="검색 대상 아닌 문서 ID(JSON 배열) — 수집 중복 등. 정답 근거로 쓰면 실패(1-9-1)")
@@ -79,6 +80,7 @@ def _build_runner(args) -> GraderRunner:
         table=args.table,
         index=args.index,
         evalset=args.evalset,
+        scorer=args.scorer,
     )
 
 

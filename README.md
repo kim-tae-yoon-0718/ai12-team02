@@ -60,19 +60,21 @@
 - **오염 방지(4-9)**: Judge/프롬프트 변경만으로 지표가 오른 경우를 "시스템 개선"으로 자동
   인정하지 않음 — 실험은 `target_metrics`/`protected_metrics`/`expected_direction`을
   선언해야 함
-- **팀 확정 6-자산 Version provenance**(2026-08-28): 평가 결과 하나가 어떤 자산
-  조합에서 나왔는지 **정확히 6개 필드**로 못박는다 — `corpus`(①원문 코퍼스) /
-  `preprocess`(②전처리 파이프라인: 파싱·정제·청킹) / `table`(③구조화 추출 테이블) /
-  `index`(④검색 인덱스 = 평가 대상 RAG 검색계, 4번) / `evalset`(⑤평가셋) /
-  `scorer`(⑥채점기 코드 + 심판 프롬프트 묶음). 축 목록·순서·필드명은
-  `models.PROVENANCE_ASSETS` 한 곳에서만 정의하고 `configs/grader.yaml`·`runner`·
-  `regression.CHANGE_AXES`가 모두 이를 따른다. 6축 전부 문자열이고(⑥은
-  `grader-0.1|name:ver|name:ver` 형태로 채점기 코드+프롬프트를 접음), 값이 없으면
-  필드를 빼지 않고 `"UNKNOWN"`으로 남긴다(★누락과 미상은 다르다 — 누락은 3-17이
-  그 축을 '안 바뀜'으로 오독). `EvaluationResult.provenance`는 기본값이 빈
-  `Provenance`라 절대 비지 않으며, `report.json`의 `manifest.provenance`와
-  `per_item.jsonl`의 각 문항 `provenance`가 같은 출처(`runner.provenance()`)를 써서
-  어긋나지 않는다. `regression.attribute_change`(3-17)가 이 6축을 그대로 diff 한다.
+- **팀 확정 6-자산 Version provenance**: 평가 결과 하나가 어떤 자산 조합에서 나왔는지
+  **정확히 6개 필드**로 못박는다. 필드명·값 규약(`v1`/`v2` …)은 팀 실험 인프라
+  `base.yaml §① "재료 버전 6칸 (필드명 고정 — 절대 개명 금지)"`과 **정확히 일치** —
+  `corpus`(①원문 코퍼스) / `preprocess`(②전처리) / `table`(③추출 테이블) /
+  `index`(④검색 인덱스, 4번) / `evalset`(⑤평가셋) / `scorer`(⑥채점기, 김하루가 올림).
+  축 목록·순서·필드명은 `models.PROVENANCE_ASSETS` 한 곳에서만 정의. 값이 없으면
+  필드를 빼지 않고 `"UNKNOWN"`(★누락 ≠ 미상). `EvaluationResult.provenance`는
+  기본값이 빈 `Provenance`라 절대 비지 않으며, `report.json`의 `manifest.provenance`와
+  `per_item.jsonl`의 각 문항 `provenance`가 같은 출처(`runner.provenance()`)를 쓴다.
+  - `--corpus/--preprocess/--table/--index/--evalset/--scorer` 로 주입. `evalset`·`corpus`는
+    미지정 시 `$RAG_ROOT/evalset/v1/VERSION.txt`(팀 확정 경로, `key: value` 포맷)에서 자동 조회.
+  - 심판 프롬프트 세부 버전은 6칸 밖 — `manifest.judge_prompt_versions`에 별도 기록
+    (scorer 축이 움직였을 때 코드 변경인지 프롬프트 변경인지 가르는 재료).
+  - `manifest`에 `git_commit`/`git_dirty` 자동 기록(규약 §2-4). `git_dirty=true`면 재현 불가.
+  - `regression.attribute_change`(3-17)가 이 6축을 그대로 diff 한다.
 - 캐시 키에 코퍼스/추출 테이블 버전 포함 — 코퍼스가 갱신됐는데 옛 Judge 응답이 재사용되는
   것을 방지
 

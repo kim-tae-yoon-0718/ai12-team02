@@ -87,16 +87,15 @@ class GateConfig:
 class ProvenanceDefaults:
     """팀 확정 6-자산 provenance의 설정 기본값(models.PROVENANCE_ASSETS 순서·이름과 일치).
 
-    corpus/preprocess/table/index/evalset 는 CLI 인자 > 이 기본값 순으로 채워진다.
-    scorer_code 는 채점기 코드 버전 — 실행 시 프롬프트 파일명(<name>.<version>.md)에서
-    자동 도출한 심판 프롬프트 버전과 합쳐 최종 scorer 문자열이 된다(runner).
+    corpus/preprocess/table/index/evalset/scorer 는 CLI 인자 > 이 기본값 순으로 채워진다.
+    필드명·값 규약은 base.yaml §① "재료 버전 6칸" 과 동일(`v1`/`v2` …).
     """
     corpus: str = "UNKNOWN"
     preprocess: str = "UNKNOWN"
     table: str = "UNKNOWN"
     index: str = "UNKNOWN"
     evalset: str = "UNKNOWN"
-    scorer_code: str = "grader-0.1"
+    scorer: str = "v1"  # 채점기 버전 — 김하루가 채점기 확정/변경 시 올린다(base.yaml §①)
 
 
 @dataclass(frozen=True)
@@ -186,7 +185,7 @@ def load_config(path: str | Path) -> GraderConfig:
             table=provenance_raw.get("table", "UNKNOWN"),
             index=provenance_raw.get("index", "UNKNOWN"),
             evalset=provenance_raw.get("evalset", "UNKNOWN"),
-            scorer_code=provenance_raw.get("scorer", "grader-0.1"),
+            scorer=provenance_raw.get("scorer", "v1"),
         ),
         out_dir=raw.get("out_dir", "artifacts"),
         use_stub_judge=bool(raw.get("use_stub_judge", True)),

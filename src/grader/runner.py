@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 import time
@@ -39,11 +40,10 @@ from .models import (
     ModelResponse,
     Provenance,
     RetrievalDiagnostic,
-    canonical_scorer_version,
 )
 from .prompts import PromptRepository
 from .providers import JudgeProvider
-from .versioning import read_schema_version
+from .versioning import read_schema_version, read_versions
 from .validation import (
     check_data_sanity,
     check_data_warnings,
@@ -55,6 +55,26 @@ from .validation import (
 )
 
 EXIT_OK, EXIT_FAIL, EXIT_CONFIG = 0, 1, 2
+
+
+def _git_state(cwd: str | None = None) -> dict:
+    """실행 진입점 자동 기록(팀 규약 §2-4): git_commit(짧은 해시) + git_dirty(bool).
+    ★git_dirty=true 면 그 실행은 재현 불가 — 최종 실험은 false 여야 한다.
+    git 이 없거나 저장소가 아니면 조용히 UNKNOWN/None."""
+    def _run(args: list[str]) -> str | None:
+        try:
+            out = subprocess.run(["git", *args], cwd=cwd, capture_output=True,
+                                 text=True, timeout=5)
+            return out.stdout.strip() if out.returncode == 0 else None
+        except Exception:
+            return None
+
+    commit = _run(["log", "-1", "--format=%h"])
+    status = _run(["status", "--short"])
+    return {
+        "git_commit": commit or "UNKNOWN",
+        "git_dirty": bool(status) if status is not None else None,
+    }
 
 
 def build_judge(config: GraderConfig, prompt_repo: PromptRepository,
@@ -85,26 +105,33 @@ class GraderRunner:
         table: str | None = None,
         index: str | None = None,
         evalset: str | None = None,
+        scorer: str | None = None,
     ) -> None:
         self.config = config
         self.provider = provider
         self.prompt_repo = prompt_repo
-        # 팀 확정 6-자산 provenance: CLI 인자 > configs/grader.yaml 기본값 순. 하나라도
-        # 빠지면 models.Provenance 가 "UNKNOWN"으로 채운다(누락이 아니라 미상으로 남긴다).
-        self.corpus = corpus or config.provenance.corpus
-        self.preprocess = preprocess or config.provenance.preprocess
-        self.table = table or config.provenance.table
-        self.index = index or config.provenance.index
-        self.evalset = evalset or config.provenance.evalset
-        # ⑥ scorer = 채점기 코드 버전 + 심판 프롬프트 묶음(파일명 <name>.<version>.md 에서
-        # 자동 도출) → 결정적 문자열 하나로 접는다.
-        self.scorer = canonical_scorer_version(
-            config.provenance.scorer_code,
-            {name: prompt_repo.version_of(name) for name in config.judge.names},
-        )
+        # 팀 확정 6-자산 provenance (base.yaml §① 6칸): CLI 인자 > configs/grader.yaml
+        # 기본값 > $RAG_ROOT/evalset/v1/VERSION.txt(corpus·evalset 자동) 순.
+        # 어디에도 없으면 models.Provenance 가 "UNKNOWN"으로 채운다.
+        versions = read_versions()
+
+        def _pick(*cands: str | None) -> str:
+            for c in cands:
+                if c and c not in ("UNKNOWN", "[대기]", "TODO", "null"):
+                    return c
+            return "UNKNOWN"
+
+        self.corpus = _pick(corpus, config.provenance.corpus, versions.get("corpus"))
+        self.preprocess = _pick(preprocess, config.provenance.preprocess)
+        self.table = _pick(table, config.provenance.table)
+        self.index = _pick(index, config.provenance.index)
+        self.evalset = _pick(evalset, config.provenance.evalset, versions.get("evalset"))
+        self.scorer = _pick(scorer, config.provenance.scorer)
+        # 심판 프롬프트 세부 버전 — 6칸이 아니라 manifest 부가 정보(오염 방지 4-9 재료).
+        self.judge_prompt_versions = {name: prompt_repo.version_of(name) for name in config.judge.names}
         self.cache = FileCache(config.cache.directory) if config.cache.enabled else None
         self.judge = build_judge(config, prompt_repo, provider)
-        # v0.2: schema_version은 더 이상 문항 필드가 아니라 저장소 VERSION.txt 출처.
+        # v0.2: schema_version은 더 이상 문항 필드가 아니라 VERSION.txt(evalset:) 출처.
         self.schema_version = read_schema_version()
 
     def provenance(self) -> Provenance:
@@ -362,10 +389,16 @@ def execute(
     manifest = {
         "run_id": f"run-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}",
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        # ★6-자산 provenance 전체(6축). run_one 의 per_item.provenance 와 같은 출처
-        # (runner.provenance())를 써서 report ↔ per_item 값이 어긋나지 않는다.
+        # ★6-자산 provenance 전체(6축, base.yaml §① 6칸). run_one 의 per_item.provenance 와
+        # 같은 출처(runner.provenance())를 써서 report ↔ per_item 값이 어긋나지 않는다.
         # 회귀 3-17(regression.attribute_change)이 이 6축을 그대로 diff 한다.
         "provenance": runner.provenance().model_dump(),
+        # 팀 규약 §2-4 — 실행 진입점에서 git 상태 자동 기록. git_dirty=true 면 재현 불가.
+        **_git_state(),
+        # 심판 프롬프트 세부 버전(6칸 밖 — 오염 방지 4-9 재료). scorer 축이 바뀌었을 때
+        # "코드가 바뀐 건가 프롬프트가 바뀐 건가"를 여기서 가른다.
+        "judge_prompt_versions": runner.judge_prompt_versions,
+        "schema_version": runner.schema_version,
         "subset": mode,
         "note": f"runner={runner_name}",
     }

@@ -25,7 +25,6 @@ from grader.models import (
     PROVENANCE_FIELDS,
     EvaluationResult,
     Provenance,
-    canonical_scorer_version,
 )
 from grader.prompts import PromptRepository
 from grader.providers import MockJudgeProvider
@@ -66,13 +65,10 @@ def test_unknown_values_are_present_not_missing():
     assert None not in dumped.values()
 
 
-def test_canonical_scorer_version_is_deterministic_string():
-    assert canonical_scorer_version(None, {}) == "UNKNOWN"
-    assert canonical_scorer_version(None, None) == "UNKNOWN"
-    s = canonical_scorer_version("grader-0.1",
-                                 {"judge_faithfulness": "v1", "judge_checkpoint": "v2"})
-    assert s == "grader-0.1|judge_checkpoint:v2|judge_faithfulness:v1"  # 정렬된 결정적 문자열
-    assert isinstance(s, str)
+def test_field_names_match_base_yaml_six_slots():
+    """provenance 6칸 필드명은 팀 base.yaml §① 6칸과 정확히 일치해야 한다(개명 금지)."""
+    assert set(PROVENANCE_FIELDS) == {
+        "corpus", "preprocess", "table", "index", "evalset", "scorer"}
 
 
 # ------------------------------------------------------------------ 입력값 자동 복사
@@ -106,28 +102,15 @@ def _run_dev(tmp_path: Path, runner: GraderRunner):
     return report, per_item
 
 
-_SCORER = "grader-0.1|judge_checkpoint:v1|judge_faithfulness:v1|judge_list_item:v1"
-
-
 def test_input_versions_are_copied_into_report_and_per_item(tmp_path: Path):
     runner = _runner(
-        corpus="corpus-2026-08-28",
-        preprocess="kordoc-1.4",
-        table="xtab-7916",
-        index="faiss-taemin-42",
-        evalset="evalset-v0.2",
+        corpus="v2", preprocess="v2", table="v2",
+        index="v1", evalset="v1", scorer="v1",
     )
     report, per_item = _run_dev(tmp_path, runner)
 
-    expected = {
-        "corpus": "corpus-2026-08-28",
-        "preprocess": "kordoc-1.4",
-        "table": "xtab-7916",
-        "index": "faiss-taemin-42",
-        "evalset": "evalset-v0.2",
-        # scorer = 채점기 코드 버전 + 프롬프트 3종 파일명 <name>.v1.md 자동 도출
-        "scorer": _SCORER,
-    }
+    expected = {"corpus": "v2", "preprocess": "v2", "table": "v2",
+                "index": "v1", "evalset": "v1", "scorer": "v1"}
 
     # report.json 의 manifest.provenance — 6축 전부, 입력값 그대로
     assert report["manifest"]["provenance"] == expected
@@ -141,16 +124,21 @@ def test_input_versions_are_copied_into_report_and_per_item(tmp_path: Path):
     # report ↔ per_item 값이 어긋나지 않는다(같은 runner.provenance() 출처)
     assert per_item[0]["provenance"] == report["manifest"]["provenance"]
 
+    # 심판 프롬프트 세부 버전 + git 상태는 6칸 밖 manifest 에 별도로 남는다(규약 §2-4)
+    assert report["manifest"]["judge_prompt_versions"] == {
+        "judge_faithfulness": "v1", "judge_checkpoint": "v1", "judge_list_item": "v1"}
+    assert "git_commit" in report["manifest"] and "git_dirty" in report["manifest"]
+
 
 def test_missing_versions_fall_back_to_unknown_without_dropping_fields(tmp_path: Path):
-    runner = _runner()  # 버전 인자 전혀 안 줌 + configs/grader.yaml 도 UNKNOWN
+    runner = _runner()  # 버전 인자 전혀 안 줌 + configs/grader.yaml 은 UNKNOWN(scorer 만 v1)
     report, per_item = _run_dev(tmp_path, runner)
 
     prov = report["manifest"]["provenance"]
     assert set(prov) == EXPECTED_FIELDS  # 6축 전부 존재
     for k in ("corpus", "preprocess", "table", "index", "evalset"):
         assert prov[k] == "UNKNOWN"
-    assert prov["scorer"].startswith("grader-0.1|judge_")  # scorer 는 여전히 자동 도출됨
+    assert prov["scorer"] == "v1"  # configs/grader.yaml 기본값
 
     for row in per_item:
         assert set(row["provenance"]) == EXPECTED_FIELDS

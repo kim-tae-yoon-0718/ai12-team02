@@ -98,15 +98,17 @@ class EvaluationItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     # ── 팀 결정 (2026-08-31) ──────────────────────────────────────────────
-    # C. field_absent / conflict 는 문항 스키마에 별도 상태 필드로 넣지 않는다.
-    #    "정보가 없는 것 자체가 정답"인 경우(예: 지역제한)는 answer_type=value 로 두고
-    #    answer_raw 에 실제 정답 표현("지역 제한 없음")을 그대로 적는다. conflict 셀은
-    #    해당 조건의 정답으로 쓰지 않고 문항에서 제외한다(v1 미포함) — 그래서 채점기에
-    #    conflict/외부참조용 별도 분기가 없다. (B-2 추출 테이블의 5상태는 3-2-1
-    #    grade_extraction_audit 의 감사 어휘일 뿐 문항 필드가 아니다.)
-    # D. 성격이 다른 값이 여러 개인 항목(사업기간 vs 과업수행기간)은 하나로 합치지 않고
-    #    문항을 분리한다(Q1 사업기간 / Q2 과업수행기간). 각 문항은 독립적으로 채점되며
-    #    채점기 쪽 변경은 없다 — answer_raw 에 원문 표현을 그대로 둔다.
+    # C. field_absent 를 새 스키마 필드로 신설하지 않는다. 부재를 표현하는 방식은
+    #    쓰임에 따라 갈린다:
+    #      · 답 없음 문제로 쓸 때  → answer_type=unanswerable, answer_raw 에 부재 문구
+    #      · 도메인상 유의미한 답일 때 → task_type=extraction, answer_type=value,
+    #        answer_raw 에 확정 문구("지역제한 없음" 등)
+    #    conflict 셀은 해당 조건의 정답으로 쓰지 않고 문항에서 제외한다(v1 미포함) —
+    #    그래서 채점기에 conflict/외부참조용 별도 분기가 없다. (B-2 추출 테이블의 5상태는
+    #    3-2-1 grade_extraction_audit 의 감사 어휘일 뿐 문항 필드가 아니다.)
+    # D. 복수 질문·정답이 필요할 때 라벨 배열 구조를 신설하지 않는다. 의미가 다른 값마다
+    #    각각 별도 문항으로 분리한다(과업수행기간 문항 1개 + 사업개요 사업기간 문항 1개).
+    #    각 문항은 독립적으로 채점되며 채점기 변경은 없다 — answer_raw 에 원문 표현 그대로.
     # ─────────────────────────────────────────────────────────────────────
     id: str
     question: str
@@ -290,15 +292,16 @@ class AbstentionResult(BaseModel):
 # 누락은 조용한 버그(3-17이 그 축을 '안 바뀜'으로 오독), 미상은 기록된 사실이다.
 UNKNOWN = "UNKNOWN"
 
-# 팀 확정 6-자산 provenance (2026-08-28). 필드명은 **정확히** 다음 6개로 고정한다.
-# 순서 = 파이프라인 상류→하류. regression.CHANGE_AXES / config.ProvenanceDefaults /
-# runner 가 모두 이 목록을 단일 출처로 따른다.
-#   corpus     : 원문 코퍼스(수집된 공고 원본 집합)
-#   preprocess : 전처리 파이프라인(파싱·정제·청킹 — 원문→md/청크)
+# 팀 확정 6-자산 provenance. 필드명·순서는 팀 실험 인프라 규약 `base.yaml` §① "재료 버전
+# 6칸 (필드명 고정 — 절대 개명 금지)" 과 **정확히 일치**한다. 값 규약도 동일: `v1`/`v2` …
+# regression.CHANGE_AXES / config.ProvenanceDefaults / runner 가 이 목록을 단일 출처로 따른다.
+#   corpus     : 원문 코퍼스
+#   preprocess : 전처리 파이프라인(파싱·정제·청킹)
 #   table      : 구조화 추출 테이블(1-12-2)
 #   index      : 검색 인덱스(임베딩·색인 — 평가 대상 RAG 검색계, 4번)
 #   evalset    : 평가셋(Ground Truth)
-#   scorer     : 채점기(이 저장소 코드 + 심판 프롬프트 묶음)
+#   scorer     : 채점기(이 저장소). 값은 `v1` 등 — 심판 프롬프트 세부 버전은 별도로
+#                manifest.judge_prompt_versions 에 남긴다(회귀 3-17 축은 이 필드 하나).
 PROVENANCE_ASSETS: tuple[tuple[str, str], ...] = (
     ("corpus", "코퍼스"),
     ("preprocess", "전처리"),
@@ -310,30 +313,16 @@ PROVENANCE_ASSETS: tuple[tuple[str, str], ...] = (
 PROVENANCE_FIELDS: tuple[str, ...] = tuple(k for k, _ in PROVENANCE_ASSETS)
 
 
-def canonical_scorer_version(grader_version: str | None,
-                             judge_prompt_versions: dict[str, str] | None) -> str:
-    """채점기 자산(scorer) 버전 = 채점기 코드 버전 + 심판 프롬프트 묶음을 결정적 문자열
-    하나로 접는다. 채점기/심판 프롬프트 변경은 회귀 3-17에서 같은 축('채점기')이므로
-    한 필드로 합친다(오염 방지 4-9도 이 축 하나만 본다).
-    예: ("grader-0.1", {"judge_faithfulness": "v1", "judge_checkpoint": "v2"})
-        -> "grader-0.1|judge_checkpoint:v2|judge_faithfulness:v1"
-    """
-    parts: list[str] = [grader_version] if grader_version else []
-    if judge_prompt_versions:
-        parts += [f"{name}:{judge_prompt_versions[name]}" for name in sorted(judge_prompt_versions)]
-    return "|".join(parts) if parts else UNKNOWN
-
-
 class Provenance(BaseModel):
     """3-11 / 3-13-1 / 3-17: 평가 결과 하나가 '어떤 자산 조합'에서 나왔는지 **6자산**으로 못박는다.
 
     ★설계 원칙
       - 6개 필드가 **항상** 결과에 존재한다(EvaluationResult.provenance 는 기본값이
         빈 Provenance 라 절대 None 이 아니다). 값이 없으면 필드를 빼지 않고 "UNKNOWN".
-      - 6축 전부 str — 회귀 원인 분리(regression.attribute_change)가 축마다 다른
-        비교 규칙을 쓰지 않도록. scorer 는 canonical_scorer_version 으로 문자열
-        하나로 접어서 넣는다(채점기 코드 + 심판 프롬프트).
-      - 축 목록·순서·필드명은 models.PROVENANCE_ASSETS 한 곳에서만 정의한다.
+      - 6축 전부 str(`v1` 규약). 회귀 원인 분리(regression.attribute_change)가 축마다
+        다른 비교 규칙을 쓰지 않도록.
+      - 축 목록·순서·필드명은 models.PROVENANCE_ASSETS 한 곳에서만 정의한다
+        (= base.yaml §① 6칸).
     """
 
     model_config = ConfigDict(extra="forbid")
