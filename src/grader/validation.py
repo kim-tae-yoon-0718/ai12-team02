@@ -26,9 +26,22 @@ def load_jsonl(path: str | Path) -> list[dict]:
     return records
 
 
-def validate_evaluation_set(path: str | Path) -> list[EvaluationItem]:
+def validate_evaluation_set(path: str | Path, *, strict_meta: bool = False) -> list[EvaluationItem]:
+    """평가셋 JSONL 로드 + 스키마 검증.
+
+    strict_meta=True 이면 `_` 로 시작하는 주석 키(practice 세트의 `_source_note` 등)를
+    허용하지 않고 실패시킨다 — 최종셋 CI 검사용(임현진 2026-08-30). practice 세트나
+    개발 실행에서는 False 로 두어 주석 키를 조용히 무시한다.
+    """
     result: list[EvaluationItem] = []
     for idx, record in enumerate(load_jsonl(path), start=1):
+        if strict_meta and isinstance(record, dict):
+            meta = sorted(k for k in record if str(k).startswith("_"))
+            if meta:
+                raise ValueError(
+                    f"{path} line#{idx}: 최종셋에는 주석 키({meta}) 를 둘 수 없다 "
+                    f"(practice 세트 전용). --strict 실행"
+                )
         try:
             result.append(EvaluationItem.model_validate(record))
         except ValidationError as exc:
@@ -67,14 +80,20 @@ def check_evalset_integrity(
     corpus_doc_ids: set[str] | None = None,
     quota: dict[str, int] | None = None,
     quota_tolerance: float = 0.2,
+    retrieval_excluded_ids: set[str] | None = None,
 ) -> list[str]:
     """CI가 평가셋에 대해 매번 확인할 것(2-17).
 
     ★ 이 검사들은 모델 성능과 무관하고 값이 싸다. 성능 평가보다 먼저 돌린다 —
       평가셋이 깨진 채로 성능을 재면 그 숫자는 아무 뜻이 없다.
+
+    retrieval_excluded_ids: 등록부에서 검색 대상이 아닌 문서(수집 중복 등, 1-9-1
+      확정: RFP-000006/RFP-000017 은 각각 RFP-000075/RFP-000098 의 중복 → 검색대상 98건).
+      선별형·추출형·QA형 문항의 정답 근거로 이 문서를 쓰면 실패로 잡는다.
     """
     items = list(items)
     problems: list[str] = []
+    excluded = retrieval_excluded_ids or set()
 
     # (1) 중복 id
     seen: dict[str, int] = {}
@@ -119,6 +138,20 @@ def check_evalset_integrity(
                 for d in as_id_list(it.answer_raw):
                     if d not in corpus_doc_ids:
                         problems.append(f"[참조] {it.id}: answer_raw 문서 미존재 {d}")
+
+    # (3-1) 검색 대상 아닌 문서(수집 중복 등)를 정답 근거로 쓰지 않았는가 (1-9-1)
+    if excluded:
+        for it in items:
+            gold_docs = set(as_id_list(it.document_id)) | set(as_id_list(it.intermediate_answer))
+            if it.answer_type == "document_set":
+                gold_docs |= set(as_id_list(it.answer_raw))
+            if it.location is not None:
+                gold_docs.add(it.location.document)
+            hit = sorted(gold_docs & excluded)
+            if hit:
+                problems.append(
+                    f"[중복제외] {it.id}: 정답 근거가 검색 대상 아닌 문서 {hit} "
+                    f"(수집 중복 → 검색대상 98건에서 빠짐, 1-9-1)")
 
     # (4) task_type 할당량 이탈
     if quota:

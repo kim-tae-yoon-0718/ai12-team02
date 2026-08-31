@@ -340,9 +340,11 @@ def execute(
     allow_final: bool,
     runner_name: str,
     corpus_doc_ids_path: str | None = None,
+    excluded_doc_ids_path: str | None = None,
     data_manifest_path: str | None = None,
     extraction_audit_path: str | None = None,
     practice_set_path: str | None = None,
+    strict_meta: bool = False,
     out_dir: str | None = None,
 ) -> tuple[int, dict]:
     """3-6-1 층 실행기. mode: checks(1~3층) | ci(4층, 층화) | development(4층, 층화) |
@@ -386,12 +388,18 @@ def execute(
                        "1층 실패 — 데이터가 깨진 상태에서 성능을 재면 그 숫자는 아무 뜻이 없다")
 
     # 2층 — 평가셋 무결성
-    items = validate_evaluation_set(evaluation_set_path)
+    # ★최종 모드는 항상 주석 키(_source_note 등) 금지. practice/dev/ci 는 옵션.
+    items = validate_evaluation_set(evaluation_set_path, strict_meta=(strict_meta or mode == "final"))
     corpus_ids = None
     if corpus_doc_ids_path and os.path.exists(corpus_doc_ids_path):
         with open(corpus_doc_ids_path, encoding="utf-8") as f:
             corpus_ids = set(json.load(f))
-    problems = check_evalset_integrity(items, corpus_doc_ids=corpus_ids, quota=runner.config.gate.task_quota)
+    excluded_ids = None
+    if excluded_doc_ids_path and os.path.exists(excluded_doc_ids_path):
+        with open(excluded_doc_ids_path, encoding="utf-8") as f:
+            excluded_ids = set(json.load(f))
+    problems = check_evalset_integrity(items, corpus_doc_ids=corpus_ids, quota=runner.config.gate.task_quota,
+                                       retrieval_excluded_ids=excluded_ids)
     L2 = {"layer": 2, "status": "FAIL" if problems else "PASS", "problems": problems, "n_items": len(items)}
     layers.append(L2)
     if L2["status"] == "FAIL":

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Literal
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 
 TaskType = Literal["selection", "extraction", "qa"]
@@ -97,6 +97,17 @@ class EvaluationItem(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    # ── 팀 결정 (2026-08-31) ──────────────────────────────────────────────
+    # C. field_absent / conflict 는 문항 스키마에 별도 상태 필드로 넣지 않는다.
+    #    "정보가 없는 것 자체가 정답"인 경우(예: 지역제한)는 answer_type=value 로 두고
+    #    answer_raw 에 실제 정답 표현("지역 제한 없음")을 그대로 적는다. conflict 셀은
+    #    해당 조건의 정답으로 쓰지 않고 문항에서 제외한다(v1 미포함) — 그래서 채점기에
+    #    conflict/외부참조용 별도 분기가 없다. (B-2 추출 테이블의 5상태는 3-2-1
+    #    grade_extraction_audit 의 감사 어휘일 뿐 문항 필드가 아니다.)
+    # D. 성격이 다른 값이 여러 개인 항목(사업기간 vs 과업수행기간)은 하나로 합치지 않고
+    #    문항을 분리한다(Q1 사업기간 / Q2 과업수행기간). 각 문항은 독립적으로 채점되며
+    #    채점기 쪽 변경은 없다 — answer_raw 에 원문 표현을 그대로 둔다.
+    # ─────────────────────────────────────────────────────────────────────
     id: str
     question: str
     task_type: TaskType
@@ -116,6 +127,18 @@ class EvaluationItem(BaseModel):
     answer_raw: Any | None = None
     answer_normalized: Any | None = None
     location: Location | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_meta_keys(cls, data: Any) -> Any:
+        """`_` 로 시작하는 주석 키(예: practice_items.jsonl 의 `_source_note`)는
+        스키마 필드가 아니므로 조용히 떼어낸다 — 그래야 practice 세트가 로드된다.
+        ★최종셋 CI 검사에서 `_` 키를 FAIL 로 잡는 것은 raw JSON 단계
+        (validation.check_meta_keys)에서 별도로 한다. 나머지 오타성 extra 는
+        extra='forbid' 가 그대로 걸러낸다."""
+        if isinstance(data, dict):
+            return {k: v for k, v in data.items() if not str(k).startswith("_")}
+        return data
 
     @computed_field  # type: ignore[misc]
     @property

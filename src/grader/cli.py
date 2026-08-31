@@ -22,6 +22,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     validate = sub.add_parser("validate", help="평가셋 스키마만 검사(2-17)")
     validate.add_argument("--evaluation-set", required=True)
+    validate.add_argument("--strict", action="store_true",
+                          help="주석 키(_source_note 등) 를 FAIL 로 잡는다 (최종셋 검사용)")
 
     run = sub.add_parser("run", help="층 실행기(3-6-1): checks/ci/development/final")
     run.add_argument("--evaluation-set", required=True)
@@ -35,7 +37,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--table", default=None, help="6-자산 ③ 구조화 추출 테이블 버전")
     run.add_argument("--index", default=None, help="6-자산 ④ 검색 인덱스(RAG 검색계, 4번) 버전")
     run.add_argument("--evalset", default=None, help="6-자산 ⑤ 평가셋 버전")
-    run.add_argument("--corpus-doc-ids", default=None, help="2-17 참조 무결성 검사용")
+    run.add_argument("--corpus-doc-ids", default=None, help="2-17 참조 무결성 검사용(JSON 배열)")
+    run.add_argument("--excluded-doc-ids", default=None,
+                     help="검색 대상 아닌 문서 ID(JSON 배열) — 수집 중복 등. 정답 근거로 쓰면 실패(1-9-1)")
+    run.add_argument("--strict", action="store_true",
+                     help="주석 키(_source_note 등)를 FAIL 로 잡는다. final 모드는 자동 적용")
     run.add_argument("--data-manifest", default=None, help="1층 데이터 정상성 검사용")
     run.add_argument("--extraction-audit", default=None, help="3층 추출 표본 대조 결과")
     run.add_argument("--practice-set", default=None,
@@ -81,7 +87,7 @@ def main() -> int:
 
     try:
         if args.command == "validate":
-            items = validate_evaluation_set(args.evaluation_set)
+            items = validate_evaluation_set(args.evaluation_set, strict_meta=args.strict)
             print(f"VALID: {len(items)} evaluation items")
             return 0
 
@@ -95,9 +101,11 @@ def main() -> int:
                 allow_final=args.allow_final,
                 runner_name=args.runner,
                 corpus_doc_ids_path=args.corpus_doc_ids,
+                excluded_doc_ids_path=args.excluded_doc_ids,
                 data_manifest_path=args.data_manifest,
                 extraction_audit_path=args.extraction_audit,
                 practice_set_path=args.practice_set,
+                strict_meta=args.strict,
                 out_dir=args.out_dir,
             )
             for L in report["layers"]:
