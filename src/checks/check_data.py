@@ -5,14 +5,20 @@
 CI(김하루 3-6-1)로 옮길 것을 전제로, 매번 돌 수 있는 검사만 넣는다.
 
 실행:
-    RAG_ROOT=/srv/rfp python src/check_data.py
+    RAG_ROOT=/srv/rfp python3 src/checks/check_data.py
 
 검사 항목
     1. md 로드      — UTF-8 디코딩 / 빈 파일        -> 정상 로드율 %
     2. 개수 정합    — raw 개수 == md 개수
     3. 파일명 정규화 — NFD 형태 / NFC 후 매칭 실패   (0이어야 정상)
     4. CSV 인코딩   — 판별 / 디코딩 실패 행
-    5. 전처리본     — 자리만. 1-17 확정 후 채운다
+    5. 전처리본     — 자리만. 1-19-1 검사기와의 범위 정리 후 채운다
+    6. OCR 검토 필요 — parse_file.py의 kordoc qualitySummary.needsOcr 신호
+                      (로드 자체는 성공이라 게이트 위반으로는 안 세고 별도 지표로만 본다)
+
+종료 코드:
+    0  게이트 위반 없음
+    1  위반 있음 (1-19-1 — 종료코드 0일 때만 공식 공개)
 """
 import csv
 import io
@@ -24,7 +30,7 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-# --- 경로: 절대경로 하드코딩 금지 (규약 2-3) ---
+# --- 경로: 절대경로 하드코딩 금지 (규약 §2-3) ---
 try:
     RAG_ROOT = Path(os.environ["RAG_ROOT"])
 except KeyError:
@@ -34,6 +40,7 @@ RAW_DIR   = RAG_ROOT / "shared_data" / "raw" / "files"
 CSV_PATH  = RAG_ROOT / "shared_data" / "raw" / "data_list.csv"
 MD_DIR    = RAG_ROOT / "shared_data" / "interim" / "md"
 PROC_DIR  = RAG_ROOT / "shared_data" / "processed"
+NEEDS_OCR_PATH = RAG_ROOT / "shared_data" / "interim" / "needs_ocr_files.txt"
 
 RAW_SUFFIXES = (".hwp", ".hwpx", ".pdf")
 SHORT_DOC_THRESHOLD = 500          # 이 미만이면 '짧은 문서'로 따로 센다
@@ -57,6 +64,25 @@ def head(items, n=10):
     if len(items) <= n:
         return items
     return items[:n] + [f"... 외 {len(items) - n}건"]
+
+
+def git_version() -> str:
+    """규약 §2-4 — 이 숫자를 어느 코드로 냈는지 남긴다."""
+    repo = Path(__file__).resolve().parents[2]
+    try:
+        commit = subprocess.run(
+            ["git", "log", "-1", "--format=%h"],
+            cwd=repo, capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+        dirty = subprocess.run(
+            ["git", "status", "--short"],
+            cwd=repo, capture_output=True, text=True, timeout=5,
+        ).stdout.strip() != ""
+    except Exception:
+        return "미상 (git 정보 없음)"
+    if not commit:
+        return "미상 (리포 밖에서 실행됨)"
+    return f"{commit} (dirty: {str(dirty).lower()})"
 
 
 # ---------------------------------------------------------------- 1. md 로드
@@ -244,8 +270,33 @@ def check_processed():
         print(f"- 하위 폴더: {subs if subs else '없음'}")
     else:
         print(f"- 경로 없음: {PROC_DIR}")
-    print("- ⏸ 전처리본이 코퍼스 정본이다. 규칙은 1-17 미확정이라 검사 항목을 아직 못 정한다.")
-    print("  1-17 확정 후 채운다 — 이미지 링크 제거 확인 / NFC 적용 확인 / 문서 수 대조\n")
+    print("- ⏸ 전처리본이 코퍼스 정본이다. 1-17은 확정됐으나(rules_v2.yaml · 검증 12항목 통과),")
+    print("  1-19-1 검사기가 이미 같은 항목을 보고 있을 수 있어 범위 정리 후 채운다.")
+    print("  후보 — 이미지 링크 제거 확인 / NFC 적용 확인 / 문서 수 대조\n")
+
+
+# ------------------------------------------------------- 6. OCR 검토 필요
+def check_ocr_candidates(md_map):
+    """로드율 분자에 넣지 않는다. md 자체는 정상 생성됐고, 내용 품질이
+    낮을 수 있다는 신호일 뿐이라 게이트 위반과는 성격이 다르다. (3번과 동일한 이유)"""
+    print("## 6. OCR 검토 필요 — 변환 품질 신호\n")
+
+    if not NEEDS_OCR_PATH.is_file():
+        print(f"- 목록 없음: {NEEDS_OCR_PATH}")
+        print("  (parse_file.py 실행 기록이 없거나, 해당 문서가 0건)\n")
+        return
+
+    names = [n.strip() for n in NEEDS_OCR_PATH.read_text(encoding="utf-8").splitlines() if n.strip()]
+    stems = {Path(n).stem for n in names}
+    stale = stems - set(md_map)
+
+    print(f"- 목록: **{len(names)}건** ({NEEDS_OCR_PATH})")
+    if names:
+        print(f"    {head(names, 5)}")
+    if stale:
+        print(f"  ⚠️ md_map과 매칭 안 되는 항목 {len(stale)}건 — 목록이 오래됐을 수 있음 {head(sorted(stale), 5)}")
+
+    print()
 
 
 def main():
@@ -262,6 +313,7 @@ def main():
         check_filename_normalization(raw_map, md_map)
     check_csv_encoding()
     check_processed()
+    check_ocr_candidates(md_map)
 
     print("---\n")
     print("## 게이트 판정\n")
@@ -269,28 +321,10 @@ def main():
         print(f"- **위반 {len(failures)}건**")
         for f in failures:
             print(f"    - {f}")
-        sys.exit(1)
+        return 1
     print("- 위반 없음 ✅")
-    sys.exit(0)
-
-
-def git_version() -> str:
-    """규약 §2-4 — 이 숫자를 어느 코드로 냈는지 남긴다."""
-    try:
-        commit = subprocess.run(
-            ["git", "log", "-1", "--format=%h"],
-            capture_output=True, text=True, timeout=5,
-        ).stdout.strip()
-        dirty = subprocess.run(
-            ["git", "status", "--short"],
-            capture_output=True, text=True, timeout=5,
-        ).stdout.strip() != ""
-    except Exception:
-        return "미상 (git 정보 없음)"
-    if not commit:
-        return "미상 (리포 밖에서 실행됨)"
-    return f"{commit} (dirty: {str(dirty).lower()})"
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
