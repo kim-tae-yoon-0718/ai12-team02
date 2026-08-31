@@ -147,3 +147,32 @@ def test_leakage_finds_question_in_tracked_file(tmp_path):
     })
     problems = check_leakage([it], tmp_path)
     assert any("유출" in p and "EXT-007" in p for p in problems)
+
+
+# ── 팀 확정 좌표 형식 (2026-08-31): ref_no = "표 7", part/of 미포함 ──────
+
+def test_ref_no_with_part_of_is_warned_but_still_matches():
+    from grader.models import Location
+    from grader.normalize import match_location
+    from grader.validation import check_locations
+
+    it = EvaluationItem.model_validate({
+        "id": "EXT-01", "question": "이 사업 평가 배점표는?", "task_type": "extraction",
+        "answer_type": "value", "document_id": "RFP-000091", "answer_raw": "표 7 참조",
+        "location": {"document": "RFP-000091", "section": "4. 추진일정", "ref_no": "표 7 (2/3)"},
+    })
+    # 경고는 나오되(정리 유도)
+    assert any("(N/M)" in p or "part/of" in p for p in check_locations([it]))
+    # 채점은 자동으로 떼고 매칭한다 — 팀 확정 방향(ref_no = "표 7")
+    chunk_loc = Location(document="RFP-000091", section="4. 추진일정", ref_no="표 7")
+    assert match_location(it.location, chunk_loc, "ref_no") is True
+
+
+def test_clean_ref_no_passes_location_check():
+    from grader.validation import check_locations
+    it = EvaluationItem.model_validate({
+        "id": "EXT-02", "question": "이 사업 사업 금액이 얼마야", "task_type": "extraction",
+        "answer_type": "value", "document_id": "RFP-000091", "answer_raw": "5억",
+        "location": {"document": "RFP-000091", "section": "Ⅲ. 사업 개요", "ref_no": "표 5"},
+    })
+    assert check_locations([it]) == []

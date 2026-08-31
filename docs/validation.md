@@ -44,8 +44,10 @@ python -m grader.cli validate --evaluation-set data/evalsets/final/final.jsonl -
 - `ref_no` ← ` · ` 뒤에서 `(part/of)` 제거 → `"표 7"` / `"문단 1-4"`
 - 분할 표 `표 7 (1/3)`·`표 7 (2/3)` 는 정답 `표 7` 과 ref_no 단위로 일치
 
-★ 남은 조율: 임현진 평가셋의 `location` 필드가 이 `{document, section, ref_no}` 형식을
-따르는지(2-9). 따르면 그대로, `section_path` 배열을 쓰기로 하면 evalset 로더에도 어댑터 적용.
+**팀 확정 (2026-08-31, 박예진 파싱 ↔ 김하루 채점 ↔ 임현진 평가셋)**: 좌표 단위는
+`ref_no = "표 7"`, **part/of 미포함**. 박예진 청크는 처음부터 이 방향, 임현진 평가셋도
+part/of 제외로 통일. `check_locations` 는 옛 형식 `표 7 (2/3)` 가 남아 있으면 경고하고
+(정리 유도), 채점(`Location.key("ref_no")`)은 자동으로 떼고 매칭한다.
 
 ## 박예진 산출물 → grader 입력 (`scripts/`)
 

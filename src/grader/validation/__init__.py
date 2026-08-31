@@ -60,8 +60,9 @@ def check_evalset_integrity(
         seen[it.id] = seen.get(it.id, 0) + 1
     problems += [f"[중복] id 중복 {k} x{v}" for k, v in seen.items() if v > 1]
 
-    # (2) answer_type 정합성  (3) 참조 무결성 + 중복제외  (4) 할당량  (5) 유출
+    # (2) answer_type 정합성  (2-1) 좌표  (3) 참조 무결성 + 중복제외  (4) 할당량  (5) 유출
     problems += check_answer_types(items)
+    problems += check_locations(items)
     problems += check_references(items, corpus_doc_ids, retrieval_excluded_ids)
     problems += check_quota(items, quota, quota_tolerance)
     if leak_check_root:

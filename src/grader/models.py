@@ -67,9 +67,20 @@ def as_id_list(value: Any) -> list[str]:
     return [str(v) for v in value]
 
 
+# 분할 표의 조각 표기 `(2/3)`.
+_PART_OF_RE = re.compile(r"\s*\(\d+\s*/\s*\d+\)\s*$")
+
+
 def _strip_part(ref: str) -> str:
-    """분할 표의 `표 7 (2/3)` → `표 7`. 좌표 채점은 어느 part인지 안 따진다."""
-    return re.sub(r"\s*\(\d+\s*/\s*\d+\)\s*$", "", str(ref or "")).strip()
+    """분할 표의 `표 7 (2/3)` → `표 7`.
+
+    ★팀 확정 좌표 형식 (2026-08-31, 박예진 파싱 ↔ 김하루 채점 ↔ 임현진 평가셋):
+      좌표 단위는 `ref_no = "표 7"` 로 통일한다. part/of 는 **포함하지 않는다** —
+      어느 조각에 답이 있든 "표 7 에 있다"로 채점한다. 박예진 청크는 처음부터 이 방향,
+      임현진 평가셋도 part/of 제외로 통일(박예진 안내). 옛 데이터에 `(N/M)` 이 남아
+      있어도 매칭 단계에서 여기서 떼므로 안전하다.
+    """
+    return _PART_OF_RE.sub("", str(ref or "")).strip()
 
 
 class Location(BaseModel):
