@@ -11,7 +11,7 @@ grader.judge — 3-8 LLM 채점기 설계 / 3-9 검증 / 3-11 심판 등급
     사람 대조 + independent 검증 → final Judge 순서).
 
 【22】채점 프롬프트는 생성 프롬프트보다 엄격히 관리한다.
-【23】프롬프트는 파일로 분리하고 버전을 붙인다 → data/prompts/<name>.<version>.md
+【23】프롬프트는 파일로 분리하고 버전을 붙인다 → prompts/<name>.<version>.md
   ★채점 프롬프트가 바뀌면 이전 점수와의 비교가 무효가 될 수 있다 — grader.contamination 참고.
 """
 

@@ -1,8 +1,10 @@
 # RAG Grader Pipeline
 
 입찰공고 RAG 시스템의 평가셋(Ground Truth)을 기준으로 실제로 채점을 수행하는 파이프라인.
-확정 평가셋 스키마(v0.1)를 입력 계약으로 삼고, 팀이 확정한 채점 정책(태스크 분류/목록형
-완전일치/형식 계약/버전 provenance 등)을 코드로 강제한다.
+확정 평가셋 스키마(**v0.2**, 임현진)를 입력 계약으로 삼고, 팀이 확정한 채점 정책(태스크
+분류/목록형 완전일치/형식 계약/6-자산 provenance 등)을 코드로 강제한다.
+
+담당: **김하루 (체크리스트3 — 평가 인프라)**. 브랜치 `HR`.
 
 ## 현재 구현 범위
 
@@ -80,30 +82,36 @@
 
 ## 파일 지도
 
+이 저장소는 **체크리스트3 (평가 인프라, 담당 김하루)** 이다. 팀원이 여기서 볼 곳:
+- **입력 계약을 알고 싶다** → `src/grader/models.py` (`EvaluationItem` = 평가셋 문항,
+  `ModelResponse` = 시스템 출력). `examples/` 에 최소 예시 1건씩.
+- **채점 규칙** → `src/grader/task_scoring.py` (내용) · `retrieval.py` (검색·출처 좌표) ·
+  `extraction.py` (추출 테이블 감사) · `judge.py` (LLM 심판).
+- **실행 방법** → 아래 "실행" 절, 또는 `python -m grader.cli --help`.
+- **실행 설정 한 파일** → `configs/grader.yaml` (모든 임계값·경로·provenance 기본값).
+
 ```text
-rag_grader_pipeline_v0/
-├── pyproject.toml
-├── configs/grader.yaml          실행 설정(judge/retrieval/grading/gate/provenance)
-├── data/
-│   ├── evaluation/               평가셋·모델 응답 JSONL (현재는 배관 점검용 샘플)
-│   └── prompts/                  judge_*.v1.md — 팀 확정 프롬프트 원문(수정 없이 연결)
+├── configs/grader.yaml          실행 설정 한 곳(judge/retrieval/grading/gate/provenance)
+├── prompts/                     judge_*.v1.md — 팀(체크리스트3) 확정 심판 프롬프트 원문
+├── examples/                    스키마 확인용 최소 샘플 (진짜 평가셋 아님 — evalset/ 는 별도)
+│   ├── evaluation_set.jsonl       평가셋 문항 1건
+│   └── model_responses.jsonl      시스템 응답 1건
 ├── src/grader/
-│   ├── models.py                 pydantic 입력/출력 계약 (임현진 확정 스키마 기준)
+│   ├── models.py                 ★입력/출력 계약 (pydantic). 팀원은 여기부터
+│   ├── config.py                  configs/grader.yaml 로더
+│   ├── validation.py              평가셋 로딩 + 2-17 무결성 + 1층 데이터 정상성
 │   ├── normalize.py               3-7 금액·날짜·유니코드 정규화
-│   ├── retrieval.py               3-2 검색 평가 (retrieval_k/reranker_k/context_k)
-│   ├── extraction.py              3-2-1 추출 테이블 평가 / 3-2-2 문서 특정 / D7 순환 경보
 │   ├── task_scoring.py            3-3~3-4-5 채점기 본체 + 형식 계약 + 기권 분리
-│   ├── judge.py                   3-8/3-9 LLM judge 하네스 (assert_ready 3종 가드)
-│   ├── diagnostics.py             3-1-0 팀 공용 진단표 + 3-12 집계 + 3-5 주 지표
+│   ├── retrieval.py               3-2 검색 평가 + 3-4-3 출처 좌표 채점
+│   ├── extraction.py              3-2-1 추출 테이블 감사 / 3-2-2 문서 특정 / D7 순환 경보
+│   ├── judge.py / prompts.py / providers.py   3-8/3-9 LLM 심판 하네스 + 프롬프트 로더 + provider
+│   ├── diagnostics.py             3-1-0 진단표 + 3-12 집계 + 3-5 주 지표
 │   ├── regression.py              3-13 변동 폭 / 3-13-1 회귀 판정 / 3-17 원인 분리
 │   ├── contamination.py           4-9 실험 오염 방지
-│   ├── runner.py                  3-6-1 CI 5층 실행기
-│   ├── prompts.py                 {{변수}} 치환 프롬프트 로더
-│   ├── providers.py               Judge provider(mock/openai_compatible) 교체 구조
-│   ├── validation.py              스키마 로딩 + 2-17 무결성 + 1층 데이터 정상성
-│   ├── config.py                  configs/grader.yaml 로더
+│   ├── versioning.py              VERSION.txt (평가셋·코퍼스 버전) 읽기
+│   ├── runner.py                  3-6-1 CI 5층 실행기 (진입점)
 │   └── cli.py                     validate / run / diagnose / regression
-└── tests/                         단위 테스트 + 층 실행 스모크 테스트
+└── tests/                         단위 테스트 + 층 실행 스모크 테스트 (pytest)
 ```
 
 ## 설치
@@ -161,28 +169,28 @@ StubJudge(문자열 포함 판정)가 쓰인다 — 이것은 심판이 아니�
 
 ```bash
 # 스키마만 검사
-python -m grader.cli validate --evaluation-set data/evaluation/evaluation_set.jsonl
+python -m grader.cli validate --evaluation-set examples/evaluation_set.jsonl
 
 # 값싼 검사만 (1~3층, 모델 호출 없음)
-python -m grader.cli run --evaluation-set data/evaluation/evaluation_set.jsonl --mode checks
+python -m grader.cli run --evaluation-set examples/evaluation_set.jsonl --mode checks
 
 # CI용 층화 부분집합 (4층) — ★practice 세트 필수. 없으면 exit 1 (최종 50문항 폴백 없음, 2-17)
 python -m grader.cli run \
-  --evaluation-set data/evaluation/evaluation_set.jsonl \
-  --responses data/evaluation/model_responses.jsonl \
-  --practice-set data/evaluation/practice_items.jsonl \
+  --evaluation-set examples/evaluation_set.jsonl \
+  --responses examples/model_responses.jsonl \
+  --practice-set examples/practice_items.jsonl \
   --mode ci
 
 # 개발용
 python -m grader.cli run \
-  --evaluation-set data/evaluation/evaluation_set.jsonl \
-  --responses data/evaluation/model_responses.jsonl \
+  --evaluation-set examples/evaluation_set.jsonl \
+  --responses examples/model_responses.jsonl \
   --mode development
 
 # 최종 전체 평가 — ★누수 방지 가드. 명시적으로만
 python -m grader.cli run \
-  --evaluation-set data/evaluation/evaluation_set.jsonl \
-  --responses data/evaluation/model_responses.jsonl \
+  --evaluation-set examples/evaluation_set.jsonl \
+  --responses examples/model_responses.jsonl \
   --mode final --allow-final --runner 김하루
 
 # 팀 공용 진단표
@@ -222,7 +230,7 @@ python -m grader.cli regression --variance artifacts/variance.json --baseline ar
 
 - 스키마 필드명은 팀 확정본을 그대로 유지한다. 확정되지 않은 정책은 `configs/grader.yaml`
   또는 provider에 주입하고, 코드에 임의로 하드코딩하지 않는다.
-- 채점 프롬프트는 파일로 분리하고 버전을 붙인다(`data/prompts/<name>.<version>.md`,【23】).
+- 채점 프롬프트는 파일로 분리하고 버전을 붙인다(`prompts/<name>.<version>.md`,【23】).
   프롬프트가 바뀌면 이전 점수와의 비교가 무효가 될 수 있다.
 - Judge는 faithfulness(충실성)와 항목 단위 매칭(체크포인트/목록 항목)만 담당한다.
   correctness/citation/abstention은 규칙 기반(task_scoring/retrieval/extraction)으로 낸다
@@ -234,8 +242,8 @@ python -m grader.cli regression --variance artifacts/variance.json --baseline ar
 
 | 자리 | 대기 대상 |
 |---|---|
-| `data/evaluation/*.jsonl` 실제 50문항 | [임현진 2-13 확정] 최종 평가셋은 임현진이 전체를 보유하고, 팀에는 유형별 예시 2~3개만 공개(최종 평가 후 전체 공개). 이 저장소가 실제로 받아야 할 것은 예시 2~3개(스키마 확인용)와 `practice_items.jsonl`(CI용) |
-| `data/evaluation/practice_items.jsonl` | [임현진 2-17 확정] CI에 상시 노출할 practice 세트(검수 탈락분). 임현진이 직접 채우는 중. ★없으면 `mode=ci`는 하드 실패(exit 1) — 최종셋 폴백 없음 |
+| `examples/*.jsonl` 실제 50문항 | [임현진 2-13 확정] 최종 평가셋은 임현진이 전체를 보유하고, 팀에는 유형별 예시 2~3개만 공개(최종 평가 후 전체 공개). 이 저장소가 실제로 받아야 할 것은 예시 2~3개(스키마 확인용)와 `practice_items.jsonl`(CI용) |
+| `examples/practice_items.jsonl` | [임현진 2-17 확정] CI에 상시 노출할 practice 세트(검수 탈락분). 임현진이 직접 채우는 중. ★없으면 `mode=ci`는 하드 실패(exit 1) — 최종셋 폴백 없음 |
 | `gate.column_severity` | 박예진 1-12-1 필드별 critical/major/minor 배정 |
 | ~~`gate.data_thresholds`~~ ✅ 2026-08-27 반영(3차) | 박예진 1-11 확정 게이트 4종(로드율/raw=md 개수/파일명 정규화/CSV 디코딩) + 표 보존율 100%·인코딩 깨짐 0건까지 `configs/grader.yaml`과 `validation.check_data_sanity`에 반영함. ★"원본 대비 손실률"은 팀 결정으로 **영구히** 측정하지 않는다(위 재확인 섹션 참고 — "제외"가 아니라 "확정") |
 | ~~`gate.data_warn_thresholds`(신규)~~ ✅ 2026-08-27 반영(3차) | 박예진 확정 — 표 0개 문서(스캔된 한글 파일 OCR 미실행 신호)를 **게이트가 아니라 경고**로 추가함. `validation.check_data_warnings()` + `configs/grader.yaml`의 `gate.data_warn_thresholds`. 한계: 문서 일부만 스캔인 경우는 못 잡음(1-19-1에 기록) |

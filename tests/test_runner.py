@@ -88,7 +88,7 @@ def test_execute_checks_mode_smoke(tmp_path: Path):
     )
     code, report = execute(
         runner,
-        evaluation_set_path="data/evaluation/evaluation_set.jsonl",
+        evaluation_set_path="examples/evaluation_set.jsonl",
         responses_path=None,
         mode="checks",
         allow_final=False,
@@ -118,8 +118,8 @@ def test_execute_final_mode_requires_independent_extraction_audit(tmp_path: Path
                           prompt_repo=PromptRepository(cfg.judge.prompt_files),
                           corpus="corpus-test", table="ext-test")
     code, report = execute(
-        runner, evaluation_set_path="data/evaluation/evaluation_set.jsonl",
-        responses_path="data/evaluation/model_responses.jsonl",
+        runner, evaluation_set_path="examples/evaluation_set.jsonl",
+        responses_path="examples/model_responses.jsonl",
         mode="final", allow_final=True, runner_name="pytest",
         out_dir=str(tmp_path),  # extraction_audit_path 주지 않음 → L3 SKIP
     )
@@ -141,8 +141,8 @@ def test_execute_final_mode_rejects_stub_judge(tmp_path: Path):
     )
     code, report = execute(
         runner,
-        evaluation_set_path="data/evaluation/evaluation_set.jsonl",
-        responses_path="data/evaluation/model_responses.jsonl",
+        evaluation_set_path="examples/evaluation_set.jsonl",
+        responses_path="examples/model_responses.jsonl",
         mode="final",
         allow_final=True,
         runner_name="pytest",
@@ -175,7 +175,7 @@ def test_layer1_warning_does_not_block_execution(tmp_path: Path):
     )
     code, report = execute(
         runner,
-        evaluation_set_path="data/evaluation/evaluation_set.jsonl",
+        evaluation_set_path="examples/evaluation_set.jsonl",
         responses_path=None, mode="checks", allow_final=False, runner_name="pytest",
         data_manifest_path=str(manifest), out_dir=str(tmp_path),
     )
@@ -197,8 +197,8 @@ def test_ci_mode_without_practice_set_hard_fails(tmp_path: Path):
     )
     code, report = execute(
         runner,
-        evaluation_set_path="data/evaluation/evaluation_set.jsonl",
-        responses_path="data/evaluation/model_responses.jsonl",
+        evaluation_set_path="examples/evaluation_set.jsonl",
+        responses_path="examples/model_responses.jsonl",
         mode="ci", allow_final=False, runner_name="pytest",
         out_dir=str(tmp_path),
     )
@@ -235,7 +235,7 @@ def test_ci_mode_uses_practice_set_when_provided(tmp_path: Path):
     )
     code, report = execute(
         runner,
-        evaluation_set_path="data/evaluation/evaluation_set.jsonl",  # 최종셋(구조 검증용)
+        evaluation_set_path="examples/evaluation_set.jsonl",  # 최종셋(구조 검증용)
         responses_path=str(responses),
         mode="ci", allow_final=False, runner_name="pytest",
         practice_set_path=str(dev_set),
@@ -256,7 +256,7 @@ def test_execute_final_mode_without_allow_final_is_blocked(tmp_path: Path):
         corpus="corpus-test", table="ext-test",
     )
     code, report = execute(
-        runner, evaluation_set_path="data/evaluation/evaluation_set.jsonl",
+        runner, evaluation_set_path="examples/evaluation_set.jsonl",
         responses_path=None, mode="final", allow_final=False, runner_name="pytest",
         out_dir=str(tmp_path),
     )

@@ -88,8 +88,8 @@ def _runner(**over):
 def _run_dev(tmp_path: Path, runner: GraderRunner):
     code, report = execute(
         runner,
-        evaluation_set_path="data/evaluation/evaluation_set.jsonl",
-        responses_path="data/evaluation/model_responses.jsonl",
+        evaluation_set_path="examples/evaluation_set.jsonl",
+        responses_path="examples/model_responses.jsonl",
         mode="development",
         allow_final=False,
         runner_name="pytest",

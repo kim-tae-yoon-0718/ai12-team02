@@ -1,14 +1,14 @@
 schema_version: "v0.2"
 
 judge:
-  # data/prompts/*.v1.md 는 팀 확정 프롬프트 원문을 수정 없이 그대로 연결한 것.
+  # prompts/*.v1.md 는 팀 확정 프롬프트 원문을 수정 없이 그대로 연결한 것.
   judges:
     - name: judge_faithfulness
-      prompt_file: data/prompts/judge_faithfulness.v1.md
+      prompt_file: prompts/judge_faithfulness.v1.md
     - name: judge_checkpoint
-      prompt_file: data/prompts/judge_checkpoint.v1.md
+      prompt_file: prompts/judge_checkpoint.v1.md
     - name: judge_list_item
-      prompt_file: data/prompts/judge_list_item.v1.md
+      prompt_file: prompts/judge_list_item.v1.md
 
   # judge_faithfulness는 문항 전체를 한 번 채점하는 metric judge.
   # judge_checkpoint / judge_list_item 은 task_scoring 안에서 항목 단위로 여러 번
@@ -72,7 +72,7 @@ gate:
 
   # [2026-08-27 갱신 — 값은 확정, 적용은 보류] 임현진 2-12 확정: v1 총 50문항 =
   # selection 25 / extraction 15 / qa 10. 다만 이 저장소의
-  # data/evaluation/evaluation_set.jsonl은 아직 실제 50문항이 아니라 배관 점검용
+  # examples/evaluation_set.jsonl은 아직 실제 50문항이 아니라 배관 점검용
   # 샘플(1문항)이다 — 여기서 task_quota를 채우면 validation.check_evalset_integrity의
   # 할당량 검사가 그 샘플/스모크 테스트 픽스처를 즉시 "할당량 위반"으로 잡아버려
   # CI 스모크 테스트가 깨진다. 그래서 기본값은 비워 두고, 실제 50문항 평가셋을
