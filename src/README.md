@@ -22,6 +22,7 @@ chunks.jsonl)로 코드를 검증하면서 여러 스키마 불일치·계산 �
 | `build_index.py` | **진입점** — 청크 → 임베딩 → 인덱스 저장 | D |
 | `router.py` | 질문 유형 규칙 기반 분기 | 4-10-1 |
 | `table_query.py` | 조건 질의(자연어→필드/연산자, AND 복합조건, 검증 층) | 4-9-8 |
+| `deadline_metadata.py` | CSV↔등록부 매핑, 선별형 마감 필터(4-10-2) | 4-10-2 |
 | `generation_client.py` | 오픈AI 생성(gpt-4o-mini), 프롬프트 원칙 4종 | 4-12 |
 | `answer_pipeline.py` | **진입점** — 질문 하나에 답하기 (F-0~K-2), 지연 클라이언트 생성 | F-0~K-2 |
 | `run_eval.py` | **진입점** — 평가셋 전체 실행, summary.json/details.jsonl | 3-12 결과 파일 |
@@ -91,6 +92,9 @@ pip install openai numpy pyyaml --break-system-packages
    넣지 않고 명시적으로 실행을 막습니다 — 값을 지우면 그 즉시 에러가 납니다.
 3. `chunk_size`, `chunk_overlap`, `table_chunk_threshold`는 예진님 실측으로
    이미 확정돼 있습니다(1500/150/1500).
+4. `data_list.csv`(마감일 원본, UTF-8 BOM, 12컬럼 100행)를 `--deadline-csv`로
+   주지 않으면 선별형 마감 필터가 꺼진 채로 돕니다 — base.yaml엔 켜져 있는데
+   실제로는 안 걸린다는 뜻이라, 마감 지난 사업이 결과에 섞일 수 있습니다.
 
 ## 청크 입력 형식 (C단계 실제 산출물 — build_chunks.py 스키마)
 
@@ -125,6 +129,24 @@ JSONL, 한 줄에 청크 하나. `chunks_v1/chunks.jsonl` (100건, 18,142개 청
 필터와 별개로 `build_index.py`가 둘 다 적용합니다. `business_name` 필드는
 없으며, 사업명 기반 중복 판정 로직 자체를 제거했으니 필요 없습니다.
 
+## 마감일 메타데이터 (data_list.csv — 4-10-2)
+
+청킹·임베딩 대상이 아닙니다(4-9-8: "숫자·날짜·부정 조건은 벡터 검색이 아니라
+검증된 구조화 질의"). `document_id`로 바로 조회하는 구조화 데이터라 그냥
+로더 하나(`deadline_metadata.py`)로 충분합니다.
+
+- 형식: UTF-8 BOM, 12컬럼, 100행. 컬럼: 공고 번호·공고 차수·사업명·사업 금액·
+  발주 기관·공개 일자·입찰 참여 시작일·**입찰 참여 마감일**·사업 요약·
+  파일형식·파일명·텍스트
+- `document_id` 연결 키: CSV `파일명`(확장자 `.hwp` 등)과 등록부
+  `output_filename`(확장자 `.md`)이 확장자만 빼면 동일 — 100/100 매핑 확인
+  완료(NFC 정규화 필요, 체크리스트의 "파일명 NFD 저장" 경고와 일치)
+- 실측 교차검증: 마감일 빈값 정확히 8건, `reference_datetime=2024-06-01`
+  기준 미경과 67 / 경과 25 / 미상 8 — 체크리스트 확정 기록과 완전 일치
+- `deadline_filter_field`(base.yaml, `"입찰 참여 마감일"`) 컬럼명은 코드에
+  다시 하드코딩하지 않고 cfg에서 그대로 읽음
+- 미상 8건은 4-10-2 확정대로 제외하지 않고 "미상"으로 표시 후 통과시킴
+
 ## 실행 순서
 
 ```bash
@@ -137,13 +159,17 @@ python build_index.py \
 python answer_pipeline.py \
   --question "5억 이상인 사업 알려줘" \
   --index /srv/rfp/shared_data/processed/index_v1 \
-  --extraction-table /srv/rfp/shared_data/processed/rfp_extraction_table_v2/extraction_table_v2.json
+  --extraction-table /srv/rfp/shared_data/processed/rfp_extraction_table_v2/extraction_table_v2.json \
+  --registry /srv/rfp/shared_data/processed/document_registry_v2/document_registry_v2.json \
+  --deadline-csv /srv/rfp/shared_data/raw/data_list.csv
 
 # 3. 평가셋 전체 실행
 python run_eval.py \
   --evalset /srv/rfp/shared_data/processed/evalset_v1/questions.jsonl \
   --index /srv/rfp/shared_data/processed/index_v1 \
   --extraction-table /srv/rfp/shared_data/processed/rfp_extraction_table_v2/extraction_table_v2.json \
+  --registry /srv/rfp/shared_data/processed/document_registry_v2/document_registry_v2.json \
+  --deadline-csv /srv/rfp/shared_data/raw/data_list.csv \
   --out /srv/rfp/shared_data/results/tm001
 
 # (선택) 문서 단위 증분 갱신 — 지정 문서만 재색인, 나머지는 그대로 보존
@@ -166,16 +192,15 @@ python build_index.py \
 않습니다 — `--only`로 지정했는데 그 문서가 이번엔 `retrieval_eligible=false`로
 바뀌어 청크가 하나도 없으면, 새로 넣지 않고 기존 청크만 비활성화합니다.
 
+`--deadline-csv`와 `--registry`를 둘 다 줘야 선별형 마감 필터가 켜집니다.
+둘 중 하나라도 빠지면 필터 없이 돕니다 — base.yaml엔 필터가 켜져 있는데
+이 실행에선 꺼진 채로 돈다는 걸 알리는 경고를 출력합니다(조용히 넘어가지 않음).
+
 ## 아직 부족한 부분
 
 - `table_query.py`의 조건 파싱 규칙(정규식)은 표현 다양성 실측(1-2·1-18) 전이라
   초기 규칙일 뿐입니다 — 지금은 `예산`·`지역제한`만 허용. 나머지 필드는
   실패 사례 모아서 보완 필요.
-- **마감일 필터(4-10-2)용 메타데이터 연결 미완** — `사업명`·`발주기관`·
-  `마감일시`는 최종 12필드에서 빠졌고, 지금 확인한 공식 파일
-  (`document_registry_v2.json`, `extraction_table_v2.json`) 어디에도 마감일
-  필드가 없습니다. 선별형 마감 필터(reference_datetime=2024-06-01 기준)를
-  실제로 켜려면 이 값이 어느 공식 파일에 있는지 먼저 확인해야 합니다.
 - `active_doc_state`(4-14, 대화 맥락 유지)는 `vector_store.search()`에
   `document_id` 필터를 추가해뒀지만, `answer_pipeline.py` 오케스트레이션에서
   실제로 활성 문서 ID를 유지·주입하는 부분은 아직 연결 안 됨. **그 대신 지금은
@@ -208,3 +233,23 @@ python build_index.py \
   100건, 청크 18,142개(chunk_id 전부 고유), 검색 대상 13,778개, degraded
   표 873개, 크기 초과 26개. 검색 대상 문서 98건 수치가 저희가 검증한
   `document_registry_v2.json`과 일치.
+- **코드 리뷰 6건 반영** (5건은 실제 버그로 확인, 1건은 데이터 부재로 별도 해결):
+  1. 지역제한 `field_absent`가 "제한 없음" 조건 충족으로 잘못 매칭되던 것 —
+     4-12-1 원칙과 충돌하던 부분이라 경고로 전환, 교집합에서 제외
+  2. 마감일 필터 미구현 → 아래 CSV 연결로 해결
+  3. **`49,500천원`이 `49,500원`으로 잘못 변환되던 회귀 버그** — 쉼표 숫자
+     숏컷이 뒤따르는 단위(천/만/억)를 무시하던 것 수정, 89건 재검증 통과
+  4. `run_eval.py`가 `answer()`의 내부 오류(`error_stage`)를 확인 안 해서
+     `error_count=0`으로 나올 수 있던 문제 — 의도적 오류 주입으로 수정 검증
+  5. 손상된 표(`table_degraded`)가 생성 컨텍스트에 그대로 들어가던 문제 —
+     4-7-1 확정대로 LLM 컨텍스트에서 빼고 원문 위치만 안내하도록 수정
+  6. 인덱스 불일치 검사가 chunk_size 등 4개 키만 보던 것 → corpus/preprocess/
+     chunking/registry/extraction 버전까지 확장
+  - 리뷰에서 지적 안 됐지만 1번을 고치다 직접 찾은 것: 경고 문구에 문서 ID가
+    없어서 95건의 서로 다른 경고가 문구 중복 제거 단계에서 1건으로 뭉개지던
+    버그도 같이 고침(94건 → 95건 정상 표시)
+- **선별형 마감 필터(4-10-2) 실제 연결** — `data_list.csv`(마감일 원본)를
+  등록부와 연결하는 `deadline_metadata.py` 신설. `answer_pipeline.py`/
+  `run_eval.py`에 `--deadline-csv`/`--registry` 인자로 연결, 마감 지난
+  사업은 결과에서 제외하고 미상은 표시만 하고 통과시킴(둘 다 실측치와 일치
+  검증 완료: 미경과 67/경과 25/미상 8).

@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -25,6 +26,7 @@ from table_query import (
     load_extraction_table, parse_conditions, run_conditions_query, QueryResult,
     detect_field, detect_document_id, detect_document_ids, needs_explanation, lookup_field,
 )
+from deadline_metadata import load_deadline_by_document_id, is_before_deadline
 
 
 @dataclass
@@ -83,10 +85,41 @@ def answer_qa_or_extract_by_search(
             sources=[], abstained=True,
         )
 
-    context_texts = [f"[출처: {format_source(m)}]\n{m.text}" for m, _ in results]
+    # ⚠️ 버그 수정(리뷰 반영): 4-7-1 확정 규칙 — "빈 셀 60% 초과 표(degraded)는
+    # 값을 생성하지 않고 원문 위치만 안내"가 지금까지 생성 단계에 전혀
+    # 연결돼 있지 않았다. table_degraded=true인 청크를 그대로 LLM 컨텍스트에
+    # 넣으면 손상된 표에서 값을 지어낼 위험이 있다 — 생성용 컨텍스트에서
+    # 빼고 원문 위치 안내로만 따로 붙인다.
+    normal_results = [(m, s) for m, s in results if not m.table_degraded]
+    degraded_results = [(m, s) for m, s in results if m.table_degraded]
+
+    if not normal_results:
+        # 검색된 게 전부 손상된 표뿐 — LLM 호출 자체를 안 하고 위치만 안내
+        text = (
+            "이 항목은 표가 손상되어(빈 셀 60% 초과) 값을 추정하지 않습니다. "
+            "아래 원문 위치를 직접 확인해주세요:\n"
+            + "\n".join(f"- {format_source(m)}" for m, _ in degraded_results)
+        )
+        return Answer(
+            text=text, task_type="qa", route_matched_rule=None,
+            route_is_fallback=False,
+            sources=[format_source(m) for m, _ in degraded_results],
+            abstained=True,
+            retrieved_chunk_ids=[m.chunk_id for m, _ in degraded_results],
+            retrieved_scores=[s for _, s in degraded_results],
+        )
+
+    context_texts = [f"[출처: {format_source(m)}]\n{m.text}" for m, _ in normal_results]
 
     answer_text = gen_client.generate(question, context_texts)
-    sources = [format_source(m) for m, _ in results]
+    sources = [format_source(m) for m, _ in normal_results]
+
+    if degraded_results:
+        answer_text += (
+            "\n\n[표 손상으로 값 생성 안 함 — 원문 위치만 안내]\n"
+            + "\n".join(f"- {format_source(m)}" for m, _ in degraded_results)
+        )
+        sources += [format_source(m) for m, _ in degraded_results]
 
     return Answer(
         text=answer_text, task_type="qa", route_matched_rule=None,
@@ -96,10 +129,46 @@ def answer_qa_or_extract_by_search(
     )
 
 
+def apply_deadline_filter(
+    doc_ids: list[str], deadline_map: dict[str, datetime | None] | None,
+    cfg: dict[str, Any],
+) -> tuple[list[str], list[str], str | None]:
+    """선별형 결과에 마감 필터 적용(4-10-2 확정). deadline_map이 없으면
+    필터를 아예 건너뛴다(CSV 미연결 상태) — 조용히 통과시키되 호출측이
+    필터가 안 걸렸다는 걸 알 수 있게 표시는 따로 한다.
+    반환: (마감 필터 통과 문서 ID, 미상 안내 문구 목록, 위험 고지 문구)"""
+    if deadline_map is None:
+        return doc_ids, [], None
+    if not cfg.get("deadline_filter_default", {}).get("select", False):
+        return doc_ids, [], None
+
+    ref = datetime.strptime(cfg["reference_datetime"], "%Y-%m-%d")
+    missing_policy = cfg.get("deadline_missing_policy", "show_as_unknown")
+    kept, unknown_notes = [], []
+    for doc_id in doc_ids:
+        ok, note = is_before_deadline(doc_id, deadline_map, ref)
+        if ok is False:
+            continue  # 마감 지남 — 결과에서 제외
+        if ok is None:
+            # 4-10-2 확정: 미상은 제외하지 않고 "미상"으로 표시 후 통과
+            if missing_policy == "show_as_unknown":
+                unknown_notes.append(f"- {doc_id}: {note}")
+        kept.append(doc_id)
+
+    disclosure = (
+        cfg.get("deadline_filter_disclosure_message")
+        if cfg.get("deadline_filter_disclosure") else None
+    )
+    return kept, unknown_notes, disclosure
+
+
 def answer_select_by_table(
     question: str, table: list[dict], cfg: dict[str, Any],
+    deadline_map: dict[str, datetime | None] | None = None,
 ) -> Answer:
-    """선별형 — G-2(조건 질의) → K-2(코드로 결과 조립) 경로. 생성 단계 안 태움(4-9-8 확정)."""
+    """선별형 — G-2(조건 질의) → K-2(코드로 결과 조립) 경로. 생성 단계 안 태움(4-9-8 확정).
+    deadline_map을 주면 마감 필터(4-10-2)까지 적용 — base.yaml
+    deadline_filter_default.select=true가 기본값."""
     conditions, fully_matched = parse_conditions(question)
 
     if not conditions:
@@ -123,12 +192,27 @@ def answer_select_by_table(
 
     results, total, condition_warnings = run_conditions_query(table, conditions)
 
+    doc_ids = [r.document_id for r in results]
+    kept_ids, deadline_notes, deadline_disclosure = apply_deadline_filter(doc_ids, deadline_map, cfg)
+    kept_set = set(kept_ids)
+    filtered_out = len(results) - len(kept_set)
+    results = [r for r in results if r.document_id in kept_set]
+
     lines = [f"- {r.document_id}: {r.value}" for r in results]
     body = "\n".join(lines) if lines else "조건에 맞는 문서가 없습니다."
+    if deadline_map is None:
+        body += "\n\n[알림] 마감 필터가 연결돼 있지 않습니다 — 마감 지난 사업이 섞여 있을 수 있습니다."
+    elif filtered_out:
+        body += f"\n\n(마감 지난 사업 {filtered_out}건 제외됨 — 기준일 {cfg['reference_datetime']})"
+    if deadline_notes:
+        if deadline_disclosure:
+            body += f"\n\n[마감일 미상 — {deadline_disclosure}]\n" + "\n".join(deadline_notes)
+        else:
+            body += "\n\n[마감일 미상]\n" + "\n".join(deadline_notes)
     if condition_warnings:
         body += "\n\n[확인 필요]\n" + "\n".join(f"- {w}" for w in condition_warnings)
-    if total > len(results):
-        body += f"\n\n(전체 {total}건 중 {len(results)}건만 표시)"
+    if total > len(results) + filtered_out:
+        body += f"\n\n(조건 매칭 전체 {total}건 중 일부만 표시)"
 
     return Answer(
         text=body, task_type="select", route_matched_rule=None,
@@ -276,10 +360,12 @@ def answer(
     get_embed_client: "Callable[[], EmbeddingClient]",
     get_gen_client: "Callable[[], GenerationClient]",
     table: list[dict], cfg: dict[str, Any],
+    deadline_map: dict[str, datetime | None] | None = None,
 ) -> Answer:
     """embed_client/gen_client는 즉시 인스턴스가 아니라 지연 생성 콜러블로 받는다
     (message.txt 8번 확정) — no_search_needed·select 경로는 OpenAI 클라이언트가
-    아예 필요 없으므로 호출 자체를 하지 않는다."""
+    아예 필요 없으므로 호출 자체를 하지 않는다.
+    deadline_map은 선별형 마감 필터(4-10-2)용 — 없으면 필터 없이 동작(경고만)."""
     r: RouteResult = route(question, cfg)
 
     try:
@@ -290,7 +376,7 @@ def answer(
                 route_is_fallback=r.is_fallback, sources=[], abstained=False,
             )
         elif r.task_type == "select":
-            result = answer_select_by_table(question, table, cfg)
+            result = answer_select_by_table(question, table, cfg, deadline_map=deadline_map)
         elif r.task_type == "extract":
             # 이전엔 QA와 같은 검색 경로로 뭉뚱그려져 있었음 — message.txt 8번
             # 확정대로 G-2(코드 조회) 우선, 원문 설명 필요시에만 검색 경로로 이관
@@ -329,12 +415,25 @@ def main():
     parser.add_argument("--question", required=True)
     parser.add_argument("--index", required=True, help="index_vN 폴더 경로")
     parser.add_argument("--extraction-table", required=False)
+    parser.add_argument("--registry", required=False,
+                         help="document_registry_v2.json 경로 — 마감 필터용 CSV 매핑에 필요")
+    parser.add_argument("--deadline-csv", required=False,
+                         help="data_list.csv 경로 — 있어야 선별형 마감 필터(4-10-2)가 켜짐")
     parser.add_argument("--experiment-config", required=False)
     args = parser.parse_args()
 
     cfg = load_config(args.experiment_config)
     store = VectorStore.load(Path(args.index))
     table = load_extraction_table(Path(args.extraction_table)) if args.extraction_table else []
+
+    deadline_map = None
+    if args.deadline_csv and args.registry:
+        deadline_map = load_deadline_by_document_id(
+            Path(args.deadline_csv), Path(args.registry), cfg,
+        )
+    elif cfg.get("deadline_filter_default", {}).get("select", False):
+        print("⚠️  --deadline-csv/--registry 미지정 — 선별형 마감 필터가 base.yaml엔 "
+              "켜져 있는데 이 실행에선 꺼진 채로 돕니다(마감 지난 사업이 섞일 수 있음).")
 
     # 지연 생성 — no_search_needed·select 경로에서는 아예 호출되지 않는다
     _cache: dict[str, Any] = {}
@@ -349,7 +448,8 @@ def main():
             _cache["gen"] = GenerationClient(cfg)
         return _cache["gen"]
 
-    result = answer(args.question, store, get_embed_client, get_gen_client, table, cfg)
+    result = answer(args.question, store, get_embed_client, get_gen_client, table, cfg,
+                     deadline_map=deadline_map)
 
     print(json.dumps(
         {

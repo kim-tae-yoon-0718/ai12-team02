@@ -24,6 +24,7 @@ from vector_store import VectorStore
 from embedding_client import EmbeddingClient
 from generation_client import GenerationClient
 from table_query import load_extraction_table
+from deadline_metadata import load_deadline_by_document_id
 from answer_pipeline import answer
 
 
@@ -42,6 +43,10 @@ def main():
     parser.add_argument("--evalset", required=True)
     parser.add_argument("--index", required=True)
     parser.add_argument("--extraction-table", required=False)
+    parser.add_argument("--registry", required=False,
+                         help="document_registry_v2.json 경로 — 마감 필터용 CSV 매핑에 필요")
+    parser.add_argument("--deadline-csv", required=False,
+                         help="data_list.csv 경로 — 있어야 선별형 마감 필터(4-10-2)가 켜짐")
     parser.add_argument("--out", required=True, help="결과 저장 폴더")
     parser.add_argument("--experiment-config", required=False)
     args = parser.parse_args()
@@ -51,6 +56,16 @@ def main():
 
     store = VectorStore.load(Path(args.index))
     table = load_extraction_table(Path(args.extraction_table)) if args.extraction_table else []
+
+    deadline_map = None
+    if args.deadline_csv and args.registry:
+        deadline_map = load_deadline_by_document_id(
+            Path(args.deadline_csv), Path(args.registry), cfg,
+        )
+    elif cfg.get("deadline_filter_default", {}).get("select", False):
+        print("⚠️  --deadline-csv/--registry 미지정 — 선별형 마감 필터가 base.yaml엔 "
+              "켜져 있는데 이 평가는 필터 없이 돕니다. 채점 결과에 마감 지난 사업이 "
+              "섞여 들어갈 수 있습니다.")
 
     # message.txt 8번 확정 — select·no_search_needed만 있는 평가셋이면
     # OpenAI 클라이언트를 한 번도 안 만들 수도 있다. 지연 생성으로 통일.
@@ -80,7 +95,14 @@ def main():
     for i, item in enumerate(items, 1):
         q = item["question"]
         try:
-            result = answer(q, store, get_embed_client, get_gen_client, table, cfg)
+            result = answer(q, store, get_embed_client, get_gen_client, table, cfg,
+                             deadline_map=deadline_map)
+            # ⚠️ 버그 수정(리뷰 반영): answer()는 내부에서 예외를 이미 잡아서
+            # error_stage/error_detail로 반환한다 — 그래서 이 try/except는
+            # answer() 호출 자체가 실패하는 극히 드문 경우(예: 인자 오류)만
+            # 잡는다. result.error_stage를 확인 안 하면 실제 검색·조건질의·
+            # 생성 실패가 있어도 error=None으로 조용히 기록돼 error_count=0으로
+            # 나올 수 있었다.
             record = {
                 "question_id": item.get("question_id", f"q{i:04d}"),
                 "question": q,
@@ -91,7 +113,15 @@ def main():
                 "answer": result.text,
                 "sources": result.sources,
                 "abstained": result.abstained,
-                "error": None,
+                "retrieved_chunk_ids": result.retrieved_chunk_ids,
+                "retrieved_scores": result.retrieved_scores,
+                "condition_query": result.condition_query,
+                "condition_result_doc_ids": result.condition_result_doc_ids,
+                "error_stage": result.error_stage,
+                "error": (
+                    f"[{result.error_stage}] {result.error_detail}"
+                    if result.error_stage else None
+                ),
             }
         except Exception as e:
             record = {
@@ -104,6 +134,11 @@ def main():
                 "answer": None,
                 "sources": [],
                 "abstained": None,
+                "retrieved_chunk_ids": [],
+                "retrieved_scores": [],
+                "condition_query": None,
+                "condition_result_doc_ids": [],
+                "error_stage": "pipeline_call",
                 "error": str(e),
             }
 

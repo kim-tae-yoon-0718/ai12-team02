@@ -72,6 +72,15 @@ class ConfigMismatchError(RuntimeError):
 def config_mismatch_check(index_dir: Path, cfg: dict[str, Any]) -> None:
     """인덱싱 시작 전 기존 인덱스 꼬리표와 현재 config를 비교.
     다르면 실행을 중단하고 새 버전을 만들라고 안내한다(4-9-2 확정).
+
+    ⚠️ 범위 확장(리뷰 반영): 예전엔 chunk_size·chunk_overlap·embedding_model·
+    embedding_provider 4개만 봤다. 코퍼스·전처리·청킹·등록부·추출표 버전이
+    바뀌어도 안 걸렸다 — "옛 버전 벡터가 섞이면 중단" 조건을 충족 못 했다.
+    cfg 쪽 키 이름(corpus/preprocess/...)과 IndexTag 쪽 키 이름
+    (corpus_version/preprocess_version/...)이 다르므로 매핑해서 비교한다.
+    ⚠️ 아직 못 하는 것: 문서 단위 해시(processed_sha256 등) 불일치는 이
+    함수(인덱스 전체 꼬리표) 수준이 아니라 문서 단위라 별도 검사가 필요 —
+    현재 코드엔 없음(추후 과제로 남김).
     """
     tag_path = index_dir / "index_tag.json"
     if not tag_path.exists():
@@ -79,11 +88,21 @@ def config_mismatch_check(index_dir: Path, cfg: dict[str, Any]) -> None:
     with open(tag_path, "r", encoding="utf-8") as f:
         existing = json.load(f)
 
-    check_keys = ["chunk_size", "chunk_overlap", "embedding_model", "embedding_provider"]
+    check_pairs: list[tuple[str, Any]] = [
+        ("chunk_size", cfg.get("chunk_size")),
+        ("chunk_overlap", cfg.get("chunk_overlap")),
+        ("embedding_model", cfg.get("embedding_model")),
+        ("embedding_provider", cfg.get("embedding_provider")),
+        ("corpus_version", cfg.get("corpus")),
+        ("preprocess_version", cfg.get("preprocess")),
+        ("chunking_version", cfg.get("chunking_version")),
+        ("registry_version", cfg.get("document_registry_version", cfg.get("corpus"))),
+        ("extraction_version", cfg.get("extraction_version")),
+    ]
     mismatches = {
-        k: (existing.get(k), cfg.get(k))
-        for k in check_keys
-        if existing.get(k) != cfg.get(k)
+        tag_key: (existing.get(tag_key), new_val)
+        for tag_key, new_val in check_pairs
+        if existing.get(tag_key) != new_val
     }
     if mismatches:
         detail = "\n".join(f"  - {k}: 기존={old} / 현재={new}" for k, (old, new) in mismatches.items())

@@ -255,21 +255,33 @@ def run_condition_query(
             if _evaluate(value, cq.operator, cq.value):
                 matched.append(QueryResult(row["document_id"], status, value))
         elif status == "field_absent":
-            # 4-9-8 확정: "항목 없음"은 부정 조건(is_empty)에 안전하게 포함
-            if cq.operator == "is_empty":
-                matched.append(QueryResult(row["document_id"], status, None))
+            # ⚠️ 정정(리뷰 반영): 기존엔 "항목 없음=is_empty 조건 충족"으로 안전하게
+            # 포함시켰으나(4-9-8 원 결정), 이는 4-12-1에서 확정한 "field_absent를
+            # '제한 없음'으로 추정하지 않는다" 원칙과 정면으로 충돌한다. 원문에
+            # 지역제한 항목 자체가 없는 것과 실제로 제한이 없는 것은 다르다 —
+            # 참가 불가능한 사업을 가능하다고 잘못 보여줄 위험이 있어 경고로
+            # 내리고 교집합(깨끗한 매칭)에서 제외한다. 사람 확인이 필요한 항목.
+            matched.append(
+                QueryResult(
+                    row["document_id"], status, None,
+                    warning=(
+                        f"{row['document_id']}: '{cq.field}'는 원문에 항목 자체가 없습니다"
+                        f"(제한이 없다는 뜻으로 단정할 수 없음) — 확인 필요"
+                    ),
+                )
+            )
         elif status in ("external_reference", "not_disclosed"):
             matched.append(
                 QueryResult(
                     row["document_id"], status, None,
-                    warning=f"이 문서의 '{cq.field}'는 {status}로, 조건 판정에서 제외됨",
+                    warning=f"{row['document_id']}: '{cq.field}'는 {status}로, 조건 판정에서 제외됨",
                 )
             )
         elif status in _FUTURE_ALLOWED_STATUS:
             matched.append(
                 QueryResult(
                     row["document_id"], status, None,
-                    warning=f"이 문서의 '{cq.field}'는 값을 확인하지 못했습니다({status})",
+                    warning=f"{row['document_id']}: '{cq.field}'는 값을 확인하지 못했습니다({status})",
                 )
             )
         # conflict는 baseline에서 조건 판정 보류 (원문 내 상충, 별도 처리 필요)
@@ -282,9 +294,9 @@ def run_conditions_query(
     table: list[dict], conditions: list[ConditionQuery], max_results: int = 20
 ) -> tuple[list[QueryResult], int, list[str]]:
     """AND 복합조건. 각 조건을 독립적으로 실행한 뒤 '깨끗하게 매칭된'
-    (경고 없는 value_present/field_absent) 문서 ID의 교집합만 최종 결과로
-    삼는다. 어느 조건에서든 경고(external_reference·not_disclosed 등)가
-    붙은 문서는 최종 결과에서 제외하되 경고 문구는 모아서 함께 보여준다."""
+    (경고 없는 value_present) 문서 ID의 교집합만 최종 결과로
+    삼는다. field_absent를 포함한 경고 있는 상태는 최종 결과에서 제외하되
+    경고 문구는 모아서 함께 보여준다."""
     if not conditions:
         return [], 0, []
 
@@ -337,10 +349,16 @@ def _parse_korean_amount(value: Any) -> float | None:
     # 우선 원문 어디든(괄호 안 포함) 쉼표로 3자리씩 묶인 정확한 숫자가 있으면
     # 그걸 최우선으로 쓴다 — "일금 일억구천오백삼만원정(￦195,030,000, VAT포함)"
     # 처럼 순한글 숫자보다 괄호 안 아라비아 숫자가 더 정확한 원본인 경우가 있다.
-    comma_grouped = re.findall(r"\d{1,3}(?:,\d{3})+", original)
-    if comma_grouped:
-        # 가장 큰(자릿수 많은) 값을 정답으로 본다 — 보통 그게 최종 금액
-        best = max(comma_grouped, key=lambda x: len(x.replace(",", "")))
+    # ⚠️ 버그 수정(리뷰 반영): 단, 그 숫자 바로 뒤에 억/만/천/백/십 같은 단위가
+    # 붙어 있으면(예: "49,500천원") 숏컷을 쓰면 안 된다 — 이 경우 "49,500"이
+    # 아니라 "49,500 × 1,000"이 진짜 값이다. 단위가 바로 붙은 매치가 하나라도
+    # 있으면 숏컷 전체를 포기하고 아래 단위 환산 경로로 넘긴다.
+    comma_matches = list(re.finditer(r"\d{1,3}(?:,\d{3})+", original))
+    has_trailing_unit = any(
+        re.match(r"\s*[억만천백십]", original[m.end():]) for m in comma_matches
+    )
+    if comma_matches and not has_trailing_unit:
+        best = max((m.group(0) for m in comma_matches), key=lambda x: len(x.replace(",", "")))
         return float(best.replace(",", ""))
 
     s = re.sub(r"\([^)]*\)", "", original)   # 괄호 부연설명 제거
