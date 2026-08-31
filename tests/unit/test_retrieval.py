@@ -154,3 +154,20 @@ def test_context_chunk_derives_text_from_search_text():
     assert c.text == "사업 개요 본문"
     assert c.location.section == "2. 개요"
     assert c.location.ref_no == "문단 1"
+
+
+def test_multi_k_eval_records_k3_and_k5():
+    from grader.models import EvaluationItem, ModelResponse, Location, RetrievedItem
+    from grader.retrieval import grade_retrieval
+
+    loc = Location(document="A", section="4장", ref_no="표1")
+    it = EvaluationItem(id="T", question="q", task_type="qa", answer_type="value",
+                        answer_raw="x", location=loc)
+    resp = ModelResponse(id="T", answer="x", retrieved=[
+        RetrievedItem(document_id="X", location=Location(document="X", section=f"{i}장", ref_no="표9"))
+        for i in range(1, 4)
+    ] + [RetrievedItem(document_id="A", location=loc)])  # 정답이 4위 → k=3 miss, k=5 hit
+
+    st = grade_retrieval(it, resp, 20, 10, 5, eval_k=(3, 5))
+    assert st[0]["by_k"]["3"]["recall_at_k"] == 0.0
+    assert st[0]["by_k"]["5"]["recall_at_k"] == 1.0

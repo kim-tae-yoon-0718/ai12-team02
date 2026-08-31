@@ -188,6 +188,7 @@ class GraderRunner:
             evaluation, response,
             self.config.retrieval.retrieval_k, self.config.retrieval.reranker_k,
             self.config.retrieval.context_k, self.config.retrieval.precision,
+            self.config.retrieval.eval_k,
         )
         retrieval_diag = [RetrievalDiagnostic(**s) for s in stages]
 
@@ -373,6 +374,7 @@ def execute(
     extraction_audit_path: str | None = None,
     practice_set_path: str | None = None,
     strict_meta: bool = False,
+    leak_check: bool = False,
     out_dir: str | None = None,
 ) -> tuple[int, dict]:
     """3-6-1 층 실행기. mode: checks(1~3층) | ci(4층, 층화) | development(4층, 층화) |
@@ -432,8 +434,12 @@ def execute(
     if excluded_doc_ids_path and os.path.exists(excluded_doc_ids_path):
         with open(excluded_doc_ids_path, encoding="utf-8") as f:
             excluded_ids = set(json.load(f))
+    # 유출 검사: --leak-check 또는 최종 모드일 때. 저장소 루트(pyproject.toml 위치)에서 git ls-files.
+    leak_root = str(Path(__file__).resolve().parent.parent.parent) if (leak_check or mode == "final") else None
+    leak_exclude = [p for p in (evaluation_set_path, practice_set_path) if p]
     problems = check_evalset_integrity(items, corpus_doc_ids=corpus_ids, quota=runner.config.gate.task_quota,
-                                       retrieval_excluded_ids=excluded_ids)
+                                       retrieval_excluded_ids=excluded_ids,
+                                       leak_check_root=leak_root, leak_exclude=leak_exclude)
     L2 = {"layer": 2, "status": "FAIL" if problems else "PASS", "problems": problems, "n_items": len(items)}
     layers.append(L2)
     if L2["status"] == "FAIL":

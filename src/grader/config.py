@@ -44,6 +44,8 @@ class RetrievalConfig:
     reranker_k: int = 10
     context_k: int = 5
     precision: str = "ref_no"  # document | section | ref_no (2-9 확정 단위)
+    # 이태민 top_k=5 결과를 채점 때 여러 k로 잘라 별도 기록 (base.yaml top_k 주석, 김하루 협의)
+    eval_k: tuple[int, ...] = (3, 5)
 
 
 @dataclass(frozen=True)
@@ -195,6 +197,7 @@ def load_config(path: str | Path = "configs/default.yaml",
             reranker_k=int(retrieval_raw.get("reranker_k", 10)),
             context_k=int(retrieval_raw.get("context_k", 5)),
             precision=retrieval_raw.get("precision", "ref_no"),
+            eval_k=tuple(int(k) for k in retrieval_raw.get("eval_k", (3, 5))),
         ),
         grading=GradingConfig(
             allow_partial=bool(grading_raw.get("allow_partial", False)),

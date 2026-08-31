@@ -83,9 +83,13 @@ def grade_stage(golds: list[Location], candidates: list[RetrievedItem],
 
 def grade_retrieval(item: EvaluationItem, response: ModelResponse,
                     retrieval_k: int, reranker_k: int, context_k: int,
-                    precision: str = DEFAULT_PRECISION) -> list[dict]:
+                    precision: str = DEFAULT_PRECISION,
+                    eval_k: tuple[int, ...] = (3, 5)) -> list[dict]:
     """문항 하나의 검색 채점 — retrieval_k(후보 풀) / reranker_k(재정렬 후) /
     context_k(실제 LLM 입력) 세 단계를 각각 낸다.
+
+    eval_k: top_k=5(이태민 확정) 결과를 채점 때 k=3/5 등으로 잘라 별도 기록한다
+      (김하루 협의, base.yaml top_k 주석). retrieval_k 단계에 `by_k` 로 붙는다.
 
     failure_kind 는 세 단계를 종합해 판정한다:
       recall_failure : 정답 근거가 retrieval_k 후보 풀에도 없음 → 재정렬은 무용
@@ -105,6 +109,13 @@ def grade_retrieval(item: EvaluationItem, response: ModelResponse,
     ]
     if not golds:
         return stages
+
+    # 다단계 k 분석 (k=3, k=5 …) — 후보 풀을 각 k로 잘라 recall/precision/mrr
+    stages[0]["by_k"] = {
+        str(kk): {m: grade_stage(golds, pool, kk, precision, "retrieval_k")[m]
+                  for m in ("recall_at_k", "precision_at_k", "mrr")}
+        for kk in eval_k
+    }
 
     in_pool = any(r > 0 for r in _found_ranks(golds, pool[:retrieval_k] if retrieval_k else pool, precision))
     in_ctx = any(r > 0 for r in _found_ranks(golds, ctx_items, precision))
@@ -191,6 +202,15 @@ def aggregate_retrieval(per_item_stages: list[list[dict]]) -> dict:
             "mrr": sum(r["mrr"] for r in rows) / n,
             "failure_breakdown": kinds,
         }
+        # 다단계 k (retrieval_k 단계에만 by_k 가 붙음) — k별 recall/precision/mrr 평균
+        byk_rows = [r["by_k"] for r in rows if r.get("by_k")]
+        if byk_rows:
+            ks = sorted(byk_rows[0], key=int)
+            out[stage]["by_k"] = {
+                k: {f"{m.split('_')[0]}@k": round(sum(b[k][m] for b in byk_rows) / len(byk_rows), 4)
+                    for m in ("recall_at_k", "precision_at_k", "mrr")}
+                for k in ks
+            }
 
     ctx_rows = by_stage.get("context_k", [])
     n = len(ctx_rows)

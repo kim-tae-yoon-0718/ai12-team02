@@ -36,6 +36,10 @@ ScenarioType = Literal[
     "selection_to_extraction",
 ]
 AnswerSource = Literal["table", "verified", "metadata"]
+FieldTag = Literal["critical", "major", "minor"]  # 임현진 FIELD_SPEC (1-5 등급표)
+
+# 임현진 확정: 시간 의존 문항의 기준 시점은 상수. now 금지(평가셋이 저절로 틀려짐).
+REFERENCE_TIME = "2024-06-01"
 
 # 1-12-2 / 3-2-1 세 상태. answer_source=table 인 선별형/추출형 문항의 순환 판별에 쓴다.
 ExtractState = Literal["value", "absent", "failed"]
@@ -145,7 +149,7 @@ class EvaluationItem(BaseModel):
     active_document_id: str | None = None
     scenario_type: ScenarioType | None = None
     reference_time: str | None = None
-    field_tag: str | None = None
+    field_tag: FieldTag | None = None
     answer_source: AnswerSource | None = None
     # v0.2: any. document_set=문서ID배열 / value=값 / list=항목배열 /
     #   summary=체크포인트배열 / comparison=비교표 / unanswerable=사유 문자열

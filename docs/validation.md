@@ -6,7 +6,8 @@
 | 모듈 | 함수 | 무엇 |
 | --- | --- | --- |
 | `schema.py` | `load_jsonl` · `validate_evaluation_set(strict_meta=)` · `validate_model_responses` · `index_by_id` | JSONL 로딩 + pydantic 스키마 검증. `strict_meta` → 최종셋에서 `_` 주석 키 FAIL |
-| `answer.py` | `check_answer_types` | task_type↔answer_type 허용 조합 + list/summary/unanswerable/unspecified 정합성 |
+| `answer.py` | `check_answer_types` | task↔answer 조합 · answer_raw 필수 · list/summary/unanswerable/unspecified/scenario 의존 · reference_time 상수(2024-06-01) · document_id 문자열 (임현진 FIELD_SPEC 정합) |
+| `leakage.py` | `check_leakage` | 문항 텍스트가 추적 파일(프롬프트·코드)에 유출됐는지 (【25】, 임현진 check_no_leakage 와 동일 목적). `--leak-check` / final 모드 자동 |
 | `location.py` | `check_locations(require_ref_no=)` | `location` 3필드가 실제 값인지 (자리표시자·빈값 잡음 — ref_no 단위 채점 전제) |
 | `provenance.py` | `check_provenance` · `check_reproducible` | 6-자산 기록 완전성 / git_dirty·UNKNOWN 축 |
 | `assets.py` | `check_references` · `check_quota` · `check_data_sanity` · `check_data_warnings` | 코퍼스 문서 참조 무결성 + 수집중복 제외(1-9-1) + 할당량 + CI 1층 데이터 정상성 |

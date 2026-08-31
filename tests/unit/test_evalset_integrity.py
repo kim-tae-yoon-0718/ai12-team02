@@ -85,3 +85,65 @@ def test_final_set_rejects_meta_key_under_strict(tmp_path):
     }, ensure_ascii=False) + "\n", encoding="utf-8")
     with pytest.raises(ValueError, match="주석 키"):
         validate_evaluation_set(p, strict_meta=True)
+
+
+# ── 임현진 FIELD_SPEC 정합 (2026-08-31 HJ 브랜치 대조) ──────────────────
+
+def test_scenario_type_requires_active_document_id():
+    it = EvaluationItem.model_validate({
+        "id": "QA1", "question": "그거 지금 가능해?", "task_type": "qa", "answer_type": "value",
+        "answer_raw": "가능", "scenario_type": "anaphora",  # active_document_id 없음
+    })
+    assert any("active_document_id" in p for p in check_evalset_integrity([it]))
+
+
+def test_reference_time_must_be_the_constant():
+    it = EvaluationItem.model_validate({
+        "id": "QA2", "question": "지금 지원 가능한 사업?", "task_type": "qa",
+        "answer_type": "value", "answer_raw": "네", "reference_time": "2025-01-01",
+    })
+    assert any("2024-06-01" in p for p in check_evalset_integrity([it]))
+
+
+def test_answer_raw_is_required_for_every_answer_type():
+    it = EvaluationItem.model_validate({
+        "id": "EXT9", "question": "예산이 얼마?", "task_type": "extraction",
+        "answer_type": "value", "document_id": "RFP-000001",  # answer_raw 없음
+    })
+    assert any("answer_raw 누락" in p for p in check_evalset_integrity([it]))
+
+
+def test_document_id_list_is_flagged():
+    it = EvaluationItem.model_validate({
+        "id": "EXT8", "question": "예산이 얼마?", "task_type": "extraction",
+        "answer_type": "value", "answer_raw": "5억", "document_id": ["RFP-000001"],
+    })
+    assert any("document_id 는 문자열" in p for p in check_evalset_integrity([it]))
+
+
+def test_bad_field_tag_is_rejected_by_model():
+    import pytest
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        EvaluationItem.model_validate({
+            "id": "X", "question": "q", "task_type": "qa", "answer_type": "value",
+            "answer_raw": "x", "field_tag": "잠정",
+        })
+
+
+# ── 유출 검사 (임현진 check_no_leakage 와 같은 목적) ────────────────────
+
+def test_leakage_finds_question_in_tracked_file(tmp_path):
+    from grader.validation import check_leakage
+    import subprocess
+    (tmp_path / "prompts").mkdir()
+    (tmp_path / "prompts" / "generate_v1.txt").write_text(
+        "few-shot 예: 이 사업 사업 금액이 얼마야\n답: ...", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    it = EvaluationItem.model_validate({
+        "id": "EXT-007", "question": "이 사업 사업 금액이 얼마야",
+        "task_type": "extraction", "answer_type": "value", "answer_raw": "x",
+    })
+    problems = check_leakage([it], tmp_path)
+    assert any("유출" in p and "EXT-007" in p for p in problems)

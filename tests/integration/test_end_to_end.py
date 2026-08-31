@@ -29,6 +29,7 @@ EVALSET = [
     {
         "id": "Q003", "question": "제출 서류 뭐 필요해?", "task_type": "extraction",
         "answer_type": "list", "document_id": "D1", "field_tag": "major",
+        "answer_raw": ["사업자등록증", "법인등기부등본", "제안서"],
         "answer_normalized": ["사업자등록증", "법인등기부등본", "제안서"],
     },
     {  # v0.2: 기권 사유는 answer_raw 문자열

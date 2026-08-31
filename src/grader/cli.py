@@ -45,6 +45,8 @@ def build_parser() -> argparse.ArgumentParser:
                      help="검색 대상 아닌 문서 ID(JSON 배열) — 수집 중복 등. 정답 근거로 쓰면 실패(1-9-1)")
     run.add_argument("--strict", action="store_true",
                      help="주석 키(_source_note 등)를 FAIL 로 잡는다. final 모드는 자동 적용")
+    run.add_argument("--leak-check", action="store_true",
+                     help="문항 텍스트가 추적 파일에 유출됐는지 검사(【25】). final 모드는 자동 적용")
     run.add_argument("--data-manifest", default=None, help="1층 데이터 정상성 검사용")
     run.add_argument("--extraction-audit", default=None, help="3층 추출 표본 대조 결과")
     run.add_argument("--practice-set", default=None,
@@ -110,6 +112,7 @@ def main() -> int:
                 extraction_audit_path=args.extraction_audit,
                 practice_set_path=args.practice_set,
                 strict_meta=args.strict,
+                leak_check=args.leak_check,
                 out_dir=args.out_dir,
             )
             for L in report["layers"]:

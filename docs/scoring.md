@@ -48,6 +48,14 @@
 - `recall_failure`(후보 풀에도 없음) vs `rank_failure`(후보엔 있으나 context 못 옴) 구분.
 - **좌표 단위 = `ref_no`** (`DEFAULT_PRECISION`, 2-9 확정 = document+section+ref_no).
   검색 recall 과 citation 정확도가 같은 단위를 쓴다.
+- **다단계 k** (`config.retrieval.eval_k = [3, 5]`): 이태민 `top_k=5` 결과를 k=3/5 로 잘라
+  `retrieval_k` 단계에 `by_k` (`recall@k`/`precision@k`/`mrr@k`)를 붙인다. 이태민 협의 확정.
+
+## 박예진 청크 좌표 어댑터
+
+이태민 검색 출력이 박예진 청크 스키마(`section_path`·`location_label`)로 오면
+`Location.from_chunk` 가 `{document, section, ref_no}` 로 변환. 분할 표 `표 7 (2/3)` → `표 7`.
+`RetrievedItem`/`ContextChunk` 가 `location` 없고 청크 필드가 있으면 자동 합성.
 
 ## 출처 좌표 채점 (`grade_citation`, 3-4-3)
 
