@@ -50,12 +50,14 @@
 박예진 공식 산출물(`corpus_v2` / `document_registry_v2` / `chunks_v1`)이 있으면:
 
 ```bash
-# 등록부 → 참조 무결성 입력 (2층). 100 active / 2 excluded(RFP-000006·17) / 98 eligible
-RAG_ROOT=/srv/rfp python scripts/build_doc_ids.py --out-dir data/gold
+# 박예진 산출물 → grader 입력 재생성 (data/gold/ 는 NDA, 커밋 안 함 — 매번 만든다)
+#   100 active / 2 excluded(RFP-000006·17) / 98 eligible
+RAG_ROOT=/srv/rfp make data
 
-# corpus/registry/chunks manifest → 데이터 정상성 (1층)
-RAG_ROOT=/srv/rfp python scripts/build_data_manifest.py --out data/gold/data_manifest.json
+# 1층 데이터 정상성 스모크
+RAG_ROOT=/srv/rfp make check
 
+# 실제 평가셋이 오면 2층 참조 무결성까지:
 RAG_ROOT=/srv/rfp python -m grader.cli run --mode checks \
     --evaluation-set data/evalsets/final/final.jsonl \
     --data-manifest data/gold/data_manifest.json \
@@ -73,5 +75,5 @@ RAG_ROOT=/srv/rfp python -m grader.cli run --mode checks \
 ```bash
 pip install -e ".[dev]"
 python -m grader.cli --help
-pytest -q          # 150 tests
+pytest -q          # 159 tests
 ```

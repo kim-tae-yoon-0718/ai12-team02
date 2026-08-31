@@ -69,6 +69,17 @@
 만점. → 테이블 정확도는 **평가셋과 독립적으로** 잰다 (원문 표본 대조, `--extraction-audit`).
 `mode=final` 은 이 파일 없이 실행 불가. `circularity_flag`(추출↓ + 선별↑ 경보)는 항상.
 
-감사 행 상태 어휘는 현재 `("value","absent","failed")`. B-2 확정 5상태
-(`value_present`/`field_absent`/`external_reference`/`not_disclosed`/`conflict` + `extraction_failed`)
-반영은 태윤 원문대조 JSONL 핸드오프 후. ※ 문항 스키마와는 별개(위 C 결정 참고).
+감사 행 상태 어휘 = `models.ExtractState` — `rfp_extraction_table_v2/README.md`(박예진) 확정:
+`value_present` / `field_absent` / `not_disclosed` / `external_reference` / `conflict` +
+`extraction_failed` / `review_required`. 구 `value`/`absent`/`failed` 는 `norm_extract_state`
+가 흡수(하위호환). ※ **문항(EvaluationItem) 스키마 필드가 아니다** — audit JSONL 전용
+(C 결정: `field_absent`/`conflict` 문항 필드 신설 안 함).
+
+- 값 대조는 `value_present` 행만. 나머지는 상태 일치만 본다.
+- `conflict` 행은 v1 채점 제외(C 결정) — `n_conflict_excluded` 로 따로 집계, 정확도 분모에서 뺌.
+- ★"정보성 부재(`field_absent`/`not_disclosed`/`external_reference`) ↔ `extraction_failed`" 혼동률을
+  낸다 — 부정조건 질의를 조용히 틀리게 만드는 지점.
+- 컬럼 등급(`configs/default.yaml` `gate.column_severity`): 12필드 critical 4 / major 5 / minor 3
+  (키 = 추출표 `field_name` 실값, 근거 = 체크리스트 1-12-1). `GATE_BY_SEVERITY` 임계값은 baseline 후 조정.
+- [대기 ← 태윤] pred↔gold 표본 감사 JSONL. `mode=final` 은 `--extraction-audit` 없이 실행 불가.
+  audit 행은 `column` 또는 `field_name` 키 둘 다 받는다.

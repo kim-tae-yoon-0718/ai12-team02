@@ -63,7 +63,25 @@ grading:
 gate:
   severity_gate:
     critical: 0.85     # [대기] baseline 실측 전 임시값
-  column_severity: {}  # [대기 ← 박예진 1-12-1] 필드별 critical/major/minor 배정
+
+  # [2026-08-31 반영] 추출 테이블 12필드의 critical/major/minor 등급.
+  # 키 = rfp_extraction_table_v2 의 `field_name` 실제 값(박예진, /srv/rfp 확인).
+  # 등급 근거 = 체크리스트 1-12-1 최종본(업무 빈도·위험). critical 4 / major 5 / minor 3.
+  # ※ "마감일"은 추출 12필드가 아니라 data_list.csv 메타 필드 → deadline_filter 로 별도 처리.
+  # grade_extraction_audit / grade_doc_selection 이 이 등급으로 게이트 임계값을 고른다.
+  column_severity:
+    "참가 자격(면허·실적)": critical
+    "지역제한": critical
+    "컨소시엄 요건": critical
+    "제출 방식": critical
+    "예산": major
+    "사업기간": major
+    "평가 배점": major
+    "필수 제출 서류": major
+    "공고일": major
+    "과업 범위": minor
+    "사업 개요": minor
+    "사업분야": minor
 
   # [2026-08-27 갱신 — 값은 확정, 적용은 보류] 임현진 2-12 확정: v1 총 50문항 =
   # selection 25 / extraction 15 / qa 10. 다만 이 저장소의
@@ -122,9 +140,13 @@ provenance:
   corpus: UNKNOWN        # ① 원문 코퍼스
   preprocess: UNKNOWN    # ② 전처리 파이프라인(파싱·정제·청킹)
   table: UNKNOWN         # ③ 구조화 추출 테이블(1-12-2)
-  index: UNKNOWN         # ④ 검색 인덱스(평가 대상 RAG 검색계, 4번)
-  evalset: UNKNOWN       # ⑤ 평가셋(Ground Truth) — VERSION.txt 자동 조회
-  scorer: v1             # ⑥ 채점기 버전 — 김하루가 채점기 확정/변경 시 올림
+  index: v1             # ④ 검색 인덱스 — base.yaml §① "index: v1" 확정(폴더 v1로 시작).
+                        #    실제 인덱스 생성은 이태민 chunk/embedding 확정 후.
+                        #    생성 시각은 manifest.index_build_timestamp 에 별도 자동 기록.
+  evalset: UNKNOWN       # ⑤ 평가셋(Ground Truth) — VERSION.txt 자동 조회.
+                        #    base.yaml §① "evalset: v1"은 아직 TODO(임현진 평가셋 동결 시 확정).
+  scorer: v1             # ⑥ 채점기 버전 — v1 확정(2026-08-31, 김하루). 채점기 변경 시 올린다.
+                        #    base.yaml §① "scorer: v1" TODO 해소분.
 
 out_dir: artifacts/scores
 use_stub_judge: true   # ★dev/CI 값싼 검사 전용 — StubJudge는 심판이 아니다. tier=final에는 못 쓴다.

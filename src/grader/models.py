@@ -41,8 +41,34 @@ FieldTag = Literal["critical", "major", "minor"]  # 임현진 FIELD_SPEC (1-5 �
 # 임현진 확정: 시간 의존 문항의 기준 시점은 상수. now 금지(평가셋이 저절로 틀려짐).
 REFERENCE_TIME = "2024-06-01"
 
-# 1-12-2 / 3-2-1 세 상태. answer_source=table 인 선별형/추출형 문항의 순환 판별에 쓴다.
-ExtractState = Literal["value", "absent", "failed"]
+# 3-2-1 추출 테이블 감사(audit)의 셀 상태. answer_source=table 문항의 순환 판별에 쓴다.
+# ★ 문항(EvaluationItem) 스키마 필드가 아니다 — 태윤 원문대조 audit JSONL 전용
+#   (C 팀 결정 2026-08-31: field_absent/conflict 를 문항 필드로 신설하지 않는다).
+# rfp_extraction_table_v2/README.md (박예진, /srv/rfp 확인) 확정 어휘:
+#   value_present(901) field_absent(261) external_reference(35) not_disclosed(2) conflict(1)
+#   + extraction_failed / review_required (현재 공식 표엔 0건이나 유효 상태).
+ExtractState = Literal[
+    "value_present",       # 값 확인함 — 값 일치까지 대조
+    "field_absent",        # 문서에 해당 필드 값 없음
+    "not_disclosed",       # 문서가 값을 공개하지 않는다고 명시 (정상 최종 상태)
+    "external_reference",  # 값을 붙임·별첨·외부 자료에서 확인하라고 안내 (정상 최종 상태)
+    "conflict",            # 문서 안에 값이 충돌 — v1 채점 제외(C 결정), 따로 집계
+    "extraction_failed",   # 원문 근거는 있으나 기술적으로 추출 실패
+    "review_required",     # 문구 의미가 애매해 추가 확인 필요
+]
+
+# 구 3상태(v0.1) → 확정 어휘 별칭. 기존 audit 데이터·테스트 호환.
+EXTRACT_STATE_ALIASES = {
+    "value": "value_present",
+    "absent": "field_absent",
+    "failed": "extraction_failed",
+}
+
+
+def norm_extract_state(state: str | None) -> str:
+    """audit 행의 상태 문자열을 확정 어휘로 정규화한다(구 3상태 별칭 포함)."""
+    s = state or "value_present"
+    return EXTRACT_STATE_ALIASES.get(s, s)
 
 # 3-2 검색 실패 두 종류 (D11·D2). 이 구분이 없으면 reranker가 실제로 필요한지 알 수 없다.
 FailureKind = Literal["none", "recall_failure", "rank_failure"]

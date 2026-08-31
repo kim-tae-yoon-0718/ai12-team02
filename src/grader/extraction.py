@@ -12,8 +12,10 @@ grader.extraction — 3-2-1 구조화 추출 테이블 평가 / 3-2-2 문서 특
   ⇒ 테이블 정확도는 **평가셋과 독립적으로** 잰다. 기준은 원문 — 사람이 문서를 열어
      확인한 것과 대조한다(박예진 4-6-2 / 1-12-2 결과물).
 
-[대기 ← 박예진 1-12-1/1-12-2] 컬럼 목록·3상태·값 형식 확정 시 GATE_BY_SEVERITY(=field_tag
-기준) 임계값을 실측으로 채운다. 지금은 임시값이며 baseline 실측 후 조정한다.
+[확정 2026-08-31] 12필드 목록·상태 어휘·field_tag 등급은 rfp_extraction_table_v2
+(박예진, /srv/rfp) 와 configs/default.yaml gate.column_severity 에서 확정.
+[대기 ← 태윤 원문대조 JSONL] pred↔gold 표본 감사 데이터. GATE_BY_SEVERITY 임계값은
+지금 임시값이며 baseline 실측 후 조정한다.
 ────────────────────────────────────────────────────────────────
 """
 
@@ -21,10 +23,24 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from .models import EvaluationItem, ExtractState, ModelResponse, as_id_list
+from .models import (
+    EvaluationItem,
+    ExtractState,
+    ModelResponse,
+    as_id_list,
+    norm_extract_state,
+)
 from .normalize import match_short, parse_amount
 
-EXTRACT_STATES: tuple[ExtractState, ...] = ("value", "absent", "failed")
+# rfp_extraction_table_v2 확정 어휘(박예진). 구 3상태는 models.norm_extract_state 가 흡수.
+EXTRACT_STATES: tuple[ExtractState, ...] = (
+    "value_present", "field_absent", "not_disclosed",
+    "external_reference", "conflict", "extraction_failed", "review_required",
+)
+_VALUE_STATE = "value_present"       # 값 대조가 필요한 유일한 상태
+_FAILURE_STATE = "extraction_failed"  # 기계 실패 = 결측
+# "정보성 부재" 상태 — 기계 실패와 뒤바뀌면 부정조건 질의가 조용히 틀린다.
+_INFO_ABSENCE_STATES = ("field_absent", "not_disclosed", "external_reference")
 
 # field_tag(critical/major/minor) 별 요구 정확도. [대기] 실측 전 임시값 — baseline 이후 조정.
 GATE_BY_SEVERITY = {"critical": 0.95, "major": 0.90, "minor": 0.80}
@@ -34,20 +50,24 @@ def grade_extraction_audit(audit_rows: list[dict],
                            column_severity: dict[str, str] | None = None) -> dict:
     """표본 원문 대조 결과(박예진 4-6-2 산출물)를 지표로 바꾼다.
 
-    audit_rows 한 줄의 계약:
-      {"document_id": "...", "column": "budget",
-       "pred_state": "value|absent|failed", "pred_value": "5억원",
-       "gold_state": "value|absent|failed", "gold_value": "500,000,000원"}
+    audit_rows 한 줄의 계약 (태윤 원문대조 산출물):
+      {"document_id": "...", "column"|"field_name": "예산",
+       "pred_state": "<상태>", "pred_value": "5억원",
+       "gold_state": "<상태>", "gold_value": "500,000,000원"}
+    상태 어휘 = models.ExtractState (구 value/absent/failed 별칭 자동 흡수).
 
-    반환: 컬럼별 정확도 / 결측률 / ★"항목 없음 vs 추출 실패" 혼동률 / 오차 방향 / 게이트 판정
+    반환: 컬럼별 정확도 / 결측률 / ★"정보성 부재 vs 추출 실패" 혼동률 / 오차 방향 / 게이트 판정.
+    gold_state=conflict 행은 v1 채점 대상이 아니므로(C 결정) 분모에서 빼고 따로 센다.
     """
     column_severity = column_severity or {}
     by_col: dict[str, list[dict]] = defaultdict(list)
     for r in audit_rows:
-        by_col[r["column"]].append(r)
+        by_col[r.get("column") or r.get("field_name")].append(r)
 
     report: dict[str, dict] = {}
-    for col, rows in sorted(by_col.items()):
+    for col, all_rows in sorted(by_col.items()):
+        rows = [r for r in all_rows if norm_extract_state(r.get("gold_state")) != "conflict"]
+        n_conflict = len(all_rows) - len(rows)
         n = len(rows)
         correct = 0
         missing = 0
@@ -55,13 +75,14 @@ def grade_extraction_audit(audit_rows: list[dict],
         over = under = 0
 
         for r in rows:
-            gs, ps = r.get("gold_state", "value"), r.get("pred_state", "value")
+            gs = norm_extract_state(r.get("gold_state"))
+            ps = norm_extract_state(r.get("pred_state"))
             confusion[f"{gs}->{ps}"] += 1
-            if ps == "failed":
+            if ps == _FAILURE_STATE:
                 missing += 1
             if gs != ps:
                 continue
-            if gs != "value":
+            if gs != _VALUE_STATE:
                 correct += 1
                 continue
             ok, _ = match_short(r.get("gold_value"), r.get("pred_value"))
@@ -74,32 +95,39 @@ def grade_extraction_audit(audit_rows: list[dict],
                     under += int(p < g)
 
         acc = correct / n if n else 0.0
-        absent_as_failed = confusion["absent->failed"]
-        failed_as_absent = confusion["failed->absent"]
-        n_absent_gold = sum(1 for r in rows if r.get("gold_state") == "absent")
-        n_failed_gold = sum(1 for r in rows if r.get("gold_state") == "failed")
+        absence_as_failure = sum(confusion[f"{a}->{_FAILURE_STATE}"] for a in _INFO_ABSENCE_STATES)
+        failure_as_absence = sum(confusion[f"{_FAILURE_STATE}->{a}"] for a in _INFO_ABSENCE_STATES)
+        n_absence_gold = sum(
+            1 for r in rows if norm_extract_state(r.get("gold_state")) in _INFO_ABSENCE_STATES)
+        n_failure_gold = sum(
+            1 for r in rows if norm_extract_state(r.get("gold_state")) == _FAILURE_STATE)
 
         sev = column_severity.get(col, "minor")
         gate = GATE_BY_SEVERITY.get(sev, 0.8)
-        report[col] = {
+        entry = {
             "n": n,
             "field_tag": sev,
             "accuracy": round(acc, 4),
             "missing_rate": round(missing / n, 4) if n else 0.0,
             "state_confusion": {k: v for k, v in confusion.items() if v},
             "absent_vs_failed_confusion_rate": round(
-                (absent_as_failed + failed_as_absent) / max(1, n_absent_gold + n_failed_gold), 4),
+                (absence_as_failure + failure_as_absence)
+                / max(1, n_absence_gold + n_failure_gold), 4),
             "error_direction": {"over": over, "under": under},
             "gate_threshold": gate,
             "gate_pass": acc >= gate,
-            "note": ("★absent↔failed 혼동은 부정 조건 질의를 조용히 틀리게 만든다"
-                     if (absent_as_failed or failed_as_absent) else ""),
+            "note": ("★정보성 부재↔추출 실패 혼동은 부정 조건 질의를 조용히 틀리게 만든다"
+                     if (absence_as_failure or failure_as_absence) else ""),
         }
+        if n_conflict:
+            entry["n_conflict_excluded"] = n_conflict  # C 결정: v1 채점 제외
+        report[col] = entry
 
     n_all = sum(v["n"] for v in report.values())
     return {
         "columns": report,
         "n_samples": n_all,
+        "n_conflict_excluded": sum(v.get("n_conflict_excluded", 0) for v in report.values()),
         "gate_failed_columns": [c for c, v in report.items() if not v["gate_pass"]],
         "overall_accuracy": round(
             sum(v["accuracy"] * v["n"] for v in report.values()) / n_all, 4) if n_all else 0.0,

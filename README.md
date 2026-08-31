@@ -23,6 +23,7 @@
 ## 디렉토리
 
 ```text
+Makefile          make install/test/lint/data/check — 팀 공용 단축 명령
 configs/          default.yaml (설정 한 곳) + ci.yaml/local.yaml (오버레이)
 prompts/          judge_*.v1.md — 팀 확정 심판 프롬프트 원문
 docs/             설계·규칙 문서 (위 표)
@@ -44,7 +45,11 @@ tests/            unit/ · integration/ · regression/ · fixtures/
 ## 설치 · 실행
 
 ```bash
-pip install -e ".[dev]"
+make install          # = pip install -e ".[dev]"
+make test             # = pytest -q  (159 tests)
+make lint             # = ruff check
+make data             # 박예진 산출물(/srv/rfp) → data/gold/*.json 재생성  (RAG_ROOT 필요)
+make check            # 실데이터로 1층 데이터 정상성 스모크
 
 # 스키마만 검사
 python -m grader.cli validate --evaluation-set tests/fixtures/evaluation_set.jsonl
@@ -70,7 +75,7 @@ python -m grader.cli run ... --mode final --allow-final --extraction-audit data/
 python -m grader.cli diagnose --report artifacts/scores/report.json
 python -m grader.cli regression --runs r1.json r2.json r3.json --out artifacts/regression/variance.json
 
-pytest -q          # 150 tests
+pytest -q          # 159 tests
 ```
 
 `GRADER_PROVIDER=mock`(기본) / `openai_compatible`(+`GRADER_API_KEY`/`GRADER_MODEL`).
