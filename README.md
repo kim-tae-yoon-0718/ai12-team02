@@ -26,7 +26,7 @@
 configs/          default.yaml (설정 한 곳) + ci.yaml/local.yaml (오버레이)
 prompts/          judge_*.v1.md — 팀 확정 심판 프롬프트 원문
 docs/             설계·규칙 문서 (위 표)
-scripts/          run_grader / run_validation / run_diagnostics / generate_report (CLI 래퍼)
+scripts/          run_* (CLI 래퍼) + build_doc_ids / build_data_manifest (박예진 산출물 → grader 입력)
 src/grader/       채점기 본체
   ├─ models.py        입력/출력 계약 (pydantic)  ← 팀원은 여기부터
   ├─ config.py normalize.py cache.py providers.py
@@ -70,7 +70,7 @@ python -m grader.cli run ... --mode final --allow-final --extraction-audit data/
 python -m grader.cli diagnose --report artifacts/scores/report.json
 python -m grader.cli regression --runs r1.json r2.json r3.json --out artifacts/regression/variance.json
 
-pytest -q          # 138 tests
+pytest -q          # 150 tests
 ```
 
 `GRADER_PROVIDER=mock`(기본) / `openai_compatible`(+`GRADER_API_KEY`/`GRADER_MODEL`).

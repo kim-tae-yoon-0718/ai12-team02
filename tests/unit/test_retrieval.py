@@ -122,3 +122,35 @@ def test_aggregate_citation_separates_wrong_from_missing():
 
 def test_aggregate_citation_empty_is_silent():
     assert aggregate_citation([])["n"] == 0
+
+
+# ------------------------------------------------------------------ 박예진 청크 좌표 어댑터 (C-3)
+
+def test_chunk_location_adapter_and_split_table_match():
+    from grader.models import Location, RetrievedItem
+    from grader.normalize import match_location
+
+    # 이태민 검색 출력이 박예진 청크 스키마로 오면 location 을 합성한다
+    r = RetrievedItem.model_validate({
+        "document_id": "RFP-000091",
+        "section_path": ["4. 추진일정"],
+        "location_label": "4. 추진일정 · 표 7 (2/3)",
+        "score": 0.9,
+    })
+    assert r.location.model_dump() == {"document": "RFP-000091", "section": "4. 추진일정", "ref_no": "표 7"}
+
+    # 분할 표 (2/3) 는 정답 `표 7` 과 ref_no 단위로 일치해야 한다
+    gold = Location(document="RFP-000091", section="4. 추진일정", ref_no="표 7")
+    assert match_location(gold, r.location, "ref_no") is True
+
+
+def test_context_chunk_derives_text_from_search_text():
+    from grader.models import ContextChunk
+    c = ContextChunk.model_validate({
+        "document_id": "RFP-1", "section_path": ["2. 개요"],
+        "location_label": "2. 개요 · 문단 1", "search_text": "사업 개요 본문",
+        "content": "<p>...</p>",
+    })
+    assert c.text == "사업 개요 본문"
+    assert c.location.section == "2. 개요"
+    assert c.location.ref_no == "문단 1"

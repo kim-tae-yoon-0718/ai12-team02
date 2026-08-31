@@ -131,7 +131,11 @@ def test_input_versions_are_copied_into_report_and_per_item(tmp_path: Path):
     assert "git_commit" in report["manifest"] and "git_dirty" in report["manifest"]
 
 
-def test_missing_versions_fall_back_to_unknown_without_dropping_fields(tmp_path: Path):
+def test_missing_versions_fall_back_to_unknown_without_dropping_fields(tmp_path: Path, monkeypatch):
+    # 아무 데도 버전 정보가 없을 때: VERSION.txt(RAG_ROOT)·base.yaml 격리
+    monkeypatch.delenv("RAG_ROOT", raising=False)
+    import grader.config as _cfg
+    monkeypatch.setattr(_cfg, "_BASE_YAML_CANDIDATES", ())
     runner = _runner()  # 버전 인자 전혀 안 줌 + configs/default.yaml 은 UNKNOWN(scorer 만 v1)
     report, per_item = _run_dev(tmp_path, runner)
 

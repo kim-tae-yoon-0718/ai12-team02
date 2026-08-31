@@ -32,8 +32,25 @@ python -m grader.cli validate --evaluation-set data/evalsets/final/final.jsonl -
 # run 실행 시 2층으로 자동 포함. --corpus-doc-ids / --excluded-doc-ids (JSON 배열) 로 참조 검사 활성화
 ```
 
-## 아직 조율 필요
+## 박예진 청크 좌표 어댑터 (구현됨)
 
-- `location` 좌표 형식: 내 `{document, section, ref_no}` vs 박예진 청크의
-  `section_path` 배열 + `"제18조(평가배점) · 표 7 (2/3)"`. 임현진 2-9(평가셋 근거 좌표)와
-  정합돼야 좌표 채점(3-4-3)이 성립.
+이태민 검색 출력이 박예진 청크 스키마(`section_path` 배열 + `location_label`
+`"제18조(평가배점) · 표 7 (2/3)"`)로 오면 `models.Location.from_chunk` 가
+`{document, section, ref_no}` 로 변환한다. `RetrievedItem` / `ContextChunk` 는
+`location` 이 없고 `section_path`/`location_label` 이 있으면 자동으로 합성한다.
+
+- `section` ← `section_path[-1]` (없으면 `location_label` 의 ` · ` 앞부분)
+- `ref_no` ← ` · ` 뒤에서 `(part/of)` 제거 → `"표 7"` / `"문단 1-4"`
+- 분할 표 `표 7 (1/3)`·`표 7 (2/3)` 는 정답 `표 7` 과 ref_no 단위로 일치
+
+★ 남은 조율: 임현진 평가셋의 `location` 필드가 이 `{document, section, ref_no}` 형식을
+따르는지(2-9). 따르면 그대로, `section_path` 배열을 쓰기로 하면 evalset 로더에도 어댑터 적용.
+
+## 박예진 산출물 → grader 입력 (`scripts/`)
+
+```bash
+RAG_ROOT=/srv/rfp python scripts/build_doc_ids.py --out-dir data/gold
+RAG_ROOT=/srv/rfp python scripts/build_data_manifest.py --out data/gold/data_manifest.json
+```
+- `corpus_doc_ids.json` (active 100) · `excluded_doc_ids.json` (RFP-000006/17, 검색대상 98)
+- `data_manifest.json` — `corpus_v2/manifest.json` + `registry_metadata.json` + `chunks_v1/stats.json`

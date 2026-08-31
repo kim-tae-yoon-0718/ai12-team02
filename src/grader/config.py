@@ -120,6 +120,24 @@ def _judge_prompt_path(entry: dict, base_dir: Path) -> Path:
     return p if p.is_absolute() else (base_dir / p)
 
 
+# 팀 실험 인프라 규약 config/base.yaml §① "재료 버전 6칸".
+_BASE_YAML_CANDIDATES = ("config/base.yaml", "base.yaml", "../config/base.yaml")
+_ASSET_KEYS = ("corpus", "preprocess", "table", "index", "evalset", "scorer")
+
+
+def read_base_yaml_assets(path: str | Path | None = None) -> dict[str, str]:
+    """team 규약 config/base.yaml §① 6칸을 읽는다. 없으면 빈 dict.
+    grader 는 이 값을 configs/default.yaml 의 provenance 블록보다 우선한다(단일 출처)."""
+    paths = [Path(path)] if path else [Path(p) for p in _BASE_YAML_CANDIDATES]
+    for p in paths:
+        if not p.exists():
+            continue
+        raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        return {k: str(raw[k]) for k in _ASSET_KEYS
+                if isinstance(raw.get(k), (str, int)) and str(raw[k]).lower() not in ("null", "none", "todo", "")}
+    return {}
+
+
 def _deep_merge(base: dict, overlay: dict) -> dict:
     """overlay 의 키만 base 위에 덮는다(중첩 dict 는 재귀). 실험별 config 규약."""
     out = dict(base)

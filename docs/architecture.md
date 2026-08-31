@@ -45,13 +45,33 @@
 | `runner.py` | 5층 실행기 (진입점) | — |
 | `cli.py` | `validate` / `run` / `diagnose` / `regression` | — |
 
+## 실제 데이터 연결 (`$RAG_ROOT=/srv/rfp`)
+
+박예진 공식 산출물(`corpus_v2` / `document_registry_v2` / `chunks_v1`)이 있으면:
+
+```bash
+# 등록부 → 참조 무결성 입력 (2층). 100 active / 2 excluded(RFP-000006·17) / 98 eligible
+RAG_ROOT=/srv/rfp python scripts/build_doc_ids.py --out-dir data/gold
+
+# corpus/registry/chunks manifest → 데이터 정상성 (1층)
+RAG_ROOT=/srv/rfp python scripts/build_data_manifest.py --out data/gold/data_manifest.json
+
+RAG_ROOT=/srv/rfp python -m grader.cli run --mode checks \
+    --evaluation-set data/evalsets/final/final.jsonl \
+    --data-manifest data/gold/data_manifest.json \
+    --corpus-doc-ids data/gold/corpus_doc_ids.json \
+    --excluded-doc-ids data/gold/excluded_doc_ids.json
+```
+
+- 6-자산 provenance 는 `config/base.yaml §①` > `$RAG_ROOT/.../VERSION.txt` 에서 **자동** 채워진다
+  (현재 실측: `corpus=v2 preprocess=v2 table=v2`). `--corpus` 등은 실험 override 용.
+- 이태민 검색 출력이 박예진 청크 스키마(`section_path` + `location_label`)로 오면
+  `Location.from_chunk` 가 `{document, section, ref_no}` 로 변환 — 분할 표 `표 7 (2/3)` 는 `표 7` 과 매칭.
+
 ## 실행
 
 ```bash
 pip install -e ".[dev]"
 python -m grader.cli --help
-python -m grader.cli run --config configs/default.yaml --overlay configs/ci.yaml \
-    --evaluation-set data/evalsets/practice/practice_items.jsonl \
-    --responses data/outputs/responses.jsonl --mode ci --practice-set data/evalsets/practice/practice_items.jsonl
-pytest -q
+pytest -q          # 150 tests
 ```

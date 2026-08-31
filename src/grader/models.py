@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
@@ -62,6 +63,11 @@ def as_id_list(value: Any) -> list[str]:
     return [str(v) for v in value]
 
 
+def _strip_part(ref: str) -> str:
+    """분할 표의 `표 7 (2/3)` → `표 7`. 좌표 채점은 어느 part인지 안 따진다."""
+    return re.sub(r"\s*\(\d+\s*/\s*\d+\)\s*$", "", str(ref or "")).strip()
+
+
 class Location(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -74,7 +80,24 @@ class Location(BaseModel):
             return (self.document,)
         if precision == "section":
             return (self.document, self.section)
-        return (self.document, self.section, self.ref_no)
+        return (self.document, self.section, _strip_part(self.ref_no))
+
+    @classmethod
+    def from_chunk(cls, document_id: str, section_path: list[str] | None,
+                   location_label: str | None) -> "Location":
+        """박예진 청크(C-3) 좌표를 grader 의 {document, section, ref_no} 로 변환한다.
+
+        section_path : ["2. 사업개요", "제18조(평가배점)"]  (마지막 원소가 절)
+        location_label: "제18조(평가배점) · 표 7 (2/3)"  또는 "... · 문단 1-4"
+        → ref_no 는 ` · ` 뒤 부분에서 (part/of) 를 뗀 것.
+        """
+        sp = [s for s in (section_path or []) if s]
+        section = sp[-1] if sp else ""
+        label = str(location_label or "")
+        ref_no = _strip_part(label.rsplit(" · ", 1)[-1]) if " · " in label else ""
+        if not section and " · " in label:
+            section = label.rsplit(" · ", 1)[0].strip()
+        return cls(document=document_id, section=section, ref_no=ref_no)
 
 
 class EvaluationItem(BaseModel):
@@ -175,12 +198,36 @@ class EvaluationItem(BaseModel):
         return self.answer_raw if isinstance(self.answer_raw, str) else None
 
 
+def _chunk_location_before(data: Any) -> Any:
+    """박예진 청크 스키마(C-3)를 그대로 받으면 location 을 합성한다.
+    이태민 검색 출력이 `{document_id, section_path, location_label, ...}` 형태로 오면
+    grader 는 location({document, section, ref_no}) 이 필요하다."""
+    if not isinstance(data, dict) or data.get("location") is not None:
+        return data
+    doc = data.get("document_id")
+    if doc and ("section_path" in data or "location_label" in data):
+        data = dict(data)
+        data["location"] = Location.from_chunk(
+            doc, data.get("section_path"), data.get("location_label")
+        ).model_dump()
+    return data
+
+
 class ContextChunk(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     document_id: str | None = None
-    text: str
+    text: str = ""  # 박예진 청크는 `content`/`search_text` 로 오므로 필수 아님
     location: Location | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_location(cls, data: Any) -> Any:
+        data = _chunk_location_before(data)
+        if isinstance(data, dict) and not data.get("text"):
+            data = dict(data)
+            data["text"] = data.get("search_text") or data.get("content") or ""
+        return data
 
 
 class RetrievedItem(BaseModel):
@@ -191,6 +238,11 @@ class RetrievedItem(BaseModel):
     document_id: str
     location: Location | None = None
     score: float | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_location(cls, data: Any) -> Any:
+        return _chunk_location_before(data)
 
 
 class ModelResponse(BaseModel):

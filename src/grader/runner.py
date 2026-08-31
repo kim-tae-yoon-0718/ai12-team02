@@ -27,7 +27,7 @@ from pathlib import Path
 import time
 
 from .cache import FileCache, build_cache_key
-from .config import GraderConfig
+from .config import GraderConfig, read_base_yaml_assets
 from . import diagnostics as diag
 from . import extraction as extr
 from . import retrieval as retr
@@ -110,9 +110,10 @@ class GraderRunner:
         self.config = config
         self.provider = provider
         self.prompt_repo = prompt_repo
-        # 팀 확정 6-자산 provenance (base.yaml §① 6칸): CLI 인자 > configs/default.yaml
-        # 기본값 > $RAG_ROOT/evalset/v1/VERSION.txt(corpus·evalset 자동) 순.
-        # 어디에도 없으면 models.Provenance 가 "UNKNOWN"으로 채운다.
+        # 팀 확정 6-자산 provenance. 우선순위:
+        #   CLI 인자(실험 override) > config/base.yaml §①(팀 단일 출처)
+        #   > VERSION.txt 자동 조회 > configs/default.yaml 폴백 > "UNKNOWN"
+        by = read_base_yaml_assets()
         versions = read_versions()
 
         def _pick(*cands: str | None) -> str:
@@ -121,12 +122,12 @@ class GraderRunner:
                     return c
             return "UNKNOWN"
 
-        self.corpus = _pick(corpus, config.provenance.corpus, versions.get("corpus"))
-        self.preprocess = _pick(preprocess, config.provenance.preprocess)
-        self.table = _pick(table, config.provenance.table)
-        self.index = _pick(index, config.provenance.index)
-        self.evalset = _pick(evalset, config.provenance.evalset, versions.get("evalset"))
-        self.scorer = _pick(scorer, config.provenance.scorer)
+        self.corpus = _pick(corpus, by.get("corpus"), versions.get("corpus"), config.provenance.corpus)
+        self.preprocess = _pick(preprocess, by.get("preprocess"), versions.get("preprocess"), config.provenance.preprocess)
+        self.table = _pick(table, by.get("table"), versions.get("table"), config.provenance.table)
+        self.index = _pick(index, by.get("index"), config.provenance.index)
+        self.evalset = _pick(evalset, by.get("evalset"), versions.get("evalset"), config.provenance.evalset)
+        self.scorer = _pick(scorer, by.get("scorer"), config.provenance.scorer)
         # 심판 프롬프트 세부 버전 — 6칸이 아니라 manifest 부가 정보(오염 방지 4-9 재료).
         self.judge_prompt_versions = {name: prompt_repo.version_of(name) for name in config.judge.names}
         self.cache = FileCache(config.cache.directory) if config.cache.enabled else None
