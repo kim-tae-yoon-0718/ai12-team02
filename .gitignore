@@ -260,3 +260,6 @@ huggingface/
 # OS
 .DS_Store
 Thumbs.db
+
+# grader 산출물 (report.json / per_item.jsonl)
+artifacts/

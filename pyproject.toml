@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rag-grader-pipeline"
+version = "0.1.0"
+description = "Professional RAG evaluation and LLM Judge pipeline"
+requires-python = ">=3.10"
+dependencies = [
+  "pydantic>=2.8,<3",
+  "PyYAML>=6.0,<7",
+  "httpx>=0.27,<1",
+  "python-dotenv>=1.0,<2"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<10",
+  "ruff>=0.6,<1"
+]
+
+[project.scripts]
+grader = "grader.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

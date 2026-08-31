@@ -1,0 +1,1 @@
+{"id": "Q0001", "question": "이 사업 예산이 얼마야?", "task_type": "extraction", "answer_type": "value", "document_id": "<문서ID>", "field_tag": null, "answer_raw": "5억원", "answer_normalized": "500000000", "location": {"document": "<문서ID>", "section": "3장 2절", "ref_no": "표3"}}
