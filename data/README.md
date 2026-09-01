@@ -2,6 +2,10 @@
 
 `.gitkeep` 만 커밋되고 실제 파일은 `.gitignore` 로 막혀 있다. 각자 로컬에 채운다.
 
+**예외 — `gold/` 아래 3개 파일은 커밋한다** (문서 본문 없음, 참조 무결성 검사 공유용):
+`corpus_doc_ids.json` · `excluded_doc_ids.json` · `data_manifest.json`.
+`RAG_ROOT=/srv/rfp make data` 로 재생성되며, 문서 등록부가 바뀌면 갱신해 다시 커밋한다.
+
 | 디렉토리 | 무엇 | 출처 |
 | --- | --- | --- |
 | `raw/` | 원본 RFP 문서 (HWP/PDF) | 박예진 (체크리스트1) |

@@ -234,6 +234,11 @@ service-account*.json
 !/data/**/
 !/data/**/.gitkeep
 !/data/README.md
+# 예외: data/gold 아래 문서 ID·매니페스트 JSON은 커밋 허용
+#   (문서 본문 없음 — RFP-000001 형태의 ID 목록 + 집계 숫자뿐. 참조 무결성 검사 공유용)
+!/data/gold/corpus_doc_ids.json
+!/data/gold/excluded_doc_ids.json
+!/data/gold/data_manifest.json
 
 # 벡터 DB / 인덱스
 vectorstore/
