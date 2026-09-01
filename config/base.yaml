@@ -66,10 +66,12 @@ table_degraded_threshold: 0.6 # 확정 2026-08-31 (C-2 ②, 박예진 실측) �
 # ⭐ 2026-08-31 방향 전환: 원래 목표가 "오픈AI vs 로컬 모델 비교"였음. 로컬
 #   트랙 속도 문제로, 이태민은 오픈AI 트랙을 먼저 진행 (로컬 트랙은 김태윤이
 #   이어감). 담당·파이프라인 구조는 그대로, 모델 트랙만 전환.
-embedding_provider: "openai"  # 확정 2026-08-31 — 저비용 시작 원칙(측정 먼저,
-                              #   승격 나중)에 따라 오픈AI 임베딩으로 우선 진행
-embedding_model: null         # TODO — 오픈AI 후보: text-embedding-3-small(저비용
-                              #   시작) → 필요시 text-embedding-3-large로 승격 검토.
+embedding_provider: "openai"  # 확정(재확정) 2026-08-31 — 한 차례 후보비교로
+                              #   철회했다가, baseline을 오늘 실제로 돌리기로 하며
+                              #   오픈AI 트랙으로 재확정. 저비용 시작 원칙(측정 먼저,
+                              #   승격 나중) 적용
+embedding_model: "text-embedding-3-small"  # 확정 2026-08-31 — 저비용 시작값.
+                              #   필요시 text-embedding-3-large로 승격 검토(측정 후).
                               #   로컬 후보 실측 기록(참고용, 김태윤 트랙에서 이어감):
                               #   bge-m3/KURE-v1(p95 일반631·표1550), Qwen3-8B(688/1401),
                               #   EXAONE(597/1350), HyperCLOVA(595/1324), Gemma(615/1120)
@@ -78,9 +80,8 @@ embedding_model: null         # TODO — 오픈AI 후보: text-embedding-3-small
 embedding_max_length: null    # TODO — 선택 모델의 규약값
 embedding_prefix_query: null  # TODO — 오픈AI 임베딩은 접두어 규약 없음 (e5 계열만 해당)
 embedding_prefix_doc: null    # TODO — 위와 동일
-data_egress_confirmed: false  # ⚠️ 대기 — RFP 문서를 오픈AI API로 전송하는 것에
-                              #   대한 명시적 확인 필요(공개 입찰 자료라 문제 적을
-                              #   가능성 높으나 미확인). baseline 실행 전 확인 필요
+data_egress_confirmed: true   # 확정 2026-08-31 — RFP 문서를 오픈AI API로 전송하는
+                              #   것에 대한 팀 확인 완료. baseline 실제 실행 승인.
 
 # ─────────────────────────────
 # ④ 검색 (4-9-x) — 이태민 담당
@@ -97,27 +98,16 @@ vector_store_metadata_filter: ["사업명", "입찰_참여_마감일"]  # 확정
                                    #   매칭 정규화 필요 수준이 임현진 2-2-2에 달림 —
                                    #   이태민 단독 결정 아님). 사업금액·공고번호·
                                    #   입찰 참여 시작일은 신뢰도 낮아 제외
-vector_store_per_doc_metadata: ["doc_id", "corpus_version", "duplicate_name_flag", "content_duplicate_of"]
-                                   # 확정 2026-08-27, 보완 2026-08-30 (박예진 doc_id 발급)
-                                   #   doc_id/corpus_version — 문서 증가는 정상 동작이라
-                                   #   어느 문서가 어느 코퍼스 버전인지 구분 필요.
-                                   #   doc_id 형식: RFP-000001~RFP-000100(예진님 발급,
-                                   #   문서 등록부 v2 기준, 파일명·정렬과 무관하게 고정)
-                                   #   duplicate_name_flag — 사업명 중복 사업 표시(현재
-                                   #   1쌍 발견, 메타데이터 레벨). 질의 매칭 시 이 플래그
-                                   #   있는 문서만 발주기관까지 추가 대조, 나머지는
-                                   #   사업명만으로 매칭.
-                                   #   content_duplicate_of — 콘텐츠 레벨 중복(수집 경로만
-                                   #   다른 동일 문서). 현재 2쌍: RFP-000006→RFP-000075,
-                                   #   RFP-000017→RFP-000098. 검색 대상에서 제외(활성
-                                   #   100건 중 98건만 검색). duplicate_name_flag와
-                                   #   별개 메커니즘 — 하나가 다른 하나를 대체 안 함.
-                                   #   청킹/임베딩 설정은 문서 단위로 안 남김
-                                   #   (아래 config_mismatch_check가 사전에 막음)
-duplicate_name_check_on_upsert: true  # 확정 2026-08-27 — 사업명 중복 검사는 최초
-                                   #   인덱싱뿐 아니라 문서 추가(upsert)마다 재실행.
-                                   #   신규 문서가 기존과 겹치면 양쪽 다 플래그 갱신
-                                   #   (별도 배치 아님, upsert 로직에 포함)
+vector_store_per_doc_metadata: ["doc_id", "corpus_version"]
+                                   # 정정 2026-08-31 — duplicate_name_flag·
+                                   #   content_duplicate_of는 vector_store.py에서
+                                   #   제거됨(message.txt 9번: 사업명 기반 중복
+                                   #   판정 대신 document_registry_v2의
+                                   #   retrieval_eligible·duplicate_of_document_id를
+                                   #   build_index 단계에서만 신뢰)
+# duplicate_name_check_on_upsert 키 삭제 2026-08-31 — vector_store.py의
+# refresh_duplicate_name_flags()를 제거해서(message.txt 9번) 더 이상 참조할
+# 함수가 없음. 콘텐츠 중복은 document_registry_v2의 retrieval_eligible로 처리.
 config_mismatch_check: true       # 확정 2026-08-27 — 인덱싱 시작 전 인덱스 꼬리표의
                                    #   chunk_size 등과 현재 config 비교, 다르면 중단하고
                                    #   "index_v2를 만드세요" 안내. 섞임을 사전 차단
@@ -136,9 +126,8 @@ active_doc_state: true        # 확정 — 대화 이력 대신 활성 문서 ID
 # ⑤ 생성 (4-12, 4-12-1) — 이태민 담당
 # ─────────────────────────────
 generation_provider: "openai"  # 확정 2026-08-31 — 오픈AI 트랙 우선 진행
-generation_model: null        # TODO — 오픈AI 후보: gpt-4o-mini(저비용 시작, 예산 $20
-                              #   충분 판단) → 필요시 gpt-4o로 승격 검토("측정 먼저,
-                              #   승격 나중" 원칙 적용).
+generation_model: "gpt-4o-mini"  # 확정 2026-08-31 — 저비용 시작(예산 $20 충분 판단).
+                              #   필요시 gpt-4o로 승격 검토("측정 먼저, 승격 나중").
                               #   로컬 후보(참고용, 김태윤 트랙에서 이어감): Qwen/Qwen3-8B,
                               #   LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct(NC 배제 대상),
                               #   naver-hyperclovax/HyperCLOVAX-SEED-Text-Instruct-1.5B,
