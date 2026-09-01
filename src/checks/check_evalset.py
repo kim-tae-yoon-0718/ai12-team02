@@ -297,7 +297,7 @@ def check_leak(items: list[dict], practice_path) -> list[str]:
         if doc:
             for d in doc.split(", "):
                 if d in practice_docs:
-                    errors.append(f"C6: practice document {d} used in final set (item {item['id']})")
+                    errors.append(f"C6: cannot use practice document {d} in final set (item {item['id']})")
 
     return errors
 
