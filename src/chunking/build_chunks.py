@@ -38,7 +38,8 @@ from pathlib import Path
 # ─────────────────────────────────────────────────────────────
 
 # 코드가 읽는 설정 키. base.yaml에 없으면 중단한다(값을 지어내지 않는다).
-OPTIONAL_KEYS = ["embedding_model", "embedding_max_length"]
+OPTIONAL_KEYS = ["embedding_model", "embedding_max_length",
+                 "extraction_version", "schema_version"]
 
 REQUIRED_KEYS = [
     "corpus", "preprocess", "table",
@@ -203,6 +204,19 @@ def load_extraction_metadata(table_dir: Path, cfg: dict):
         "corpus_version": cfg["corpus"],
         "registry_version": cfg["corpus"],   # 등록부는 코퍼스와 같은 버전을 쓴다
     }
+
+    # ⚠️ base.yaml 안에서 table 과 extraction_version·schema_version 이 어긋나면
+    #    사람이 읽을 때 "추출표는 v3인데 추출 버전은 v2"가 된다.
+    #    코드가 읽는 값은 table 하나뿐이라 조용히 통과하므로 여기서 막는다.
+    cfg_ext = cfg.get("extraction_version")
+    if cfg_ext is not None and str(cfg_ext) != str(cfg["table"]):
+        die(f"base.yaml 안에서 충돌합니다 — table: {cfg['table']} / "
+            f"extraction_version: {cfg_ext}. 두 값은 항상 같아야 합니다.")
+    cfg_schema = cfg.get("schema_version")
+    if cfg_schema is not None and str(cfg_schema) != str(meta.get("schema_version")):
+        die(f"base.yaml 의 schema_version({cfg_schema})이 "
+            f"extraction_metadata.json({meta.get('schema_version')})과 다릅니다.")
+
     bad = {k: (meta.get(k), v) for k, v in want.items() if meta.get(k) != v}
     if bad:
         die("추출표 메타데이터의 버전이 설정과 다릅니다: " +
@@ -866,7 +880,7 @@ def process_document(reg_row, md_dir, sidecar_dir, cfg, errors):
                 "boiler_type": b_type, "boiler_label": b_label,
             })
 
-    # ── 병합: 표를 만나면 끊고(C-1 ⑤), 같은 상위 헤딩 아래에서만 합친다(C-1 ④)
+    # ── 병합: 표를 만나면 끊고(C-1 ⑤), 같은 장절 경로일 때만 합친다(C-1 ④)
     chunks_raw = []
     group = []
 
@@ -1139,7 +1153,7 @@ def main():
 
     # ── 집계
     # ⚠️ 부분 갱신에서도 파일 전체를 기준으로 센다.
-    #    이번에 처리한 문서만 세면 chunks.jsonl은 18,142행인데
+    #    이번에 처리한 문서만 세면 chunks.jsonl은 chunks.jsonl은 전체인데
     #    stats.json·VERSION.txt에는 232 같은 숫자가 남아 서로 다른 기록이 된다.
     all_chunks = merged
     lens = sorted(c["char_len"] for c in all_chunks)
