@@ -11,12 +11,12 @@ from grader.task_scoring import grade_abstention
 
 
 def test_config_carries_5_3_2_weights():
-    cfg = load_config("configs/default.yaml")
+    cfg = load_config("config/grader.yaml")
     assert cfg.gate.field_tag_weight == {"critical": 5, "major": 3, "minor": 2}
 
 
 def test_weighted_score_uses_5_3_2_from_config():
-    cfg = load_config("configs/default.yaml")
+    cfg = load_config("config/grader.yaml")
     rows = [
         {"field_tag": "critical", "score": 0.0},   # 치명 오답
         {"field_tag": "major", "score": 1.0},
@@ -29,7 +29,7 @@ def test_weighted_score_uses_5_3_2_from_config():
 
 
 def test_full_report_applies_config_weights():
-    cfg = load_config("configs/default.yaml")
+    cfg = load_config("config/grader.yaml")
     rows = [
         {"task_type": "extraction", "field_tag": "critical", "score": 0.0,
          "final_status": "FAIL-content", "abstention": {"abstention_kind": "ok"}},

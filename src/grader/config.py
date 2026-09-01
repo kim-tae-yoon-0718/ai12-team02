@@ -129,7 +129,7 @@ _ASSET_KEYS = ("corpus", "preprocess", "table", "index", "evalset", "scorer")
 
 def read_base_yaml_assets(path: str | Path | None = None) -> dict[str, str]:
     """team 규약 config/base.yaml §① 6칸을 읽는다. 없으면 빈 dict.
-    grader 는 이 값을 configs/default.yaml 의 provenance 블록보다 우선한다(단일 출처)."""
+    grader 는 이 값을 config/grader.yaml 의 provenance 블록보다 우선한다(단일 출처)."""
     paths = [Path(path)] if path else [Path(p) for p in _BASE_YAML_CANDIDATES]
     for p in paths:
         if not p.exists():
@@ -151,16 +151,16 @@ def _deep_merge(base: dict, overlay: dict) -> dict:
     return out
 
 
-def load_config(path: str | Path = "configs/default.yaml",
+def load_config(path: str | Path = "config/grader.yaml",
                 overlay: str | Path | None = None) -> GraderConfig:
-    """configs/default.yaml 을 읽고, overlay(configs/ci.yaml 등)가 있으면 바뀐 줄만 덮는다."""
+    """config/grader.yaml 을 읽고, overlay(config/ci.yaml 등)가 있으면 바뀐 줄만 덮는다."""
     load_dotenv()
     path = Path(path)
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     if overlay is not None:
         ov = yaml.safe_load(Path(overlay).read_text(encoding="utf-8")) or {}
         raw = _deep_merge(raw, ov)
-    base_dir = path.resolve().parent.parent  # configs/default.yaml -> 프로젝트 루트
+    base_dir = path.resolve().parent.parent  # config/grader.yaml -> 프로젝트 루트
 
     judge_raw = raw["judge"]
     judge_entries = judge_raw["judges"]

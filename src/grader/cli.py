@@ -29,9 +29,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--evaluation-set", required=True)
     run.add_argument("--responses", help="4/5층 채점에 필요. checks 모드는 생략 가능")
     run.add_argument("--mode", choices=["checks", "ci", "development", "final"], default="development")
-    run.add_argument("--config", default="configs/default.yaml")
+    run.add_argument("--config", default="config/grader.yaml")
     run.add_argument("--overlay", default=None,
-                     help="실험별 오버레이(configs/ci.yaml 등) — default.yaml 위에 바뀐 줄만 덮음")
+                     help="실험별 오버레이(config/ci.yaml 등) — grader.yaml 위에 바뀐 줄만 덮음")
     run.add_argument("--out-dir", default=None, help="기본값은 설정 파일의 out_dir")
     # 팀 확정 6-자산 provenance. scorer 는 채점기 코드 + 심판 프롬프트에서 자동 도출.
     run.add_argument("--corpus", default=None, help="6-자산 ① 원문 코퍼스 버전")

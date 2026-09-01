@@ -112,7 +112,7 @@ class GraderRunner:
         self.prompt_repo = prompt_repo
         # 팀 확정 6-자산 provenance. 우선순위:
         #   CLI 인자(실험 override) > config/base.yaml §①(팀 단일 출처)
-        #   > VERSION.txt 자동 조회 > configs/default.yaml 폴백 > "UNKNOWN"
+        #   > VERSION.txt 자동 조회 > config/grader.yaml 폴백 > "UNKNOWN"
         by = read_base_yaml_assets()
         versions = read_versions()
 
@@ -482,7 +482,7 @@ def execute(
             # 걸러지지 않는다 — final에서는 여기서 명시적으로 막는다(3-8).
             return _finish(EXIT_CONFIG, layers, manifest, out_dir,
                            "★use_stub_judge=true 로는 tier=final 실행 불가 — StubJudge는 "
-                           "심판이 아니라 배관 점검용이다. configs/default.yaml 에서 끄고 "
+                           "심판이 아니라 배관 점검용이다. config/grader.yaml 에서 끄고 "
                            "실제 심판을 연결하라.")
         try:
             runner.judge.assert_ready(generator_family=None, strict=True)

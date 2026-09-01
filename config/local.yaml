@@ -1,0 +1,6 @@
+# config/local.yaml — 개인 개발용 오버레이. ★커밋 대상 아님(.gitignore).
+#   python -m grader.cli run --config config/grader.yaml --overlay config/local.yaml ...
+# 예: 로컬 모델 경로, 작은 subset, 캐시 위치 등을 여기서만 덮는다.
+
+use_stub_judge: true
+dev_subset_size: 10

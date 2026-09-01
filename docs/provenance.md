@@ -6,7 +6,7 @@
 (`v1`/`v2` …)은 팀 실험 인프라 `base.yaml §① "재료 버전 6칸 (필드명 고정 — 절대 개명 금지)"`
 과 **정확히 일치**.
 
-| # | 필드 | 자산 | 채우는 사람 | 현재 기본값 (`configs/default.yaml`) |
+| # | 필드 | 자산 | 채우는 사람 | 현재 기본값 (`config/grader.yaml`) |
 | --- | --- | --- | --- | --- |
 | ① | `corpus` | 원문 코퍼스 | 박예진 | `UNKNOWN` (VERSION.txt/base.yaml 있으면 `v2`) |
 | ② | `preprocess` | 전처리 파이프라인 (파싱·정제·청킹) | 박예진 | `UNKNOWN` (실데이터 연결 시 `v2`) |
@@ -26,7 +26,7 @@
 ## 주입 순서
 
 `--corpus/--preprocess/--table/--index/--evalset/--scorer` (CLI)
-> `configs/default.yaml` `provenance:`
+> `config/grader.yaml` `provenance:`
 > `$RAG_ROOT/evalset/v1/VERSION.txt` (corpus·evalset 자동 조회)
 
 `VERSION.txt` 포맷 (팀 확정 2026-08-30):

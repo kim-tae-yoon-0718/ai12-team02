@@ -19,7 +19,7 @@ tier=final 로 쓸 수 있다(`grader.judge.Judge.assert_ready` 가 이를 강�
 
 ## 아직 연결이 안 된 것
 
-- 사람 채점 대조 기록(3-9 verification record) — `configs/grader.yaml`의
+- 사람 채점 대조 기록(3-9 verification record) — `config/grader.yaml`의
   `judge.verification_path`가 비어 있는 동안 `tier: final` 실행은 `Judge.assert_ready()`가
   거부한다. `judge_faithfulness.v1.md`의 CHANGELOG에도 "3-9 사람 대조 미실시 →
   tier=final 사용 금지 상태"라고 명시돼 있다.

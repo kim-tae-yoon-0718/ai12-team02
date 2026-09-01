@@ -8,7 +8,7 @@
 ```
 평가셋 문항 (EvaluationItem)  ─┐
 시스템 응답 (ModelResponse)   ─┼─▶  runner.run_one  ─▶  EvaluationResult (문항별)
-설정 (configs/default.yaml)  ─┘                           │
+설정 (config/grader.yaml)  ─┘                           │
                                                           ▼
                                       diagnostics.full_report  ─▶  report.json (집계)
 ```
@@ -33,7 +33,7 @@
 | 모듈 | 역할 | 문서 |
 | --- | --- | --- |
 | `models.py` | 입력/출력 계약 (pydantic) | [schema.md](schema.md) |
-| `config.py` | `configs/*.yaml` 로더 (+ 오버레이 병합) | — |
+| `config.py` | `config/*.yaml` 로더 (+ 오버레이 병합) | — |
 | `normalize.py` | 3-7 금액·날짜·유니코드 정규화, `match_short`/`match_location` | — |
 | `task_scoring.py` | 3-3~3-4-5 내용 채점 + 형식 계약 + 기권 분리 | [scoring.md](scoring.md) |
 | `retrieval.py` | 3-2 검색 평가 + 3-4-3 출처 좌표 채점 | [scoring.md](scoring.md) |

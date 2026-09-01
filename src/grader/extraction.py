@@ -13,7 +13,7 @@ grader.extraction — 3-2-1 구조화 추출 테이블 평가 / 3-2-2 문서 특
      확인한 것과 대조한다(박예진 4-6-2 / 1-12-2 결과물).
 
 [확정 2026-08-31] 12필드 목록·상태 어휘·field_tag 등급은 rfp_extraction_table_v2
-(박예진, /srv/rfp) 와 configs/default.yaml gate.column_severity 에서 확정.
+(박예진, /srv/rfp) 와 config/grader.yaml gate.column_severity 에서 확정.
 [대기 ← 태윤 원문대조 JSONL] pred↔gold 표본 감사 데이터. GATE_BY_SEVERITY 임계값은
 지금 임시값이며 baseline 실측 후 조정한다.
 ────────────────────────────────────────────────────────────────

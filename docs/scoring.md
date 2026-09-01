@@ -33,7 +33,7 @@
 
 ## field_tag severity 가중치 (3-3-2, 팀 확정)
 
-`critical : major : minor = 5 : 3 : 2` (`configs/default.yaml` `gate.field_tag_weight`).
+`critical : major : minor = 5 : 3 : 2` (`config/grader.yaml` `gate.field_tag_weight`).
 
 3-3-2 는 세 가지를 **항상 나란히** 낸다 (하나가 다른 하나를 대체하지 않음):
 1. **①가중 평균** (`severity_weighted_score`) — 문항별 점수 × field_tag 가중치
@@ -79,7 +79,7 @@
 - `conflict` 행은 v1 채점 제외(C 결정) — `n_conflict_excluded` 로 따로 집계, 정확도 분모에서 뺌.
 - ★"정보성 부재(`field_absent`/`not_disclosed`/`external_reference`) ↔ `extraction_failed`" 혼동률을
   낸다 — 부정조건 질의를 조용히 틀리게 만드는 지점.
-- 컬럼 등급(`configs/default.yaml` `gate.column_severity`): 12필드 critical 4 / major 5 / minor 3
+- 컬럼 등급(`config/grader.yaml` `gate.column_severity`): 12필드 critical 4 / major 5 / minor 3
   (키 = 추출표 `field_name` 실값, 근거 = 체크리스트 1-12-1). `GATE_BY_SEVERITY` 임계값은 baseline 후 조정.
 - [대기 ← 태윤] pred↔gold 표본 감사 JSONL. `mode=final` 은 `--extraction-audit` 없이 실행 불가.
   audit 행은 `column` 또는 `field_name` 키 둘 다 받는다.

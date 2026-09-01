@@ -75,7 +75,7 @@ def test_field_names_match_base_yaml_six_slots():
 # ------------------------------------------------------------------ 입력값 자동 복사
 
 def _runner(**over):
-    cfg = load_config("configs/default.yaml")
+    cfg = load_config("config/grader.yaml")
     cfg = replace(cfg, use_stub_judge=True, dev_subset_size=10)
     kwargs = dict(
         config=cfg,
@@ -136,15 +136,15 @@ def test_missing_versions_fall_back_to_unknown_without_dropping_fields(tmp_path:
     monkeypatch.delenv("RAG_ROOT", raising=False)
     import grader.config as _cfg
     monkeypatch.setattr(_cfg, "_BASE_YAML_CANDIDATES", ())
-    runner = _runner()  # 버전 인자 전혀 안 줌. configs/default.yaml 은 index=v1 / scorer=v1
+    runner = _runner()  # 버전 인자 전혀 안 줌. config/grader.yaml 은 index=v1 / scorer=v1
     report, per_item = _run_dev(tmp_path, runner)
 
     prov = report["manifest"]["provenance"]
     assert set(prov) == EXPECTED_FIELDS  # 6축 전부 존재
     for k in ("corpus", "preprocess", "table", "evalset"):
         assert prov[k] == "UNKNOWN"  # 버전 정보 없음 → 축은 남고 값만 UNKNOWN
-    assert prov["index"] == "v1"    # configs/default.yaml 기본값 (base.yaml §①)
-    assert prov["scorer"] == "v1"   # configs/default.yaml 기본값
+    assert prov["index"] == "v1"    # config/grader.yaml 기본값 (base.yaml §①)
+    assert prov["scorer"] == "v1"   # config/grader.yaml 기본값
 
     for row in per_item:
         assert set(row["provenance"]) == EXPECTED_FIELDS

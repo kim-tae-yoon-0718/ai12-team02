@@ -24,7 +24,7 @@
 
 ```text
 Makefile          make install/test/lint/data/check — 팀 공용 단축 명령
-configs/          default.yaml (설정 한 곳) + ci.yaml/local.yaml (오버레이)
+config/           grader.yaml (채점 설정 한 곳) + ci.yaml/local.yaml (오버레이) + base.yaml (팀 공통 모델 설정)
 prompts/          judge_*.v1.md — 팀 확정 심판 프롬프트 원문
 docs/             설계·규칙 문서 (위 표)
 scripts/          run_* (CLI 래퍼) + build_doc_ids / build_data_manifest (박예진 산출물 → grader 입력)
@@ -63,7 +63,7 @@ python -m grader.cli run \
   --responses tests/fixtures/model_responses.jsonl --mode development
 
 # CI (practice 세트 필수 — 없으면 exit 1, 임현진 2-17)
-python -m grader.cli run --config configs/default.yaml --overlay configs/ci.yaml \
+python -m grader.cli run --config config/grader.yaml --overlay config/ci.yaml \
   --evaluation-set data/evalsets/final/final.jsonl \
   --responses data/outputs/responses.jsonl --mode ci \
   --practice-set data/evalsets/practice/practice_items.jsonl
