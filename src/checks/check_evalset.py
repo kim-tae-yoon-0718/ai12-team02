@@ -85,13 +85,13 @@ def check_schema(item: dict, line_num: int) -> List[str]:
     결여 사항이 없을 경우 -> 빈 리스트
     """
     errors = []
-    # TODO 1: 공통 필수 5개 필드 존재 확인
+    # 1: 공통 필수 5개 필드 존재 확인
     essential_fields = ["id", "question", "task_type", "answer_type", "answer_raw"]
     missing = [f for f in essential_fields if f not in item]
     if missing:
         errors.extend(f"line {line_num}: missing field '{f}'" for f in missing)
 
-    # TODO 2: FIELD_SPEC에 정의된 각 필드의 타입/enum 검증
+    # 2: FIELD_SPEC에 정의된 각 필드의 타입/enum 검증
     for field_name, spec in FIELD_SPEC.items():
         if field_name not in item:
             continue
@@ -123,12 +123,12 @@ def check_schema(item: dict, line_num: int) -> List[str]:
                     missing_keys = spec - value.keys()
                     errors.append(f"line {line_num}: location missing key(s) '{missing_keys}'")
 
-    # TODO 3: DEPRECATED_FIELDS에 있는 키가 item에 남아있는지 확인
+    # 3: DEPRECATED_FIELDS에 있는 키가 item에 남아있는지 확인
     for field_name in item:
         if field_name in DEPRECATED_FIELDS:
             errors.append(f"line {line_num}: deprecated field '{field_name}'")
 
-    # TODO 4: task_type x answer_type 조합 검증
+    # 4: task_type x answer_type 조합 검증
     task_type = item.get("task_type")
     answer_type = item.get("answer_type")
 
@@ -136,19 +136,19 @@ def check_schema(item: dict, line_num: int) -> List[str]:
         if answer_type not in TASK_ANSWER_COMBOS[task_type]:
             errors.append(f"line {line_num}: '{task_type}' cannot have answer_type '{answer_type}'")
 
-    # TODO 5: 문서 미특정 질문, 시나리오형 질문에서 필수 필드 조합 검증(FIELD_DEPENDENCIES)
+    # 5: 문서 미특정 질문, 시나리오형 질문에서 필수 필드 조합 검증(FIELD_DEPENDENCIES)
     for trigger_field, required_field in FIELD_DEPENDENCIES.items():
         if trigger_field in item:
             missing_required = [r for r in required_field  if r not in item]
             if missing_required:
                 errors.append(f"line {line_num}: '{trigger_field}' must activate by required_field '{missing_required}'")
 
-    # TODO 6: task_type = "selection" x answer_source 조합 검증
+    # 6: task_type = "selection" x answer_source 조합 검증
     if item.get("task_type") == "selection":
         if "answer_source" not in item:
             errors.append(f"line {line_num}: task type 'selection' needs answer source")
 
-    # TODO 7: None(null)값인 필드 검증
+    # 7: None(null)값인 필드 검증
     for k, v in item.items():
         if v is None:
             errors.append(f"line {line_num}: invalid value(null)")
@@ -204,13 +204,21 @@ def check_ref_intg(items: list[dict], doc_ids_path) -> List[str]:
     doc_ids_path 파일 없으면 SKIP
     """
     errors = []
-    # TODO 1: doc_ids_path 존재 확인 — 없으면 print("C4: SKIP (...)") 후 빈 리스트 반환'
-    data = json.loads(Path("corpus_doc_ids.json").read_text(encoding="utf-8"))
+    if not Path(doc_ids_path).exists():
+        print(f"C4: SKIP (doc_ids 파일 없음)")
+        return errors
+    
+    data = json.loads(Path(doc_ids_path).read_text(encoding="utf-8"))
     valid_ids = set(data)
-    # TODO 2: corpus_doc_ids.json 로드해서 set으로
-    # TODO 3: 각 item의 location.document 검사 (조건부 필드라 키 없으면 건너뜀 — 2-7 "키 자체 생략" 규칙)
-    # TODO 4: 선별형 정답(문서ID 배열)도 같은 set으로 검사
-    #   주의: 검색대상은 98건이지만 C4 기준은 등록부 100건 (2-8-1 확정) — excluded 2건도 "실재"로 취급
+
+    for item in items:
+        doc = item.get("location", {}).get("document")
+        if doc is not None and doc not in valid_ids:
+            errors.append(f"C4: 없는 문서: {doc} (item {item.get('item_id')})")
+        for d in item.get("정답배열필드명", []):
+            if d not in valid_ids:
+                errors.append(f"C4: 없는 문서: {d} (item {item.get('item_id')})")
+    
     return errors
 
 
