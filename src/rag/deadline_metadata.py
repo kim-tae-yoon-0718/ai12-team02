@@ -19,6 +19,7 @@ from __future__ import annotations
 import csv
 import json
 import os
+import re
 import unicodedata
 from datetime import datetime
 from pathlib import Path
@@ -104,17 +105,73 @@ def load_org_index(csv_path: Path, registry_path: Path) -> dict[str, list[str]]:
     return index
 
 
+def _filter_subsumed_org_names(matched_orgs: list[str]) -> list[str]:
+    """긴 기관명에 포함되는 짧은 기관명은 배제한다. 예: 질문에 "서울특별시
+    교육청"만 썼는데 "서울특별시"(다른 문서)까지 부분 문자열로 같이
+    매칭되는 걸 막는다 — 체크리스트가 경고한 "부분일치 허용 시 실패"의
+    구체 사례가 실제 데이터로 재현됐다(서울특별시 vs 서울특별시교육청)."""
+    return [
+        org for org in matched_orgs
+        if not any(other != org and org in other for other in matched_orgs)
+    ]
+
+
+def match_org_names(question: str, org_index: dict[str, list[str]]) -> list[str]:
+    """질문에 부분 문자열로 들어있는 기관명을 감지 — 서로 포함 관계인
+    기관명은 긴 쪽만 남긴다(_filter_subsumed_org_names)."""
+    matched = [org for org in org_index if org and org in question]
+    return _filter_subsumed_org_names(matched)
+
+
+_ORG_SUFFIX_RE = re.compile(
+    r"[가-힣]{2,20}(?:재단|공사|공단|진흥원|연구원|협회|위원회|청|처|공단|센터|대학교|시청|도청)"
+)
+
+
+def detect_unknown_org(question: str, org_index: dict[str, list[str]]) -> str | None:
+    """질문에서 기관명처럼 생긴 표현(재단/청/공사/진흥원 등으로 끝나는 고유
+    명사)을 뽑아서, 그게 실제 org_index(공식 CSV 기관명)에 하나도 없으면
+    그 표현을 반환한다 — 존재하지 않는 사업을 물어볼 때(QA-004류) 검색·
+    생성을 태우기 전에 걸러내는 용도. 유사도 임계값 대신 구조화된 데이터
+    (실제 발주기관 목록)로 판단한다(4-9-8 원칙 — 검증된 데이터 우선).
+    기관명 표현 자체가 없으면(일반 질문) None — 이 경우는 정상적으로
+    검색 경로를 탄다."""
+    candidates = _ORG_SUFFIX_RE.findall(question)
+    if not candidates:
+        return None
+    known_orgs = set(org_index.keys())
+    for candidate in candidates:
+        # 후보가 알려진 기관명의 부분 문자열이거나, 알려진 기관명이 후보의
+        # 부분 문자열이면(표기 경계 차이) 알려진 기관으로 인정한다.
+        if any(candidate in org or org in candidate for org in known_orgs):
+            return None
+    return candidates[0]
+
+
 def find_documents_by_org_mention(question: str, org_index: dict[str, list[str]]) -> list[str]:
-    """질문에 기관명이 부분 문자열로 들어있으면 매칭되는 document_id를 전부
-    반환(중복 제거, 등장 순서 유지). 여러 문서가 매칭되면 호출측이 모호성을
-    처리해야 한다 — 여기서 임의로 하나를 고르지 않는다."""
+    """질문에 명시된 기관명이 부분 문자열로 들어있으면 매칭되는 document_id를
+    전부 반환(중복 제거, 등장 순서 유지). 여러 문서가 매칭되면 호출측이
+    모호성을 처리해야 한다 — 여기서 임의로 하나를 고르지 않는다."""
     matched: list[str] = []
-    for org, doc_ids in org_index.items():
-        if org and org in question:
-            for d in doc_ids:
-                if d not in matched:
-                    matched.append(d)
+    for org in match_org_names(question, org_index):
+        for d in org_index[org]:
+            if d not in matched:
+                matched.append(d)
     return matched
+
+
+def format_deadline_answer(
+    document_id: str, deadline_map: dict[str, datetime | None],
+) -> tuple[str, bool]:
+    """추출형 "마감일이 언제야?" 질문용 — (답변 문구, 기권 여부) 반환.
+    선별형 필터(is_before_deadline)와 달리 여기는 값 자체를 그대로 보여주는
+    용도라 별도 함수로 둔다."""
+    if document_id not in deadline_map:
+        return f"{document_id}의 마감일 정보를 찾을 수 없습니다(CSV 매핑 실패).", True
+    deadline = deadline_map[document_id]
+    if deadline is None:
+        return f"{document_id}의 마감일은 원문에 명시돼 있지 않습니다(미상).", True
+    return f"{document_id}의 입찰 참여 마감일: {deadline.strftime('%Y-%m-%d %H:%M')}", False
 
 
 def is_before_deadline(

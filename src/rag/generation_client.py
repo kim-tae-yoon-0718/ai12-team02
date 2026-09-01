@@ -3,6 +3,10 @@ J — 답변 생성. 오픈AI 트랙(2026-08-31 확정), gpt-4o-mini 저비용 �
 temperature=0 고정(재현성, 4-12 확정). 프롬프트 지시 4종을 항상 포함한다:
 ① 근거에만 기반해 답하라(충실성) ② 근거에 없으면 모른다고 하라
 ③ 출처를 표기하라 ④ 형식·톤·길이 요구
+
+프롬프트는 코드에 안 넣고 prompts/generate_v1.txt에서 읽는다(message.txt
+4번 확정) — config.py가 base.yaml을 찾는 것과 같은 방식(파일 위치 기준
+상위 탐색)이라 저장소 구조가 바뀌어도(src/rag/ vs flat) 그대로 동작한다.
 """
 from __future__ import annotations
 import os
@@ -15,13 +19,32 @@ except ImportError:
     OpenAI = None  # type: ignore
 
 
-SYSTEM_PROMPT_TEMPLATE = """당신은 RFP(제안요청서) 문서를 근거로 답하는 조수입니다.
-반드시 아래 원칙을 지키세요:
-1. 제공된 근거(context)에만 기반해 답하세요. 근거에 없는 내용을 지어내지 마세요.
-2. 근거에서 답을 찾을 수 없으면 "확인할 수 없습니다"라고 답하세요. 억지로 답을 만들지 마세요.
-3. 답변에 반드시 출처(문서명, 장절 또는 표 번호)를 표기하세요.
-4. {format_instruction}
-"""
+def _find_prompt_file(name: str = "generate_v1.txt") -> Path:
+    """generation_client.py 기준 상위 경로 어딘가의 prompts/{name}을 찾는다.
+    없으면 조용히 하드코딩 문자열로 대체하지 않고 명시적으로 에러."""
+    override = os.environ.get("RAG_PROMPT_DIR")
+    if override:
+        p = Path(override) / name
+        if p.exists():
+            return p
+        raise RuntimeError(f"RAG_PROMPT_DIR이 가리키는 파일이 없습니다: {p}")
+
+    here = Path(__file__).resolve().parent
+    for candidate_root in [here, *here.parents]:
+        candidate = candidate_root / "prompts" / name
+        if candidate.exists():
+            return candidate
+    raise RuntimeError(
+        f"prompts/{name}을 찾지 못했습니다. generation_client.py 기준 상위 경로 "
+        f"어디에도 prompts/{name}이 없습니다. RAG_PROMPT_DIR 환경변수로 직접 "
+        f"지정하거나 prompts/{name}을 만들어 두세요. 프롬프트를 코드에 다시 "
+        f"하드코딩하지 않습니다(message.txt 4번 확정)."
+    )
+
+
+def _load_system_prompt_template() -> str:
+    path = _find_prompt_file()
+    return path.read_text(encoding="utf-8")
 
 
 class GenerationClient:
@@ -48,6 +71,9 @@ class GenerationClient:
         self.model = model
         self.temperature = cfg.get("temperature", 0)
         self.max_tokens = cfg.get("max_tokens")
+        # 프롬프트 파일이 없으면 실제 생성 시점이 아니라 클라이언트 생성 시점에
+        # 바로 에러 — 문제를 최대한 일찍 드러낸다.
+        self._system_prompt_template = _load_system_prompt_template()
 
     def generate(
         self,
@@ -56,7 +82,7 @@ class GenerationClient:
         format_instruction: str = "간결하고 명확하게 답하세요.",
     ) -> str:
         context = "\n\n---\n\n".join(context_chunks) if context_chunks else "(근거 없음)"
-        system = SYSTEM_PROMPT_TEMPLATE.format(format_instruction=format_instruction)
+        system = self._system_prompt_template.format(format_instruction=format_instruction)
         user = f"[근거]\n{context}\n\n[질문]\n{question}"
 
         kwargs: dict[str, Any] = dict(

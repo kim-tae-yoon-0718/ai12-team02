@@ -31,6 +31,10 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+# scripts/build_index.py 기준 ../rag를 sys.path에 추가 — 라이브러리 모듈은
+# src/rag/에, 진입점은 src/scripts/에 나뉘어 있는 구조 대응.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "rag"))
+
 from config import load_config, index_dir
 from git_info import get_git_info, warn_if_dirty
 from embedding_client import EmbeddingClient
@@ -38,44 +42,49 @@ from vector_store import VectorStore, ChunkMetadata, IndexTag, config_mismatch_c
 
 
 def load_chunks(chunks_path: Path) -> list[dict]:
-    with open(chunks_path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-
+    """⚠️ 정정(리뷰 반영): 예전엔 파일 끝만 잘린 경우 경고 후 스킵하고
+    계속 진행했는데, 이건 조용한 데이터 손실이었다(에러 없이 문서가
+    빠짐). baseline 단계라 문제를 숨기지 않고 바로 드러내는 게 맞다 —
+    잘린 파일은 무조건 에러로 막는다. 원본을 다시 받아야 한다."""
     chunks = []
-    for line_no, raw_line in enumerate(lines, 1):
-        line = raw_line.strip()
-        if not line:
-            continue
-        try:
-            chunks.append(json.loads(line))
-        except json.JSONDecodeError as e:
-            if line_no == len(lines):
-                # 파일 끝이 중간에 잘린 경우만 건너뛴다 — 업로드/생성 도중 truncate로
-                # 흔히 생기는 패턴. 중간 줄이 깨진 경우는 다른 문제라 여전히 에러로 막는다.
-                print(f"⚠️  {chunks_path}: 마지막 줄({line_no})이 잘려 있어 건너뜁니다 "
-                      f"— 원본 파일이 도중에 끊겼을 가능성이 높습니다. 완전한 청크 "
-                      f"{len(chunks)}개로 계속 진행합니다.")
+    with open(chunks_path, "r", encoding="utf-8") as f:
+        for line_no, line in enumerate(f, 1):
+            line = line.strip()
+            if not line:
                 continue
-            raise ValueError(
-                f"{chunks_path}:{line_no} JSON 파싱 실패(파일 끝이 아닌 중간 줄) — "
-                f"단순 truncate가 아니라 다른 손상일 수 있습니다. 원인: {e}"
-            ) from e
+            try:
+                chunks.append(json.loads(line))
+            except json.JSONDecodeError as e:
+                raise ValueError(
+                    f"{chunks_path}:{line_no} JSON 파싱 실패 — 파일이 중간에 잘렸을 "
+                    f"수 있습니다(업로드/생성 도중 truncate). 원본을 다시 확인하세요. "
+                    f"원인: {e}"
+                ) from e
     return chunks
 
 
 def map_chunk(c: dict) -> dict:
     """실제 청크 필드명 → ChunkMetadata가 기대하는 이름으로 매핑.
-    필수 키가 없으면 KeyError로 바로 죽는다(조용히 빈 문자열로 메꾸지 않음)."""
-    for required in ("chunk_id", "document_id", "search_text", "block_type"):
-        if required not in c:
-            raise KeyError(f"청크에 필수 필드 '{required}'가 없습니다: {c.get('chunk_id')}")
+    필수 키가 없으면 KeyError로 바로 죽는다(조용히 빈 문자열로 메꾸지 않음).
+    ⚠️ 정정(리뷰 반영): document_version/processed_sha256/sidecar_sha256도
+    필수로 바꿨다 — 예전엔 없으면 빈 문자열로 조용히 채웠는데, 이건 인덱스
+    재현성·버전 추적을 깨는 조용한 데이터 손실이었다."""
+    required = (
+        "chunk_id", "document_id", "search_text", "block_type",
+        "document_version", "processed_sha256", "sidecar_sha256",
+    )
+    for field in required:
+        if field not in c or c[field] in (None, ""):
+            raise KeyError(
+                f"청크에 필수 필드 '{field}'가 없습니다: {c.get('chunk_id', '(chunk_id도 없음)')}"
+            )
     section_path = c.get("section_path") or []
     return {
         "chunk_id": c["chunk_id"],
         "document_id": c["document_id"],
-        "document_version": c.get("document_version", ""),
-        "processed_sha256": c.get("processed_sha256", ""),
-        "sidecar_sha256": c.get("sidecar_sha256", ""),
+        "document_version": c["document_version"],
+        "processed_sha256": c["processed_sha256"],
+        "sidecar_sha256": c["sidecar_sha256"],
         "corpus_version": c.get("corpus_version", ""),
         "text": c["search_text"],
         "document_name": c.get("source_document_title", ""),

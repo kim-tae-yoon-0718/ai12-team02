@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-from table_query import FIELD_KEYWORDS
+from table_query import FIELD_KEYWORDS, _DEADLINE_KEYWORDS
 
 TaskType = Literal["select", "extract", "qa", "compare", "no_search_needed"]
 
@@ -35,9 +35,9 @@ _SELECT_PATTERNS = [
 # 나뉘어 있으면 한쪽만 고치고 잊어버리기 쉽다.
 _FIELD_KEYWORD_ALTERNATION = "|".join(
     re.escape(kw) for kws in FIELD_KEYWORDS.values() for kw in kws
-)
+) + "|" + "|".join(re.escape(kw) for kw in _DEADLINE_KEYWORDS)
 _EXTRACT_PATTERNS = [
-    rf"(?:{_FIELD_KEYWORD_ALTERNATION}).*(?:얼마|언제|어디|뭐|무엇|알려줘|확인)",
+    rf"(?:{_FIELD_KEYWORD_ALTERNATION}).*(?:얼마|언제|어디|뭐|무엇|알려줘|확인|어떻게|어때|알고 ?싶)",
 ]
 _COMPARE_PATTERNS = [
     r"(비교|차이|어느 쪽|둘 중)",

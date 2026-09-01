@@ -58,7 +58,7 @@ FIELD_KEYWORDS: dict[str, list[str]] = {
     "컨소시엄 요건": ["컨소시엄"],
     "평가 배점": ["평가배점", "평가 배점", "배점"],
     "제출 방식": ["제출방식", "제출 방식"],
-    "필수 제출 서류": ["제출서류", "제출 서류", "필수서류", "필수 서류"],
+    "필수 제출 서류": ["제출서류", "제출 서류", "필수서류", "필수 서류", "서류"],
     "과업 범위": ["과업범위", "과업 범위"],
 }
 
@@ -71,11 +71,29 @@ _NEEDS_EXPLANATION_KEYWORDS = ["설명해", "왜", "자세히", "근거", "어�
 
 
 def detect_field(question: str) -> str | None:
-    """질문에서 12필드 중 어느 필드를 묻는지 감지. 못 찾으면 None."""
+    """질문에서 12필드 중 어느 필드를 묻는지 감지(첫 매칭만). 못 찾으면 None."""
     for field, keywords in FIELD_KEYWORDS.items():
         if any(kw in question for kw in keywords):
             return field
     return None
+
+
+def detect_fields(question: str) -> list[str]:
+    """질문에서 12필드 중 언급된 필드를 전부 감지(비교형이 "예산이랑
+    사업기간만" 처럼 여러 필드를 동시에 요구할 때 씀). FIELD_KEYWORDS
+    순서를 그대로 따른다."""
+    return [field for field, keywords in FIELD_KEYWORDS.items()
+            if any(kw in question for kw in keywords)]
+
+
+# 마감일은 4-9-8 v3 확정으로 12필드에서 빠졌다 — FIELD_KEYWORDS에 안 넣는다.
+# 하지만 실제로 물어보는 질문은 많아서(선별형 필터용 CSV 데이터는 이미 있음),
+# 12필드 표 대신 CSV(deadline_map)를 보는 별도 경로로 감지한다.
+_DEADLINE_KEYWORDS = ["마감일", "마감 일", "마감기한", "입찰 마감", "제출 마감", "언제까지"]
+
+
+def detect_deadline_question(question: str) -> bool:
+    return any(kw in question for kw in _DEADLINE_KEYWORDS)
 
 
 def detect_document_id(question: str) -> str | None:
