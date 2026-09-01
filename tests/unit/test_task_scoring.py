@@ -116,6 +116,21 @@ def test_comparison_one_cell_wrong():
     assert s.detail["conclusion_at_risk"] is True
 
 
+def test_comparison_real_evalset_format():
+    """임현진 평가셋 실제 형식: 행마다 {항목, <RFP-ID>: 값}. (PRAC-QA-003)"""
+    it = _item(task_type="qa", answer_type="comparison", answer_raw=[
+        {"항목": "예산", "RFP-000038": "230,000천원", "RFP-000043": "248,796천원"},
+        {"항목": "사업기간", "RFP-000038": "4개월", "RFP-000043": "5개월"},
+    ])
+    resp = _resp(answer="| ... |", structured_answer={
+        "RFP-000038": {"예산": "230,000천원", "사업기간": "4개월"},
+        "RFP-000043": {"예산": "248,796천원", "사업기간": "3개월"},  # 1칸 오답
+    })
+    s = grade_comparison(it, resp)
+    assert s.detail["cells"] == 4
+    assert s.score == 0.75
+
+
 # ------------------------------------------------------------------ 기권 (v0.2: answer_type=unanswerable)
 
 def test_abstention_hallucination():

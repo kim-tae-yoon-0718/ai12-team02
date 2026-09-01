@@ -24,6 +24,7 @@ grader.task_scoring — 3-3 형식 계약 / 3-4 ~ 3-4-5 채점기 본체 / 3-3 �
 
 from __future__ import annotations
 
+import re
 from typing import Any, Callable
 
 from .models import (
@@ -165,18 +166,30 @@ def grade_summary_checkpoint(item: EvaluationItem, response: ModelResponse,
 
 # ------------------------------------------------------------------ comparison
 
+_CMP_DOC_RE = re.compile(r"RFP-\d{4,}")
+
+
 def _parse_comparison_gold(value) -> list[tuple[str, str, str]]:
-    """[대기 ← 임현진 2-8-4] 비교형 정답의 최종 스키마 표현은 아직 확정되지 않았다.
-    확정 스키마는 answer_raw/answer_normalized를 str | list[str] 로만 허용하므로,
-    잠정적으로 "document_id|field|value" 문자열 목록으로 표현한다고 가정한다.
-    실제 표현이 확정되면 이 파서만 교체하면 되도록 격리해 두었다."""
+    """비교형 정답(2-8-4 확정: 문서 ID 명시형 + 지정 항목 + 값 정렬)을
+    (document_id, field, value) 튜플 목록으로 편다. 두 표현을 받는다:
+
+    ① 임현진 평가셋 실제 형식 — 행마다 {"항목": <필드>, "<RFP-ID>": <값>, ...}
+         [{"항목": "예산", "RFP-000038": "230,000천원", "RFP-000043": "248,796천원"}, ...]
+    ② 잠정 문자열 형식(구 테스트 호환) — "document_id|field|value"
+    """
     if not isinstance(value, list):
         return []
-    out = []
+    out: list[tuple[str, str, str]] = []
     for row in value:
-        parts = str(row).split("|")
-        if len(parts) == 3:
-            out.append((parts[0], parts[1], parts[2]))
+        if isinstance(row, dict):
+            field = str(row.get("항목") or row.get("field") or row.get("항목명") or "").strip()
+            for k, v in row.items():
+                if _CMP_DOC_RE.fullmatch(str(k).strip()):
+                    out.append((str(k).strip(), field, str(v)))
+        else:
+            parts = str(row).split("|")
+            if len(parts) == 3:
+                out.append((parts[0], parts[1], parts[2]))
     return out
 
 
