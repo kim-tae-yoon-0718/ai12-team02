@@ -17,6 +17,7 @@ deadline_filter_field(base.yaml, "입찰 참여 마감일") 컬럼명은 코드�
 """
 from __future__ import annotations
 import csv
+import json
 import os
 import unicodedata
 from datetime import datetime
@@ -27,6 +28,34 @@ from typing import Any
 def _stem_nfc(filename: str) -> str:
     """확장자를 떼고 NFC로 정규화 — CSV·registry 파일명을 같은 기준으로 비교."""
     return unicodedata.normalize("NFC", os.path.splitext(filename)[0])
+
+
+def _load_csv_rows_by_document_id(csv_path: Path, registry_path: Path) -> dict[str, dict]:
+    """document_id -> 원본 CSV 행(딕셔너리) 매핑. 마감일·기관명 등 여러 용도의
+    공용 조인 — CSV·registry 파싱을 여기서만 한다(같은 로직 두 번 안 짬)."""
+    with open(registry_path, "r", encoding="utf-8") as f:
+        registry_doc = json.load(f)
+    if "documents" not in registry_doc:
+        raise ValueError(f"{registry_path}: 'documents' 키가 없습니다.")
+    stem_to_doc_id = {
+        _stem_nfc(row["output_filename"]): row["document_id"]
+        for row in registry_doc["documents"]
+    }
+
+    with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.DictReader(f))
+
+    result: dict[str, dict] = {}
+    unmatched = 0
+    for row in rows:
+        doc_id = stem_to_doc_id.get(_stem_nfc(row["파일명"]))
+        if doc_id is None:
+            unmatched += 1
+            continue
+        result[doc_id] = row
+    if unmatched:
+        print(f"⚠️  CSV {unmatched}행이 registry 문서와 매핑되지 않았습니다.")
+    return result
 
 
 def load_deadline_by_document_id(
@@ -42,32 +71,12 @@ def load_deadline_by_document_id(
             "CSV의 실제 컬럼명을 채워야 합니다."
         )
 
-    import json
-    with open(registry_path, "r", encoding="utf-8") as f:
-        registry_doc = json.load(f)
-    if "documents" not in registry_doc:
-        raise ValueError(f"{registry_path}: 'documents' 키가 없습니다.")
-    stem_to_doc_id = {
-        _stem_nfc(row["output_filename"]): row["document_id"]
-        for row in registry_doc["documents"]
-    }
-
-    with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
-        reader = csv.DictReader(f)
-        if deadline_field not in (reader.fieldnames or []):
-            raise KeyError(
-                f"{csv_path}: 컬럼 '{deadline_field}'가 없습니다. "
-                f"실제 컬럼: {reader.fieldnames}"
-            )
-        rows = list(reader)
+    rows_by_doc = _load_csv_rows_by_document_id(csv_path, registry_path)
+    if rows_by_doc and deadline_field not in next(iter(rows_by_doc.values())):
+        raise KeyError(f"{csv_path}: 컬럼 '{deadline_field}'가 없습니다.")
 
     mapping: dict[str, datetime | None] = {}
-    unmatched_csv_rows = 0
-    for row in rows:
-        doc_id = stem_to_doc_id.get(_stem_nfc(row["파일명"]))
-        if doc_id is None:
-            unmatched_csv_rows += 1
-            continue
+    for doc_id, row in rows_by_doc.items():
         raw = (row.get(deadline_field) or "").strip()
         if not raw:
             mapping[doc_id] = None  # 마감일 미상 — deadline_missing_policy로 처리
@@ -79,10 +88,33 @@ def load_deadline_by_document_id(
             print(f"⚠️  {doc_id}: 마감일 형식을 못 읽었습니다({raw!r}) — 미상으로 처리")
             mapping[doc_id] = None
 
-    if unmatched_csv_rows:
-        print(f"⚠️  CSV {unmatched_csv_rows}행이 registry 문서와 매핑되지 않았습니다.")
-
     return mapping
+
+
+def load_org_index(csv_path: Path, registry_path: Path) -> dict[str, list[str]]:
+    """발주 기관 이름(원문 그대로) -> document_id 목록. org_only 질문
+    ("발주기관명만으로 묻는 질문")에서 문서를 특정하는 데 씀. 청킹·임베딩
+    대상 아님 — CSV를 그대로 읽는 구조화 조회."""
+    rows_by_doc = _load_csv_rows_by_document_id(csv_path, registry_path)
+    index: dict[str, list[str]] = {}
+    for doc_id, row in rows_by_doc.items():
+        org = (row.get("발주 기관") or "").strip()
+        if org:
+            index.setdefault(org, []).append(doc_id)
+    return index
+
+
+def find_documents_by_org_mention(question: str, org_index: dict[str, list[str]]) -> list[str]:
+    """질문에 기관명이 부분 문자열로 들어있으면 매칭되는 document_id를 전부
+    반환(중복 제거, 등장 순서 유지). 여러 문서가 매칭되면 호출측이 모호성을
+    처리해야 한다 — 여기서 임의로 하나를 고르지 않는다."""
+    matched: list[str] = []
+    for org, doc_ids in org_index.items():
+        if org and org in question:
+            for d in doc_ids:
+                if d not in matched:
+                    matched.append(d)
+    return matched
 
 
 def is_before_deadline(

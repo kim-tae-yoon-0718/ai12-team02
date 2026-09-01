@@ -26,7 +26,67 @@ from table_query import (
     load_extraction_table, parse_conditions, run_conditions_query, QueryResult,
     detect_field, detect_document_id, detect_document_ids, needs_explanation, lookup_field,
 )
-from deadline_metadata import load_deadline_by_document_id, is_before_deadline
+from deadline_metadata import (
+    load_deadline_by_document_id, is_before_deadline,
+    load_org_index, find_documents_by_org_mention,
+)
+
+
+# 4-14 확정 — 대화 맥락에서 "지금 얘기 중인 문서"를 최소 상태로만 유지한다.
+# 쿼리 재작성 같은 건 안 함, 그냥 "직전에 특정된 문서 ID 하나"만 기억.
+_ANAPHORA_MARKERS = ["그 사업", "이 사업", "해당 사업", "그 문서", "이 문서", "위 사업", "그거", "이거"]
+
+
+@dataclass
+class SessionState:
+    active_document_id: str | None = None
+
+
+def has_anaphora(question: str) -> bool:
+    return any(m in question for m in _ANAPHORA_MARKERS)
+
+
+@dataclass
+class DocumentResolution:
+    document_id: str | None
+    method: str  # "explicit" | "org" | "anaphora" | "none"
+    candidates: list[str] = None  # type: ignore[assignment]  # org 매칭이 여러 건일 때만 채움
+
+    def __post_init__(self):
+        if self.candidates is None:
+            self.candidates = []
+
+
+def resolve_document_id(
+    question: str,
+    session: "SessionState | None" = None,
+    org_index: dict[str, list[str]] | None = None,
+) -> DocumentResolution:
+    """추출형·비교형·QA형이 공통으로 쓰는 문서 특정 로직. 우선순위:
+    1) 질문에 명시된 문서 ID(RFP-000001 형식)
+    2) 질문에 언급된 발주기관명(org_only) — 여러 문서에 매칭되면 모호성으로 반환
+    3) "그 사업"류 지시 표현(anaphora) + 세션에 남아있는 직전 활성 문서
+    아무것도 못 찾으면 method="none"으로 반환 — 호출측이 확인 질문 처리.
+    문서가 하나로 확정되면 세션의 active_document_id를 그 문서로 갱신한다."""
+    explicit = detect_document_id(question)
+    if explicit:
+        if session is not None:
+            session.active_document_id = explicit
+        return DocumentResolution(explicit, "explicit")
+
+    if org_index:
+        org_matches = find_documents_by_org_mention(question, org_index)
+        if len(org_matches) == 1:
+            if session is not None:
+                session.active_document_id = org_matches[0]
+            return DocumentResolution(org_matches[0], "org")
+        if len(org_matches) > 1:
+            return DocumentResolution(None, "org", candidates=org_matches)
+
+    if session is not None and session.active_document_id and has_anaphora(question):
+        return DocumentResolution(session.active_document_id, "anaphora")
+
+    return DocumentResolution(None, "none")
 
 
 @dataclass
@@ -227,13 +287,18 @@ def answer_extract_by_table(
     get_embed_client: "Callable[[], EmbeddingClient]",
     get_gen_client: "Callable[[], GenerationClient]",
     cfg: dict[str, Any],
+    session: SessionState | None = None,
+    org_index: dict[str, list[str]] | None = None,
 ) -> Answer:
     """12필드 추출형 — 기본은 F-0 → G-2 → K-2(값만, 코드로 조립, LLM 안 태움).
     질문이 원문 설명·근거까지 요구하면 F-0 → G → I → J → K-2로 넘어간다
     (message.txt 8번 세 번째 경로). 둘 다 field·document_id가 명확해야만
-    타고, 애매하면 QA로 조용히 새지 않고 확인 질문으로 되묻는다."""
+    타고, 애매하면 QA로 조용히 새지 않고 확인 질문으로 되묻는다.
+
+    문서 특정은 resolve_document_id()로 통일 — 명시적 ID → 발주기관명
+    (org_only) → "그 사업" 같은 지시 표현 + 직전 활성 문서(anaphora) 순으로
+    시도한다(4-14 확정)."""
     field = detect_field(question)
-    doc_id = detect_document_id(question)
 
     if field is None:
         return Answer(
@@ -241,16 +306,29 @@ def answer_extract_by_table(
             task_type="extract", route_matched_rule=None, route_is_fallback=False,
             sources=[], abstained=True,
         )
-    if doc_id is None:
-        # 4-14(활성 문서 상태)가 answer() 오케스트레이션에 아직 연결 안 돼 있어
-        # (README 확인) 지금은 질문에 문서 ID가 명시돼야만 G-2로 특정할 수 있다.
+
+    resolution = resolve_document_id(question, session=session, org_index=org_index)
+    if resolution.document_id is None:
+        if resolution.candidates:
+            # 발주기관명이 여러 문서에 매칭됨 — 임의로 하나를 고르지 않고 되묻는다
+            return Answer(
+                text=(
+                    f"'{field}'를 물으신 기관에 해당하는 사업이 여러 건입니다: "
+                    + ", ".join(resolution.candidates)
+                    + " — 어느 사업인지 문서 ID로 알려주시겠어요?"
+                ),
+                task_type="extract", route_matched_rule=None, route_is_fallback=False,
+                sources=[], abstained=True,
+                condition_query=[{"field": field, "document_id": None, "candidates": resolution.candidates}],
+            )
         return Answer(
-            text=f"'{field}'를 어느 문서에서 확인할까요? 문서 ID(예: RFP-000001)를 "
-                 f"알려주시면 바로 찾아드릴게요.",
+            text=f"'{field}'를 어느 문서에서 확인할까요? 문서 ID(예: RFP-000001) "
+                 f"또는 발주기관명을 알려주시면 바로 찾아드릴게요.",
             task_type="extract", route_matched_rule=None, route_is_fallback=False,
             sources=[], abstained=True,
             condition_query=[{"field": field, "document_id": None}],
         )
+    doc_id = resolution.document_id
 
     if needs_explanation(question):
         # 값 + 원문 설명 둘 다 필요 — G→I→J→K 경로(검색+생성)로, 검색 범위는
@@ -260,7 +338,9 @@ def answer_extract_by_table(
         result = answer_qa_or_extract_by_search(
             question, store, embed_client, gen_client, cfg, document_id=doc_id,
         )
-        result.condition_query = [{"field": field, "document_id": doc_id, "route": "G→I→J→K"}]
+        result.condition_query = [
+            {"field": field, "document_id": doc_id, "route": "G→I→J→K", "resolved_by": resolution.method}
+        ]
         return result
 
     row = lookup_field(table, doc_id, field)
@@ -269,7 +349,7 @@ def answer_extract_by_table(
             text=f"{doc_id} 문서에서 '{field}' 항목을 찾을 수 없습니다.",
             task_type="extract", route_matched_rule=None, route_is_fallback=False,
             sources=[], abstained=True,
-            condition_query=[{"field": field, "document_id": doc_id}],
+            condition_query=[{"field": field, "document_id": doc_id, "resolved_by": resolution.method}],
         )
 
     status = row["status"]
@@ -299,7 +379,10 @@ def answer_extract_by_table(
     return Answer(
         text=text, task_type="extract", route_matched_rule=None, route_is_fallback=False,
         sources=[f"{doc_id} (추출표: {field})"], abstained=abstained,
-        condition_query=[{"field": field, "document_id": doc_id, "status": status, "route": "G-2"}],
+        condition_query=[
+            {"field": field, "document_id": doc_id, "status": status,
+             "route": "G-2", "resolved_by": resolution.method}
+        ],
         condition_result_doc_ids=[doc_id],
     )
 
@@ -361,11 +444,15 @@ def answer(
     get_gen_client: "Callable[[], GenerationClient]",
     table: list[dict], cfg: dict[str, Any],
     deadline_map: dict[str, datetime | None] | None = None,
+    session: SessionState | None = None,
+    org_index: dict[str, list[str]] | None = None,
 ) -> Answer:
     """embed_client/gen_client는 즉시 인스턴스가 아니라 지연 생성 콜러블로 받는다
     (message.txt 8번 확정) — no_search_needed·select 경로는 OpenAI 클라이언트가
     아예 필요 없으므로 호출 자체를 하지 않는다.
-    deadline_map은 선별형 마감 필터(4-10-2)용 — 없으면 필터 없이 동작(경고만)."""
+    deadline_map은 선별형 마감 필터(4-10-2)용 — 없으면 필터 없이 동작(경고만).
+    session/org_index는 4-14(활성 문서 상태)·org_only 질문 처리용 — 둘 다
+    없으면 지금까지와 동일하게 질문에 문서 ID가 명시돼야만 추출형이 동작한다."""
     r: RouteResult = route(question, cfg)
 
     try:
@@ -382,14 +469,22 @@ def answer(
             # 확정대로 G-2(코드 조회) 우선, 원문 설명 필요시에만 검색 경로로 이관
             result = answer_extract_by_table(
                 question, table, store, get_embed_client, get_gen_client, cfg,
+                session=session, org_index=org_index,
             )
         elif r.task_type == "compare":
             # message.txt 8번 확정 — 필드×문서 구조로 코드가 조립, LLM 안 태움
             result = answer_compare_by_table(question, table)
         elif r.task_type == "qa":
+            # QA는 extract만큼 엄격하지 않음 — 문서가 특정되면(명시/기관명/
+            # anaphora) 그 문서로 검색 범위를 좁히고, 특정 안 되면(모호하거나
+            # 아예 없으면) 코퍼스 전체에서 검색한다(기존 동작 유지).
+            qa_resolution = resolve_document_id(question, session=session, org_index=org_index)
             embed_client = get_embed_client()
             gen_client = get_gen_client()
-            result = answer_qa_or_extract_by_search(question, store, embed_client, gen_client, cfg)
+            result = answer_qa_or_extract_by_search(
+                question, store, embed_client, gen_client, cfg,
+                document_id=qa_resolution.document_id,
+            )
         else:
             result = Answer(
                 text="확인할 수 없습니다.", task_type=r.task_type,
@@ -416,9 +511,12 @@ def main():
     parser.add_argument("--index", required=True, help="index_vN 폴더 경로")
     parser.add_argument("--extraction-table", required=False)
     parser.add_argument("--registry", required=False,
-                         help="document_registry_v2.json 경로 — 마감 필터용 CSV 매핑에 필요")
+                         help="document_registry_v2.json 경로 — 마감 필터·기관명 매핑에 필요")
     parser.add_argument("--deadline-csv", required=False,
-                         help="data_list.csv 경로 — 있어야 선별형 마감 필터(4-10-2)가 켜짐")
+                         help="data_list.csv 경로 — 있어야 선별형 마감 필터·org_only 질문이 켜짐")
+    parser.add_argument("--active-document", required=False,
+                         help="직전 활성 문서 ID를 수동 지정(4-14 수동 테스트용) — "
+                              "예: --active-document RFP-000001. anaphora 질문 단독 테스트에 씀.")
     parser.add_argument("--experiment-config", required=False)
     args = parser.parse_args()
 
@@ -427,13 +525,18 @@ def main():
     table = load_extraction_table(Path(args.extraction_table)) if args.extraction_table else []
 
     deadline_map = None
+    org_index = None
     if args.deadline_csv and args.registry:
         deadline_map = load_deadline_by_document_id(
             Path(args.deadline_csv), Path(args.registry), cfg,
         )
+        org_index = load_org_index(Path(args.deadline_csv), Path(args.registry))
     elif cfg.get("deadline_filter_default", {}).get("select", False):
         print("⚠️  --deadline-csv/--registry 미지정 — 선별형 마감 필터가 base.yaml엔 "
-              "켜져 있는데 이 실행에선 꺼진 채로 돕니다(마감 지난 사업이 섞일 수 있음).")
+              "켜져 있는데 이 실행에선 꺼진 채로 돕니다(마감 지난 사업이 섞일 수 있음). "
+              "org_only 질문(기관명만으로 묻기)도 이 인자들이 있어야 동작합니다.")
+
+    session = SessionState(active_document_id=args.active_document)
 
     # 지연 생성 — no_search_needed·select 경로에서는 아예 호출되지 않는다
     _cache: dict[str, Any] = {}
@@ -449,7 +552,7 @@ def main():
         return _cache["gen"]
 
     result = answer(args.question, store, get_embed_client, get_gen_client, table, cfg,
-                     deadline_map=deadline_map)
+                     deadline_map=deadline_map, session=session, org_index=org_index)
 
     print(json.dumps(
         {
@@ -460,6 +563,7 @@ def main():
             "answer": result.text,
             "sources": result.sources,
             "abstained": result.abstained,
+            "active_document_after": session.active_document_id,
         },
         ensure_ascii=False, indent=2,
     ))

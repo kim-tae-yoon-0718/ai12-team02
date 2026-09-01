@@ -24,8 +24,8 @@ from vector_store import VectorStore
 from embedding_client import EmbeddingClient
 from generation_client import GenerationClient
 from table_query import load_extraction_table
-from deadline_metadata import load_deadline_by_document_id
-from answer_pipeline import answer
+from deadline_metadata import load_deadline_by_document_id, load_org_index
+from answer_pipeline import answer, SessionState
 
 
 def load_evalset(path: Path) -> list[dict]:
@@ -58,14 +58,16 @@ def main():
     table = load_extraction_table(Path(args.extraction_table)) if args.extraction_table else []
 
     deadline_map = None
+    org_index = None
     if args.deadline_csv and args.registry:
         deadline_map = load_deadline_by_document_id(
             Path(args.deadline_csv), Path(args.registry), cfg,
         )
+        org_index = load_org_index(Path(args.deadline_csv), Path(args.registry))
     elif cfg.get("deadline_filter_default", {}).get("select", False):
         print("⚠️  --deadline-csv/--registry 미지정 — 선별형 마감 필터가 base.yaml엔 "
               "켜져 있는데 이 평가는 필터 없이 돕니다. 채점 결과에 마감 지난 사업이 "
-              "섞여 들어갈 수 있습니다.")
+              "섞여 들어갈 수 있습니다. org_only 질문도 이 인자들이 있어야 동작합니다.")
 
     # message.txt 8번 확정 — select·no_search_needed만 있는 평가셋이면
     # OpenAI 클라이언트를 한 번도 안 만들 수도 있다. 지연 생성으로 통일.
@@ -84,6 +86,19 @@ def main():
     items = load_evalset(Path(args.evalset))
     print(f"평가 문항 {len(items)}개 로드 완료")
 
+    # 4-14(활성 문서 상태) — 평가셋 문항이 'session_id' 필드로 대화 단위를
+    # 밝히고 있으면 그룹이 바뀔 때마다 세션을 리셋한다. 아무 문항에도
+    # session_id가 없으면(예: 이번 연습셋) 파일 전체를 하나의 이어지는
+    # 대화로 취급한다 — 실제 최종 평가셋이 서로 무관한 문항 모음이라면
+    # session_id를 반드시 채워서 넘겨야 문맥이 잘못 섞이지 않는다.
+    has_session_ids = any(item.get("session_id") for item in items)
+    if not has_session_ids:
+        print("⚠️  평가셋에 session_id가 없어 파일 전체를 하나의 대화로 취급합니다 "
+              "(anaphora·활성 문서 상태가 문항 전체에 이어짐). 서로 무관한 문항이 "
+              "섞인 평가셋이라면 session_id를 채워서 넘기세요.")
+    session = SessionState()
+    prev_session_id = items[0].get("session_id") if items else None
+
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -94,9 +109,13 @@ def main():
 
     for i, item in enumerate(items, 1):
         q = item["question"]
+        cur_session_id = item.get("session_id")
+        if has_session_ids and cur_session_id != prev_session_id:
+            session = SessionState()  # 새 대화 시작 — 이전 문항의 활성 문서를 안 이어받음
+            prev_session_id = cur_session_id
         try:
             result = answer(q, store, get_embed_client, get_gen_client, table, cfg,
-                             deadline_map=deadline_map)
+                             deadline_map=deadline_map, session=session, org_index=org_index)
             # ⚠️ 버그 수정(리뷰 반영): answer()는 내부에서 예외를 이미 잡아서
             # error_stage/error_detail로 반환한다 — 그래서 이 try/except는
             # answer() 호출 자체가 실패하는 극히 드문 경우(예: 인자 오류)만
@@ -122,6 +141,8 @@ def main():
                     f"[{result.error_stage}] {result.error_detail}"
                     if result.error_stage else None
                 ),
+                "session_id": cur_session_id,
+                "active_document_after": session.active_document_id,
             }
         except Exception as e:
             record = {
