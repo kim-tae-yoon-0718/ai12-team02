@@ -225,6 +225,11 @@ def check_csv_encoding():
     blob = CSV_PATH.read_bytes()
     detected, fail_pos = None, None
 
+    # ⚠️ utf-8-sig 디코더는 BOM이 없는 일반 UTF-8도 읽는다. 후보 순서대로 시도하면
+    #    BOM 유무와 무관하게 항상 utf-8-sig로 판별된다. 바이트를 직접 본다.
+    has_bom = blob.startswith(b"\xef\xbb\xbf")
+    print(f"- BOM(EF BB BF): {'있음' if has_bom else '없음'}")
+
     for enc in ENCODING_CANDIDATES:
         try:
             text = blob.decode(enc)
@@ -241,7 +246,10 @@ def check_csv_encoding():
         print()
         return
 
-    print(f"- 판별 결과: **{detected}**")
+    if detected == "utf-8-sig" and not has_bom:
+        detected = "utf-8"          # BOM이 없으므로 일반 UTF-8이다
+    print(f"- 판별 결과: **{detected}**"
+          + ("  (BOM 있음)" if has_bom else ""))
     if detected in ("cp949", "euc-kr"):
         print("  ⚠️ UTF-8이 아니다. 읽는 코드마다 encoding 을 명시하지 않으면")
         print("     사람마다 다른 값을 보게 된다 → 1-17 / 1-18")
