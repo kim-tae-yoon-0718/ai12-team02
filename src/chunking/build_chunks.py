@@ -218,10 +218,14 @@ def sha256_of(path: Path) -> str:
 HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.*\S)\s*$")
 TABLE_OPEN_RE = re.compile(r"<table\b", re.I)
 TABLE_CLOSE_RE = re.compile(r"</table\s*>", re.I)
-TR_SPLIT_RE = re.compile(r"(?=<tr\b)", re.I)
+TR_OPEN_RE = re.compile(r"<tr\b", re.I)
 CELL_RE = re.compile(r"<t[dh]\b[^>]*>(.*?)</t[dh]\s*>", re.S | re.I)
 TAG_RE = re.compile(r"<[^>]+>")
 PIPE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
+# | --- | :--- | 구분선.
+# ⚠️ 대시를 필수로 둔다. 없으면 전부 빈 행(|  |  |  |)이 구분선으로 오인되어
+#    빈 셀 비율에서 빠지고 검색 본문에서도 사라진다.
+PIPE_SEP_RE = re.compile(r"^\s*\|[\s:|-]*-[\s:|-]*\|\s*$")
 
 
 def find_tables(text: str):
@@ -258,41 +262,139 @@ def cell_is_blank(cell_html: str) -> bool:
     return stripped.strip() == ""
 
 
-def table_rows(table_html: str):
-    """<tr> 단위로 자른다. 첫 조각(<table ...> 머리)은 헤더 앞부분으로 붙인다."""
-    parts = [p for p in TR_SPLIT_RE.split(table_html) if p.strip()]
-    if not parts:
-        return [], ""
-    if not parts[0].lstrip().lower().startswith("<tr"):
-        return parts[1:], parts[0]
-    return parts, ""
+def table_kind(text: str) -> str:
+    """HTML 표인지 파이프 표(| a | b |)인지."""
+    return "html" if TABLE_OPEN_RE.search(text) else "pipe"
 
 
-def table_blank_ratio(table_html: str):
-    cells = CELL_RE.findall(table_html)
+def _outer_tr_spans(html: str):
+    """바깥 표에 직접 속한 <tr>의 시작 위치와, 바깥 </table>의 시작 위치.
+
+    C-2 ③-b — 중첩 표는 바깥 기준으로만 자른다.
+    ⚠️ 단순 <tr> 분리는 안쪽 표의 행까지 바깥 행으로 세어
+       중첩 표 한가운데를 가르고 HTML 구조를 깬다. 깊이를 센다.
+    """
+    tokens = []
+    for m in TABLE_OPEN_RE.finditer(html):
+        tokens.append((m.start(), "table_open"))
+    for m in TABLE_CLOSE_RE.finditer(html):
+        tokens.append((m.start(), "table_close"))
+    for m in TR_OPEN_RE.finditer(html):
+        tokens.append((m.start(), "tr"))
+    tokens.sort(key=lambda t: t[0])
+
+    depth, tr_starts, close_start = 0, [], len(html)
+    for pos, kind in tokens:
+        if kind == "table_open":
+            depth += 1
+        elif kind == "table_close":
+            depth -= 1
+            if depth == 0:
+                close_start = pos
+                break
+        elif depth == 1:                        # 바깥 표에 직접 속한 행만
+            tr_starts.append(pos)
+    return tr_starts, close_start
+
+
+def table_parts(text: str):
+    """표를 (kind, head, header_rows, body_rows, tail)로 나눈다.
+
+    head        HTML의 <table ...> 여는 부분 (파이프 표는 빈 문자열)
+    header_rows 분할 시 각 조각에 반복할 머리글 (C-2 ③-a)
+    body_rows   본문 행. row_start/row_end는 이 목록의 1-based 순번
+    tail        HTML의 </table> (파이프 표는 빈 문자열)
+    """
+    kind = table_kind(text)
+
+    if kind == "pipe":
+        lines = [ln for ln in text.split("\n") if ln.strip()]
+        if not lines:
+            return kind, "", [], [], ""
+        header = [lines[0]]
+        rest = lines[1:]
+        if rest and PIPE_SEP_RE.match(rest[0]):
+            header.append(rest[0])              # 마크다운 구분선도 머리글에 포함
+            rest = rest[1:]
+        return kind, "", header, rest, ""
+
+    tr_starts, close_start = _outer_tr_spans(text)
+    if not tr_starts:
+        return kind, text[:close_start], [], [], text[close_start:]
+    head = text[:tr_starts[0]]
+    rows = []
+    for i, s in enumerate(tr_starts):
+        e = tr_starts[i + 1] if i + 1 < len(tr_starts) else close_start
+        rows.append(text[s:e])
+    return kind, head, rows[:1], rows[1:], text[close_start:]
+
+
+def table_row_count(text: str) -> int:
+    """본문 행 수. row_end 기본값 계산용."""
+    _, _, _, body, _ = table_parts(text)
+    return len(body)
+
+
+def pipe_cells(line: str):
+    """파이프 표 한 행의 셀. 양끝 구분자는 버린다."""
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+def table_blank_ratio(text: str):
+    """빈 셀 비율. C-2 ② degraded 판정의 입력.
+
+    ⚠️ HTML 계산은 기존과 동일하게 유지한다(중첩 셀 포함).
+       임계값 0.6은 그 방식으로 잰 분포(p90 0.597)를 근거로 정했으므로
+       세는 방식을 바꾸면 임계값의 근거가 사라진다.
+    """
+    kind = table_kind(text)
+    if kind == "html":
+        cells = CELL_RE.findall(text)
+        if not cells:
+            return None, 0, 0
+        blank = sum(1 for c in cells if cell_is_blank(c))
+        return blank / len(cells), blank, len(cells)
+
+    # 파이프 표 — 이전에는 <td>가 없어 항상 None이었고 degraded 판정이 아예 안 됐다.
+    _, _, header, body, _ = table_parts(text)
+    cells = []
+    for line in header + body:
+        if PIPE_SEP_RE.match(line):
+            continue
+        cells.extend(pipe_cells(line))
     if not cells:
         return None, 0, 0
-    blank = sum(1 for c in cells if cell_is_blank(c))
+    blank = sum(1 for c in cells if c == "")
     return blank / len(cells), blank, len(cells)
 
 
-def table_search_text(table_html: str) -> str:
+def table_search_text(text: str) -> str:
     """검색용 텍스트.
 
     C-2 ④ — 빈 셀만 건너뛰고 행 구조는 유지한다.
-    HTML 원본은 수정하지 않는다(이 함수는 별도 텍스트를 만든다).
+    원본(HTML/마크다운)은 수정하지 않는다. 이 함수는 별도 텍스트를 만든다.
+
+    ⚠️ 파이프 표는 <td>가 없어 이전 구현에서 빈 문자열이 나왔다.
+       검색 본문이 장절 접두만 남아 사실상 색인되지 않았다.
     """
+    kind, _, header, body, _ = table_parts(text)
     lines = []
-    rows, _ = table_rows(table_html)
-    for row in rows:
-        cells = CELL_RE.findall(row)
-        vals = []
-        for c in cells:
-            if cell_is_blank(c):
-                continue                        # 빈 셀만 건너뜀
-            vals.append(re.sub(r"\s+", " ", TAG_RE.sub(" ", c)).strip())
+
+    for row in header + body:
+        if kind == "pipe":
+            if PIPE_SEP_RE.match(row):
+                continue                        # 마크다운 구분선은 내용이 아니다
+            vals = [c for c in pipe_cells(row) if c != ""]
+        else:
+            vals = []
+            for c in CELL_RE.findall(row):
+                if cell_is_blank(c):
+                    continue                    # 빈 셀만 건너뜀
+                vals.append(re.sub(r"\s+", " ", TAG_RE.sub(" ", c)).strip())
+        vals = [v for v in vals if v]
         if vals:
             lines.append(" | ".join(vals))
+
     return "\n".join(lines)
 
 
@@ -456,30 +558,37 @@ def split_by_paragraph(text: str, budget: int, overlap: int):
     return pieces, oversize
 
 
-def split_table(table_html: str, budget: int):
-    """C-2 — 행 경계로 분할하고 머리글을 반복한다.
+def split_table(text: str, budget: int):
+    """C-2 — 행 경계로 분할하고 머리글을 반복한다. HTML·파이프 표 공통.
 
-    part/of는 글자 수가 아니라 행 경계로 계산한다.
-    한 행이 budget을 넘으면 자르지 않고 초과를 기록한다.
+    part/of는 글자 수가 아니라 행 경계로 계산한다 (C-2 ③).
+    중첩 표는 바깥 행 단위로만 잘린다 (C-2 ③-b, table_parts가 보장).
+    한 행이 budget을 넘으면 자르지 않고 초과를 기록한다 (C-2 ③-c).
     """
-    rows, head = table_rows(table_html)
-    if not rows:
-        return [(table_html, 0, 0, 1, 1)], 0
-    header = rows[0]
-    body = rows[1:]
+    kind, head, header, body, tail = table_parts(text)
     if not body:
-        return [(table_html, 0, 0, 1, 1)], 0
+        return [(text, 0, 0, 1, 1)], 0
+
+    joiner = "\n" if kind == "pipe" else ""
+
+    def assemble(rowset):
+        segs = ([head] if head else []) + header + list(rowset)
+        out = joiner.join(segs) if kind == "pipe" else head + "".join(header + list(rowset))
+        return out + (("\n" + tail) if (kind == "pipe" and tail) else tail)
+
+    base = len(assemble([]))
 
     parts, cur, cur_start, oversize = [], [], 1, 0
-    base = len(head) + len(header) + len("</table>")
     for idx, row in enumerate(body, start=1):
-        if base + len(row) > budget and not cur:
+        if not cur and base + len(row) > budget:
             parts.append(([row], idx, idx))       # 한 행이 초과 — 그대로 둔다
             oversize += 1
             cur_start = idx + 1
             continue
-        cand_len = base + sum(len(r) for r in cur) + len(row)
-        if cand_len <= budget or not cur:
+        if not cur:
+            cur, cur_start = [row], idx
+            continue
+        if base + sum(len(r) + len(joiner) for r in cur) + len(row) <= budget:
             cur.append(row)
         else:
             parts.append((cur, cur_start, cur_start + len(cur) - 1))
@@ -488,13 +597,8 @@ def split_table(table_html: str, budget: int):
         parts.append((cur, cur_start, cur_start + len(cur) - 1))
 
     of = len(parts)
-    out = []
-    for i, (rowset, r0, r1) in enumerate(parts, start=1):
-        html = head + header + "".join(rowset)
-        if not html.rstrip().lower().endswith("</table>"):
-            html += "</table>"
-        out.append((html, r0, r1, i, of))
-    return out, oversize
+    return [(assemble(rowset), r0, r1, i, of)
+            for i, (rowset, r0, r1) in enumerate(parts, start=1)], oversize
 
 
 # ─────────────────────────────────────────────────────────────
@@ -612,7 +716,7 @@ def process_document(reg_row, md_dir, sidecar_dir, cfg, errors):
             budget = max(tbl_threshold - len(prefix) - 1, 200)
             ratio, blank, total = table_blank_ratio(u["html"])
             if len(u["html"]) <= budget:
-                parts = [(u["html"], 1, len(table_rows(u["html"])[0]), 1, 1)]
+                parts = [(u["html"], 1, max(table_row_count(u["html"]), 1), 1, 1)]
                 t_over = 0
             else:
                 parts, t_over = split_table(u["html"], budget)
@@ -790,26 +894,45 @@ def main():
                         kept.append(obj)
         merged = kept + all_chunks
         merged.sort(key=lambda c: (c["document_id"], c["chunk_id"]))
-        with chunks_path.open("w", encoding="utf-8") as f:
-            for c in merged:
-                f.write(json.dumps(c, ensure_ascii=False) + "\n")
-        written = len(merged)
     else:
-        with chunks_path.open("w", encoding="utf-8") as f:
-            for c in all_chunks:
-                f.write(json.dumps(c, ensure_ascii=False) + "\n")
-        written = len(all_chunks)
+        merged = all_chunks
+
+    chunks_this_run = len(all_chunks)
+
+    # ⚠️ 오류가 있으면 기존 공식 파일을 건드리지 않는다.
+    #    먼저 덮어쓰면 실패한 실행의 불완전한 결과가 공식 자리를 차지한다.
+    hard_errors = [e for e in errors if e["level"] == "error"]
+    if hard_errors:
+        (out_dir / "errors.jsonl").write_text(
+            "\n".join(json.dumps(e, ensure_ascii=False) for e in hard_errors) + "\n",
+            encoding="utf-8")
+        die(f"처리 오류 {len(hard_errors)}건. 기존 산출물을 보존하고 중단합니다. "
+            f"errors.jsonl 확인.")
+
+    # 원자적 교체 — 쓰다가 죽어도 기존 파일이 남는다.
+    tmp_path = chunks_path.with_suffix(".jsonl.tmp")
+    with tmp_path.open("w", encoding="utf-8") as f:
+        for c in merged:
+            f.write(json.dumps(c, ensure_ascii=False) + "\n")
+    tmp_path.replace(chunks_path)
+    written = len(merged)
 
     # ── 집계
+    # ⚠️ 부분 갱신에서도 파일 전체를 기준으로 센다.
+    #    이번에 처리한 문서만 세면 chunks.jsonl은 18,142행인데
+    #    stats.json·VERSION.txt에는 232 같은 숫자가 남아 서로 다른 기록이 된다.
+    all_chunks = merged
     lens = sorted(c["char_len"] for c in all_chunks)
     stats = {
         "generated_at": started.isoformat(),
         "elapsed_sec": round((datetime.now(timezone.utc) - started).total_seconds(), 1),
         "config": {k: cfg[k] for k in REQUIRED_KEYS},
         "git": gi,
-        "documents_processed": len(targets),
+        "mode": "partial" if only else "full",
+        "documents_in_file": len({c["document_id"] for c in all_chunks}),
+        "documents_this_run": len(targets),
         "chunks_written_total": written,
-        "chunks_this_run": len(all_chunks),
+        "chunks_this_run": chunks_this_run,
         "by_type": dict(Counter(c["block_type"] for c in all_chunks)),
         "retrieval_eligible": sum(1 for c in all_chunks if c["retrieval_eligible"]),
         "retrieval_excluded": sum(1 for c in all_chunks if not c["retrieval_eligible"]),
@@ -908,8 +1031,9 @@ def render_version(cfg, gi, stats, registry_path, corpus_dir, table_dir):
         f"입력 등록부   : {registry_path}",
         f"입력 추출표   : {table_dir}",
         "",
-        f"문서 수       : {stats['documents_processed']}",
-        f"청크 수       : {stats['chunks_written_total']}",
+        f"문서 수       : {stats['documents_in_file']}" + (f"  (이번 실행 {stats['documents_this_run']}건)" if stats["mode"] == "partial" else ""),
+        f"청크 수       : {stats['chunks_written_total']}" + (f"  (이번 실행 {stats['chunks_this_run']}개)" if stats["mode"] == "partial" else ""),
+        f"실행 모드     : {stats['mode']}",
         f"검색 대상     : {stats['retrieval_eligible']}",
         f"검색 제외     : {stats['retrieval_excluded']}",
         f"degraded 표   : {stats['table_degraded']}",
