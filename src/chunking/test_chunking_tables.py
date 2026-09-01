@@ -221,20 +221,41 @@ def test_pipe_split_no_row_lost():
 # 회귀 — HTML 경로가 기존과 같아야 한다
 # ─────────────────────────────────────────────────────────────
 
-def test_html_blank_ratio_unchanged():
-    """임계값 0.6은 '중첩 셀 포함 <td|th> 전수' 방식으로 잰 분포가 근거다.
+def test_blank_ratio_counts_outer_cells_only():
+    """행에 직접 속한 셀만 센다. 중첩 표의 셀은 바깥 셀 내용에 흡수된다."""
+    ratio, blank, total = table_blank_ratio(HTML_SIMPLE)
+    _check(total == 6, f"단순 표 셀 수가 6이 아니다: {total}")
+    _check(blank == 0, f"빈 셀이 없어야 한다: {blank}")
 
-    세는 방식을 바꾸면 C-2 ②의 근거가 사라지므로 기존 계산과 동일해야 한다.
-    """
-    for fixture in (HTML_SIMPLE, HTML_NESTED, HTML_ROWSPAN, HTML_NESTED_BIG):
-        cells = CELL_RE.findall(fixture)
-        blank_ref = sum(
-            1 for c in cells
-            if re.sub(r"<[^>]+>", "", c).replace("&nbsp;", "").strip() == ""
-        )
-        ratio, blank, total = table_blank_ratio(fixture)
-        _check(total == len(cells), f"셀 수가 달라졌다: {total} vs {len(cells)}")
-        _check(blank == blank_ref, f"빈 셀 수가 달라졌다: {blank} vs {blank_ref}")
+    # 바깥 3행 × 2열 = 6. 안쪽 표의 4셀은 바깥 셀 내용으로 흡수.
+    ratio, blank, total = table_blank_ratio(HTML_NESTED)
+    _check(total == 6, f"중첩 표 바깥 셀 수가 6이 아니다: {total}")
+    _check(blank == 0, f"중첩 표에 빈 셀이 없어야 한다: {blank}")
+
+
+def test_nested_in_cell_content_not_lost():
+    """리뷰 후속 — <th><table>…</table><br>텍스트</th> 형태에서
+    non-greedy 매칭이 안쪽 </th>를 바깥 셀 끝으로 봐 내용을 통째로 잃었다."""
+    fx = ('<table><tr><th><table><tr><th></th><th></th></tr></table>'
+          '<br><u>제 안 서</u><br>용역명 : 철도인프라 디지털트윈 ISP 수립 용역'
+          '<br>업체명 : OO건설</th></tr></table>')
+    out = table_search_text(fx)
+    _check(out.strip() != "", "중첩 셀이 든 표의 검색 본문이 비었다")
+    for token in ("제 안 서", "용역명", "철도인프라", "업체명"):
+        _check(token in out, f"검색 본문에 '{token}'이 없다")
+
+    ratio, blank, total = table_blank_ratio(fx)
+    _check(total == 1, f"바깥 셀은 1개여야 한다: {total}")
+    _check(blank == 0, f"내용이 있으므로 빈 셀이 아니어야 한다: {blank}")
+    _check(ratio == 0.0, f"빈 셀 비율이 0이어야 한다: {ratio}")
+
+
+def test_empty_table_search_text_is_empty():
+    """내용이 정말 없는 표는 검색 본문이 비는 게 맞다 (버그 아님)."""
+    fx = "|   |   |\n| --- | --- |"
+    _check(table_search_text(fx).strip() == "", "빈 표에서 내용이 나왔다")
+    ratio, blank, total = table_blank_ratio(fx)
+    _check(ratio == 1.0, f"빈 표의 비율이 1.0이 아니다: {ratio}")
 
 
 def test_html_search_text_still_works():

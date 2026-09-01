@@ -262,6 +262,45 @@ def cell_is_blank(cell_html: str) -> bool:
     return stripped.strip() == ""
 
 
+CELL_OPEN_RE = re.compile(r"<t([dh])\b[^>]*>", re.I)
+CELL_CLOSE_RE = re.compile(r"</t([dh])\s*>", re.I)
+
+
+def outer_cells(row_html: str):
+    """행에 직접 속한 셀의 내용만 뽑는다.
+
+    ⚠️ 단순 non-greedy 정규식(<td>(.*?)</td>)은 셀 안에 중첩 표가 있을 때
+       안쪽 </th>를 바깥 셀의 끝으로 봐서 바깥 셀 내용을 통째로 놓친다.
+       실제 코퍼스에 <th><table>…</table><br>용역명 : …</th> 형태가 있고,
+       그 표들은 검색 본문이 비고 빈 셀 비율이 1.0으로 잘못 계산됐다.
+    """
+    tokens = []
+    for m in CELL_OPEN_RE.finditer(row_html):
+        tokens.append((m.start(), m.end(), "open"))
+    for m in CELL_CLOSE_RE.finditer(row_html):
+        tokens.append((m.start(), m.end(), "close"))
+    tokens.sort()
+
+    cells, depth, start = [], 0, None
+    for s, e, kind in tokens:
+        if kind == "open":
+            if depth == 0:
+                start = e
+            depth += 1
+        else:
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start is not None:
+                    cells.append(row_html[start:s])
+                    start = None
+    return cells
+
+
+def cell_text(cell_html: str) -> str:
+    """셀의 표시 텍스트. 안쪽 표가 있으면 그 내용도 함께 들어간다."""
+    return re.sub(r"\s+", " ", TAG_RE.sub(" ", cell_html)).strip()
+
+
 def table_kind(text: str) -> str:
     """HTML 표인지 파이프 표(| a | b |)인지."""
     return "html" if TABLE_OPEN_RE.search(text) else "pipe"
@@ -343,13 +382,16 @@ def pipe_cells(line: str):
 def table_blank_ratio(text: str):
     """빈 셀 비율. C-2 ② degraded 판정의 입력.
 
-    ⚠️ HTML 계산은 기존과 동일하게 유지한다(중첩 셀 포함).
-       임계값 0.6은 그 방식으로 잰 분포(p90 0.597)를 근거로 정했으므로
-       세는 방식을 바꾸면 임계값의 근거가 사라진다.
+    행에 직접 속한 셀만 센다. 중첩 표의 셀은 바깥 셀 내용의 일부로 흡수된다.
+    ⚠️ 임계값 0.6은 이전의 잘못된 셀 추출로 잰 분포가 근거였다.
+       셀 추출을 고쳤으므로 분포를 다시 재고 임계값을 재확인해야 한다.
     """
     kind = table_kind(text)
     if kind == "html":
-        cells = CELL_RE.findall(text)
+        _, _, header, body, _ = table_parts(text)
+        cells = []
+        for row in header + body:
+            cells.extend(outer_cells(row))
         if not cells:
             return None, 0, 0
         blank = sum(1 for c in cells if cell_is_blank(c))
@@ -386,11 +428,12 @@ def table_search_text(text: str) -> str:
                 continue                        # 마크다운 구분선은 내용이 아니다
             vals = [c for c in pipe_cells(row) if c != ""]
         else:
-            vals = []
-            for c in CELL_RE.findall(row):
-                if cell_is_blank(c):
-                    continue                    # 빈 셀만 건너뜀
-                vals.append(re.sub(r"\s+", " ", TAG_RE.sub(" ", c)).strip())
+            vals = [cell_text(c) for c in outer_cells(row) if not cell_is_blank(c)]
+            if not vals:
+                # 셀 구조가 깨진 행(닫는 태그 누락 등)이라도 텍스트가 있으면 살린다.
+                fallback = cell_text(row)
+                if fallback:
+                    vals = [fallback]
         vals = [v for v in vals if v]
         if vals:
             lines.append(" | ".join(vals))
