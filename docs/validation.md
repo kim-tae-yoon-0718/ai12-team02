@@ -56,8 +56,11 @@ python -m checks.check_evalset final.jsonl --doc-ids data/gold/corpus_doc_ids.js
 
 **임현진 09-01 확정** — `location = {document, section, ref_no}`:
 - `section` ← 청킹 산출물 `section_path` 의 **리프 요소** (`{title:...}` dict / 문자열 둘 다 처리)
-- `ref_no` ← extraction_v3 기계 표기 **`"{block_type} {block_index}"`** (예: `"paragraph 3"`, `"table 12"`).
-  block_index = 문서 전체 블록 순번. **사람 표기 "문단 N"·분할 표 `(part/of)` 는 폐기.**
+- `ref_no` ← extraction_v3 기계 표기 **`"{block_type} {block_index}"`** — `table`/`paragraph`/`heading`
+  (예: `"paragraph 3"`, `"table 12"`, `"heading 0"`). 박예진 청크의 `"text"` 는 `"paragraph"` 로 정규화.
+  **사람 표기 "문단 N"·`(part/of)` 폐기.**
+- **예외** `answer_source=metadata` (본문 블록 없음, CSV 답변): `section="CSV"`, `ref_no="CSV: {컬럼명}"` 고정.
+  이 문항은 `grade_citation`/`grade_retrieval` 좌표 채점에서 **제외**(applicable=False).
 - 비교형(2-8-4): `location` 은 **문서별 객체 배열**. `EvaluationItem.gold_locations()` 가 항상 리스트로 정규화.
   `grade_citation` 은 정답 좌표 하나하나가 citation 과 맞는 비율로 점수.
 

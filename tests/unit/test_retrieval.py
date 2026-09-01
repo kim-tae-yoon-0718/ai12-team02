@@ -88,8 +88,26 @@ def test_missing_citation_is_scored_zero_not_format_fail():
     assert result["applicable"] is True
     assert result["matched"] is False
     assert result["score"] == 0.0
+
+
     assert result["n_citations"] == 0
     assert "출처 없음" in result["reason"] or "citation 없음" in result["reason"]
+
+
+def test_metadata_item_citation_not_applicable():
+    """answer_source=metadata (CSV 답변, section='CSV') — 문서 좌표 채점 대상 아님(임현진 09-01)."""
+    it = _item(answer_source="metadata",
+               location=Location(document="RFP-000038", section="CSV", ref_no="CSV: bid_deadline"))
+    resp = _resp(citations=[Location(document="RFP-000038", section="CSV", ref_no="CSV: bid_deadline")])
+    assert grade_citation(it, resp)["applicable"] is False
+    assert grade_retrieval(it, resp, 20, 10, 5)[0]["applicable"] is False
+
+
+def test_heading_ref_no_matches():
+    """ref_no='heading 0' (절 제목이 근거인 케이스) 도 문자열 그대로 매칭."""
+    it = _item(location=Location(document="A", section="2. 사업개요", ref_no="heading 0"))
+    resp = _resp(citations=[Location(document="A", section="2. 사업개요", ref_no="heading 0")])
+    assert grade_citation(it, resp, "ref_no")["matched"] is True
 
 
 def test_no_gold_location_is_not_applicable():

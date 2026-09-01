@@ -31,7 +31,14 @@ DEFAULT_PRECISION = "ref_no"
 
 
 def _gold_locations(item: EvaluationItem) -> list[Location]:
-    return item.gold_locations()  # 비교형은 문서별 좌표 배열 (2-8-4)
+    """좌표 매칭용 정답 좌표. 비교형은 문서별 배열(2-8-4).
+
+    ★answer_source=metadata (본문 블록 없음, section="CSV") 는 문서 블록 좌표가 아니므로
+      검색·인용 좌표 채점 대상에서 뺀다(임현진 09-01) — [] 반환 → applicable=False.
+    """
+    if item.answer_source == "metadata":
+        return []
+    return item.gold_locations()
 
 
 def _found_ranks(golds: list[Location], cands: list[RetrievedItem], precision: str) -> list[int]:
@@ -145,7 +152,9 @@ def grade_citation(item: EvaluationItem, response: ModelResponse,
     """
     if not enabled:
         return {"applicable": False, "reason": "grading.grade_citations=false"}
-    golds = item.gold_locations()
+    if item.answer_source == "metadata":
+        return {"applicable": False, "reason": "answer_source=metadata — CSV 메타데이터 답변, 문서 좌표 채점 대상 아님(임현진 09-01)"}
+    golds = _gold_locations(item)
     if not golds:
         return {"applicable": False, "reason": "정답 location 없음 — citation 채점 대상 아님"}
     if not response.citations:

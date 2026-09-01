@@ -126,9 +126,11 @@ class Location(BaseModel):
         """검색 산출물(박예진 청크 / extraction_v3 블록)을 {document, section, ref_no} 로.
 
         section : section_path 의 리프 요소 (임현진 09-01 확정).
-        ref_no  : block_type·block_index 가 오면 `"{block_type} {block_index}"` (v3 표기).
-                  없으면 옛 location_label(` · ` 뒤, part/of 제거)에서 뽑는다(하위호환).
+        ref_no  : block_type·block_index 가 오면 `"{block_type} {block_index}"` (v3 표기 —
+                  table/paragraph/heading). 박예진 청크는 문단을 "text" 로 내보내므로
+                  v3 어휘 "paragraph" 로 맞춘다. 없으면 옛 location_label 에서 뽑는다(하위호환).
         """
+        _BT = {"text": "paragraph"}  # 박예진 청크 어휘 → extraction_v3 어휘
         # section_path 원소가 문자열이거나 {title: ...} dict 둘 다 받는다
         sp = []
         for s in (section_path or []):
@@ -140,7 +142,7 @@ class Location(BaseModel):
         label = str(location_label or "")
 
         if block_type is not None and block_index is not None:
-            ref_no = f"{block_type} {block_index}"
+            ref_no = f"{_BT.get(block_type, block_type)} {block_index}"
         else:
             ref_no = _strip_part(label.rsplit(" · ", 1)[-1]) if " · " in label else ""
         if not section and " · " in label:
