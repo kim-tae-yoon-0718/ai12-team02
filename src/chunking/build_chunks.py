@@ -10,7 +10,7 @@
     python build_chunks.py
     python build_chunks.py --config-override runs/yj001_I_chunk1500/config.yaml
     python build_chunks.py --only RFP-000001,RFP-000002      # 부분 갱신
-    python build_chunks.py --tokenize                        # 토큰 길이 집계까지
+    python build_chunks.py --tokenize                        # 토큰 길이 집계까지 (tiktoken)
 
 산출물:  $RAG_ROOT/shared_data/processed/chunks_<chunking_version>/
     chunks.jsonl        청크 본문 + 메타데이터
@@ -37,6 +37,8 @@ from pathlib import Path
 # ─────────────────────────────────────────────────────────────
 
 # 코드가 읽는 설정 키. base.yaml에 없으면 중단한다(값을 지어내지 않는다).
+OPTIONAL_KEYS = ["embedding_model", "embedding_max_length"]
+
 REQUIRED_KEYS = [
     "corpus", "preprocess", "table",
     "chunk_size", "chunk_overlap", "chunking_version", "chunk_unit",
@@ -179,28 +181,40 @@ def read_registry(path: Path) -> list:
     return rows
 
 
-def read_extraction_versions(table_dir: Path) -> dict:
-    """추출표에서 document_id → document_version 을 뽑는다.
+def read_extraction_versions(table_dir: Path):
+    """추출표에서 document_id → {document_version, ...} 을 뽑는다.
 
-    컬럼이 없으면 경고만 남기고 계속한다(비교할 대상이 없으므로).
+    ⚠️ 문서마다 12행(12필드)이다. 마지막 행만 남기면 앞선 11행 중 하나가
+       달라도 마지막이 정상이면 통과한다. 전 행을 읽고 문서 안에서 값이
+       갈리는지까지 본다.
+
+    반환: (versions, row_count, inconsistent)
+        versions      document_id → document_version
+        inconsistent  한 문서 안에서 값이 갈린 목록
     """
     if not table_dir.exists():
-        return {}
+        return {}, 0, []
     for cand in sorted(table_dir.glob("*.csv")):
         try:
             with cand.open(newline="", encoding="utf-8-sig") as f:
                 reader = csv.DictReader(f)
                 if not reader.fieldnames:
                     continue
-                if "document_id" in reader.fieldnames and "document_version" in reader.fieldnames:
-                    out = {}
-                    for r in reader:
-                        out[r["document_id"]] = r["document_version"]
-                    if out:
-                        return out
+                if not ("document_id" in reader.fieldnames
+                        and "document_version" in reader.fieldnames):
+                    continue
+                seen, rows = {}, 0
+                for r in reader:
+                    rows += 1
+                    seen.setdefault(r["document_id"], set()).add(r["document_version"])
+                if not seen:
+                    continue
+                bad = [{"document_id": d, "versions": sorted(v)}
+                       for d, v in seen.items() if len(v) > 1]
+                return ({d: sorted(v)[0] for d, v in seen.items()}, rows, bad)
         except Exception:
             continue
-    return {}
+    return {}, 0, []
 
 
 def sha256_of(path: Path) -> str:
@@ -559,15 +573,17 @@ def para_label(path: tuple, doc_title: str, start: int, end: int) -> str:
 
 
 def can_merge(path_a: tuple, path_b: tuple) -> bool:
-    """C-1 ④ — 같은 상위 헤딩 아래에서만 병합.
+    """C-1 ④ (2026-09-01 개정) — 같은 장절 경로일 때만 병합한다.
 
-    3.1과 3.2는 합치고, 3장과 4장은 합치지 않는다.
+    ⚠️ 이전에는 형제 절(3.1과 3.2)도 합쳤다. 그러면 청크의 장절 경로가
+       공통 부모(3장)로 깎여 근거 위치가 3.1인지 3.2인지 알 수 없게 된다.
+       구성원 경로를 section_paths에 남겨도 다음 단계(인덱스)가 section_path만
+       쓰므로 버려진다. 추출표 v3가 "실제 장·절 경로"를 저장하므로
+       청크도 실제 절을 가져야 좌표 대조가 성립한다.
+
+    비용: 텍스트 그룹 5,520 → 6,887 (+1,367, 24.8%). 전체 청크 기준 약 +7.5%.
     """
-    if path_a == path_b:
-        return True
-    if len(path_a) >= 2 and len(path_b) >= 2 and path_a[:-1] == path_b[:-1]:
-        return True
-    return False
+    return path_a == path_b
 
 
 def common_prefix(paths):
@@ -890,7 +906,7 @@ def main():
                     help="추출표 대조를 건너뛴다. C-5 ③ 안전장치를 끄는 것이므로 "
                          "사유를 기록해야 한다")
     ap.add_argument("--tokenize", action="store_true",
-                    help="토큰 길이 집계까지 수행 (transformers 필요)")
+                    help="토큰 길이 집계까지 수행 (tiktoken 필요)")
     ap.add_argument("--repo-root", type=Path, default=None)
     args = ap.parse_args()
 
@@ -917,15 +933,19 @@ def main():
             die(f"입력을 찾을 수 없습니다: {p}")
 
     registry = read_registry(registry_path)
-    extraction_versions = read_extraction_versions(table_dir)
+    extraction_versions, ext_rows, ext_bad = read_extraction_versions(table_dir)
     errors = []
 
     # C-5 ③ 중단 조건 — document_version 대조
     # ⚠️ 못 읽으면 경고만 남기고 진행하면, 버전이 정말 같은지 확인 못 한 채
     #    공식 청크가 만들어진다. 대조 자체가 불가능하면 중단한다.
     if args.skip_extraction_check:
+        # ⚠️ 안전장치를 끈 결과가 공식 폴더에 저장되면 안 된다.
+        #    검증을 건너뛴 산출물은 별도 폴더로만 나간다.
+        out_dir = processed / f"chunks_{cfg['chunking_version']}_unchecked"
         errors.append({"level": "warn",
-                       "msg": "--skip-extraction-check — C-5 ③ 추출표 대조를 건너뜀"})
+                       "msg": "--skip-extraction-check — C-5 ③ 추출표 대조를 건너뜀. "
+                              f"공식 폴더가 아닌 {out_dir.name} 에 저장한다"})
         extraction_versions = {}
     elif not extraction_versions:
         die(f"추출표에서 document_id·document_version을 읽지 못했습니다: {table_dir}\n"
@@ -933,10 +953,18 @@ def main():
             f"컬럼 구조를 확인하거나 --skip-extraction-check 로 명시적으로 건너뛰세요.")
 
     if extraction_versions:
+        if ext_bad:
+            die(f"추출표 한 문서 안에서 document_version이 갈립니다 ({len(ext_bad)}건): "
+                f"{ext_bad[:3]}")
         missing = [r["document_id"] for r in registry
                    if r["document_id"] not in extraction_versions]
         if missing:
             die(f"추출표에 없는 문서가 {len(missing)}건 있습니다: {missing[:5]}")
+        extra = [d for d in extraction_versions
+                 if d not in {r["document_id"] for r in registry}]
+        if extra:
+            die(f"등록부에 없는 문서가 추출표에 {len(extra)}건 있습니다: {extra[:5]}")
+        print(f"추출표 대조: {ext_rows}행 / 문서 {len(extraction_versions)}건 — 이상 없음")
 
     mismatches = []
     for r in registry:
@@ -987,6 +1015,21 @@ def main():
                     f"(기존 {sorted(prev)} / 현재 {want}). "
                     f"설정이 바뀌었다면 전체 청킹을 실행하세요.")
 
+        # ⚠️ 버전 두 칸만 보면 chunk_size·table_chunk_threshold 등이 바뀌었는데
+        #    버전 번호를 안 올린 경우를 못 잡는다. stats.json의 설정 전체와 대조한다.
+        stats_path = out_dir / "stats.json"
+        if not stats_path.exists():
+            die(f"기존 stats.json이 없어 설정을 대조할 수 없습니다: {stats_path}\n"
+                f"       전체 청킹을 먼저 실행하세요.")
+        prev_cfg = json.loads(stats_path.read_text(encoding="utf-8")).get("config", {})
+        changed = {k: (prev_cfg.get(k), cfg[k])
+                   for k in REQUIRED_KEYS if prev_cfg.get(k) != cfg[k]}
+        if changed:
+            die("기존 산출물과 설정이 다릅니다. 부분 갱신하면 한 파일에 두 설정의 "
+                "청크가 섞입니다.\n       " +
+                " / ".join(f"{k}: {a} → {b}" for k, (a, b) in changed.items()) +
+                "\n       전체 청킹을 실행하세요.")
+
     started = datetime.now(timezone.utc)
     all_chunks, per_doc = [], {}
     for r in targets:
@@ -1016,12 +1059,6 @@ def main():
         die(f"처리 오류 {len(hard_errors)}건. 기존 산출물을 보존하고 중단합니다. "
             f"errors.jsonl 확인.")
 
-    # 원자적 교체 — 쓰다가 죽어도 기존 파일이 남는다.
-    tmp_path = chunks_path.with_suffix(".jsonl.tmp")
-    with tmp_path.open("w", encoding="utf-8") as f:
-        for c in merged:
-            f.write(json.dumps(c, ensure_ascii=False) + "\n")
-    tmp_path.replace(chunks_path)
     written = len(merged)
 
     # ── 집계
@@ -1055,11 +1092,30 @@ def main():
         "per_document": per_doc,
     }
 
+    # ⚠️ 토큰 측정은 공식 파일 교체 '전에' 한다.
+    #    나중에 하면 명령은 실패했는데 공식 파일은 이미 바뀌는 일이 생긴다.
     token_failed = False
     if args.tokenize:
-        stats["token_len"] = tokenize_stats(all_chunks, errors)
+        stats["token_len"] = tokenize_stats(
+            all_chunks, errors,
+            cfg.get("embedding_model") or "text-embedding-3-small",
+            cfg.get("embedding_max_length"))
         # 명시적으로 요청한 측정이 실패했으면 성공으로 끝내지 않는다.
         token_failed = not stats["token_len"]
+
+    if token_failed:
+        (out_dir / "errors.jsonl").write_text(
+            "\n".join(json.dumps(e, ensure_ascii=False) for e in errors) + "\n",
+            encoding="utf-8")
+        die("--tokenize 를 요청했으나 토큰 길이를 측정하지 못했습니다. "
+            "기존 산출물을 보존하고 중단합니다. errors.jsonl 확인.", code=3)
+
+    # 여기까지 오면 모든 검증이 끝났다. 이제 공식 파일을 교체한다.
+    tmp_path = chunks_path.with_suffix(".jsonl.tmp")
+    with tmp_path.open("w", encoding="utf-8") as f:
+        for c in merged:
+            f.write(json.dumps(c, ensure_ascii=False) + "\n")
+    tmp_path.replace(chunks_path)
 
     (out_dir / "stats.json").write_text(
         json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1078,40 +1134,47 @@ def main():
     print(f"  degraded 표 {stats['table_degraded']} / 크기 초과 {stats['oversize_chunks']}")
     print(f"  길이(자) 중앙 {stats['char_len']['median']} p95 {stats['char_len']['p95']} "
           f"최대 {stats['char_len']['max']}")
+    if stats.get("token_len"):
+        tl = stats["token_len"]
+        over = tl.get("over_limit")
+        print(f"  토큰({tl['model']}) 중앙 {tl['median']} p95 {tl['p95']} 최대 {tl['max']}"
+              + (f" / 입력 한도 초과 {over}건" if over is not None else " / 한도 미확정"))
     print(f"  소요 {stats['elapsed_sec']}초  →  {out_dir}")
-    if token_failed:
-        print("[실패] --tokenize 를 요청했으나 토큰 길이를 측정하지 못했습니다. "
-              "errors.jsonl 확인.", file=sys.stderr)
-        sys.exit(3)
 
 
-def tokenize_stats(chunks, errors):
-    """C-1 실행 체크리스트 — 512·8,192 두 기준 모두로 초과 건수를 센다.
+def tokenize_stats(chunks, errors, model: str, max_len):
+    """C-1 실행 체크리스트 — 실제 임베딩 입력 기준 토큰 길이.
 
-    장절 접두를 포함한 search_text 기준으로 잰다(C-3 ③).
+    장절 접두를 포함한 search_text 로 잰다(C-3 ③).
+    확정 모델이 OpenAI text-embedding-3-small 이므로 tiktoken 으로 센다.
+    로컬 모델 가중치를 받지 않으므로 모델 캐시 권한과 무관하다.
     """
     try:
-        from transformers import AutoTokenizer
+        import tiktoken
     except ImportError:
-        errors.append({"level": "warn", "msg": "transformers 미설치 — 토큰 집계 생략"})
+        errors.append({"level": "warn", "msg": "tiktoken 미설치 — 토큰 집계 생략"})
+        return None
+    try:
+        enc = tiktoken.encoding_for_model(model)
+    except Exception as e:                                     # noqa: BLE001
+        errors.append({"level": "warn",
+                       "msg": f"토크나이저 로드 실패 {model}: {e}"})
         return None
 
-    out = {}
-    for name in ("BAAI/bge-m3", "nlpai-lab/KURE-v1"):
-        try:
-            tok = AutoTokenizer.from_pretrained(name)
-        except Exception as e:
-            errors.append({"level": "warn", "msg": f"토크나이저 로드 실패 {name}: {e}"})
-            continue
-        lens = sorted(len(tok(c["search_text"], add_special_tokens=True)["input_ids"])
-                      for c in chunks)
-        out[name] = {
-            "mean": round(sum(lens) / len(lens), 1) if lens else None,
-            "median": pct(lens, 0.50), "p95": pct(lens, 0.95),
-            "max": lens[-1] if lens else None,
-            "over_512": sum(1 for x in lens if x > 512),
-            "over_8192": sum(1 for x in lens if x > 8192),
-        }
+    lens = sorted(len(enc.encode(c["search_text"])) for c in chunks)
+    if not lens:
+        return None
+    out = {
+        "model": model,
+        "mean": round(sum(lens) / len(lens), 1),
+        "median": pct(lens, 0.50), "p95": pct(lens, 0.95), "max": lens[-1],
+    }
+    if max_len:
+        out["max_input_length"] = max_len
+        out["over_limit"] = sum(1 for x in lens if x > int(max_len))
+    else:
+        errors.append({"level": "warn",
+                       "msg": "embedding_max_length 가 비어 있어 초과 건수를 세지 못했습니다"})
     return out
 
 
@@ -1125,8 +1188,8 @@ def render_version(cfg, gi, stats, registry_path, corpus_dir, table_dir):
         f"generated at       : {stats['generated_at']}",
         f"elapsed sec        : {stats['elapsed_sec']}",
         "",
-        f"chunk_size              : {cfg['chunk_size']}",
-        f"chunk_overlap           : {cfg['chunk_overlap']}",
+        f"chunk_size              : {cfg['chunk_size']}   (baseline 시작값 — 최종 확정 아님)",
+        f"chunk_overlap           : {cfg['chunk_overlap']}    (baseline 시작값 — 최종 확정 아님)",
         f"chunk_unit              : {cfg['chunk_unit']}",
         f"table_chunk_threshold   : {cfg['table_chunk_threshold']}",
         f"table_degraded_threshold: {cfg['table_degraded_threshold']}",
@@ -1148,11 +1211,18 @@ def render_version(cfg, gi, stats, registry_path, corpus_dir, table_dir):
         f"검색 제외     : {stats['retrieval_excluded']}",
         f"degraded 표   : {stats['table_degraded']}",
         f"크기 초과     : {stats['oversize_chunks']}",
+        (f"토큰 길이     : {stats['token_len']['model']} 중앙 "
+         f"{stats['token_len']['median']} / p95 {stats['token_len']['p95']} / "
+         f"최대 {stats['token_len']['max']}"
+         if stats.get("token_len") else "토큰 길이     : 미측정 (--tokenize 미사용)"),
+        "",
+        "⚠️ chunk_size·chunk_overlap 은 baseline 시작값이다.",
+        "   최종 확정은 토큰 측정과 검색 평가 후 (C-1 · 4-7).",
         "",
         "적용 결정 (확정정리 C-1~C-5):",
         " - C-1 ① chunk_size 1500 (장절 접두 포함)",
         " - C-1 ② chunk_overlap 150",
-        " - C-1 ④ 병합은 같은 상위 헤딩 아래에서만",
+        " - C-1 ④ 병합은 같은 장절 경로일 때만 (2026-09-01 개정)",
         " - C-1 ⑤ 표를 만나면 병합을 끊음",
         " - C-1 ⑥ 꼬리 구간은 문단 경계로 분할, 초과 문단은 그대로 두고 기록",
         " - C-2 ① 표 1500자 이하 통째 유지",

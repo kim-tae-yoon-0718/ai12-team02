@@ -26,7 +26,7 @@ corpus: v2            # 확정 2026-08-30 (박예진) — shared_data/processed/
                       #   ⚠️ interim/md(미가공)와 다름. 전처리 완료 후 산출물만
                       #   "코퍼스"로 취급 (2026-08-27 박예진 확정)
 preprocess: v2        # 확정 2026-08-31 (박예진) — v1에서 승격
-table: v2             # 확정 2026-08-30 (박예진) — shared_data/processed/
+table: v3             # 확정 2026-08-30 (박예진) — shared_data/processed/
                       #   rfp_extraction_table_v2. 100문서×12필드, 1200행.
                       #   상태 5종: value_present(901)/field_absent(261)/
                       #   external_reference(35)/not_disclosed(2)/conflict(1)/

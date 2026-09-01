@@ -374,11 +374,14 @@ def test_heading_tags_not_in_section_path():
     _check("<" not in clean_heading(m.group(2)), "장절 경로에 태그가 남는다")
 
 
-def test_merge_rule_siblings_only():
-    """C-1 ④ — 3.1과 3.2는 합치고 3장과 4장은 합치지 않는다."""
-    _check(can_merge(("3장", "3.1"), ("3장", "3.2")), "형제 절이 안 합쳐진다")
+def test_merge_rule_same_path_only():
+    """C-1 ④ (2026-09-01 개정) — 같은 장절 경로일 때만 합친다.
+
+    형제 절(3.1·3.2)을 합치면 경로가 공통 부모로 깎여 근거 위치를 잃는다.
+    """
+    _check(can_merge(("3장", "3.1"), ("3장", "3.1")), "같은 경로가 안 합쳐진다")
+    _check(not can_merge(("3장", "3.1"), ("3장", "3.2")), "형제 절이 합쳐진다")
     _check(not can_merge(("3장",), ("4장",)), "다른 장이 합쳐진다")
-    _check(can_merge(("3장",), ("3장",)), "같은 경로가 안 합쳐진다")
     _check(not can_merge(("3장",), ("3장", "3.1")), "깊이가 다른데 합쳐진다")
 
 
