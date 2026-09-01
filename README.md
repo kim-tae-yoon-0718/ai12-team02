@@ -28,11 +28,12 @@ config/           grader.yaml (채점 설정 한 곳) + ci.yaml/local.yaml (오�
 prompts/          judge_*.v1.md — 팀 확정 심판 프롬프트 원문
 docs/             설계·규칙 문서 (위 표)
 scripts/          run_* (CLI 래퍼) + build_doc_ids / build_data_manifest (박예진 산출물 → grader 입력)
+src/checks/       평가셋 계약 검사 (check_evalset.py, 2-17 · 임현진 단일 출처 · 벤더링)
 src/grader/       채점기 본체
   ├─ models.py        입력/출력 계약 (pydantic)  ← 팀원은 여기부터
   ├─ config.py normalize.py cache.py providers.py
   ├─ task_scoring.py retrieval.py extraction.py judge.py prompts.py   채점
-  ├─ validation/      schema · answer · location · provenance · assets   평가셋 검증
+  ├─ validation/      schema(파서) · provenance · assets(1층)   ※평가셋 계약검사는 checks/ 로 단일화
   ├─ diagnostics/     statistics · report · retrieval · citation · extraction · regression · contamination
   ├─ versioning.py runner.py cli.py
 data/             로컬 데이터 (NDA — .gitkeep 만 커밋, data/README.md 참고)

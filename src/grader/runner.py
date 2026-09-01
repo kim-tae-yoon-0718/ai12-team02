@@ -47,12 +47,12 @@ from .versioning import read_schema_version, read_versions
 from .validation import (
     check_data_sanity,
     check_data_warnings,
-    check_evalset_integrity,
     index_by_id,
     load_jsonl,
     validate_evaluation_set,
     validate_model_responses,
 )
+from checks.check_evalset import run_all as run_evalset_checks
 
 EXIT_OK, EXIT_FAIL, EXIT_CONFIG = 0, 1, 2
 
@@ -423,9 +423,11 @@ def execute(
         return _finish(EXIT_FAIL, layers, manifest, out_dir,
                        "1층 실패 — 데이터가 깨진 상태에서 성능을 재면 그 숫자는 아무 뜻이 없다")
 
-    # 2층 — 평가셋 무결성
+    # 2층 — 평가셋 계약 검사 (2-17). 규칙 단일 출처: checks.check_evalset (임현진 소관).
+    # ★raw JSONL 위에서 돈다 — 파일을 믿기 전에. pydantic 파싱(items)은 채점용 별개 단계.
     # ★최종 모드는 항상 주석 키(_source_note 등) 금지. practice/dev/ci 는 옵션.
     items = validate_evaluation_set(evaluation_set_path, strict_meta=(strict_meta or mode == "final"))
+    raw_records = load_jsonl(evaluation_set_path)
     corpus_ids = None
     if corpus_doc_ids_path and os.path.exists(corpus_doc_ids_path):
         with open(corpus_doc_ids_path, encoding="utf-8") as f:
@@ -437,9 +439,15 @@ def execute(
     # 유출 검사: --leak-check 또는 최종 모드일 때. 저장소 루트(pyproject.toml 위치)에서 git ls-files.
     leak_root = str(Path(__file__).resolve().parent.parent.parent) if (leak_check or mode == "final") else None
     leak_exclude = [p for p in (evaluation_set_path, practice_set_path) if p]
-    problems = check_evalset_integrity(items, corpus_doc_ids=corpus_ids, quota=runner.config.gate.task_quota,
-                                       retrieval_excluded_ids=excluded_ids,
-                                       leak_check_root=leak_root, leak_exclude=leak_exclude)
+    problems = run_evalset_checks(
+        raw_records,
+        corpus_doc_ids=corpus_ids,
+        excluded_doc_ids=excluded_ids,
+        quota=runner.config.gate.task_quota,
+        practice_path=practice_set_path,
+        leak_repo_root=leak_root,
+        leak_exclude=leak_exclude,
+    )
     L2 = {"layer": 2, "status": "FAIL" if problems else "PASS", "problems": problems, "n_items": len(items)}
     layers.append(L2)
     if L2["status"] == "FAIL":

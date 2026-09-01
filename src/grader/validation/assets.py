@@ -1,71 +1,9 @@
-"""데이터 자산 검증 — 코퍼스 문서 참조 무결성(2-17) + CI 1층 데이터 정상성(1-19-1)."""
+"""데이터 자산 검증 — CI 1층 데이터 정상성(1-19-1, 박예진 산출물 data_manifest).
+
+★ 코퍼스 문서 참조 무결성·할당량(2-17)은 checks.check_evalset 로 이동했다(단일 출처).
+"""
 
 from __future__ import annotations
-
-from typing import Iterable
-
-from ..models import EvaluationItem, as_id_list
-
-
-# ------------------------------------------------------------------ 참조 무결성 (2-17)
-
-def check_references(
-    items: Iterable[EvaluationItem],
-    corpus_doc_ids: set[str] | None = None,
-    retrieval_excluded_ids: set[str] | None = None,
-) -> list[str]:
-    """정답 근거가 가리키는 문서가 (1) 코퍼스에 실재하고 (2) 검색 대상인지.
-
-    retrieval_excluded_ids: 등록부에서 검색 대상이 아닌 문서(수집 중복 등, 1-9-1
-      확정: RFP-000006/RFP-000017 은 각각 RFP-000075/RFP-000098 의 중복 → 검색대상 98건).
-    """
-    problems: list[str] = []
-    excluded = retrieval_excluded_ids or set()
-
-    if corpus_doc_ids is not None:
-        for it in items:
-            if it.location is not None and it.location.document not in corpus_doc_ids:
-                problems.append(f"[참조] {it.id}: 코퍼스에 없는 document {it.location.document}")
-            for d in as_id_list(it.document_id):
-                if d not in corpus_doc_ids:
-                    problems.append(f"[참조] {it.id}: document_id 미존재 {d}")
-            for d in as_id_list(it.intermediate_answer):
-                if d not in corpus_doc_ids:
-                    problems.append(f"[참조] {it.id}: intermediate_answer 미존재 문서 {d}")
-            if it.answer_type == "document_set":
-                for d in as_id_list(it.answer_raw):
-                    if d not in corpus_doc_ids:
-                        problems.append(f"[참조] {it.id}: answer_raw 문서 미존재 {d}")
-
-    if excluded:
-        for it in items:
-            gold_docs = set(as_id_list(it.document_id)) | set(as_id_list(it.intermediate_answer))
-            if it.answer_type == "document_set":
-                gold_docs |= set(as_id_list(it.answer_raw))
-            if it.location is not None:
-                gold_docs.add(it.location.document)
-            hit = sorted(gold_docs & excluded)
-            if hit:
-                problems.append(
-                    f"[중복제외] {it.id}: 정답 근거가 검색 대상 아닌 문서 {hit} "
-                    f"(수집 중복 → 검색대상 98건에서 빠짐, 1-9-1)")
-    return problems
-
-
-def check_quota(items: Iterable[EvaluationItem], quota: dict[str, int] | None,
-                quota_tolerance: float = 0.2) -> list[str]:
-    problems: list[str] = []
-    if not quota:
-        return problems
-    counts = {t: 0 for t in quota}
-    for it in items:
-        if it.task_type in counts:
-            counts[it.task_type] += 1
-    for t, target in quota.items():
-        got = counts.get(t, 0)
-        if target and abs(got - target) > max(1, target * quota_tolerance):
-            problems.append(f"[할당량] task_type={t} 설계 {target} vs 실제 {got}")
-    return problems
 
 
 # ------------------------------------------------------------------ CI 1층: 데이터 정상성 (1-19-1)

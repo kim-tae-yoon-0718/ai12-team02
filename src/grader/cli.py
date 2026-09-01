@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
+from pathlib import Path
+
+from checks.check_evalset import run_all as run_evalset_checks
 
 from . import diagnostics as diag
 from .diagnostics import regression as reg
@@ -10,7 +14,7 @@ from .config import load_config
 from .prompts import PromptRepository
 from .providers import build_provider
 from .runner import GraderRunner, execute
-from .validation import validate_evaluation_set
+from .validation import load_jsonl, validate_evaluation_set
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -20,10 +24,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    validate = sub.add_parser("validate", help="평가셋 스키마만 검사(2-17)")
+    validate = sub.add_parser("validate", help="평가셋 계약 검사(2-17) — checks.check_evalset")
     validate.add_argument("--evaluation-set", required=True)
     validate.add_argument("--strict", action="store_true",
                           help="주석 키(_source_note 등) 를 FAIL 로 잡는다 (최종셋 검사용)")
+    validate.add_argument("--corpus-doc-ids", default=None, help="corpus_doc_ids.json — 참조 무결성")
+    validate.add_argument("--excluded-doc-ids", default=None, help="excluded_doc_ids.json")
+    validate.add_argument("--practice-set", default=None, help="practice_items.jsonl — 유출 검사")
 
     run = sub.add_parser("run", help="층 실행기(3-6-1): checks/ci/development/final")
     run.add_argument("--evaluation-set", required=True)
@@ -94,8 +101,20 @@ def main() -> int:
     try:
         if args.command == "validate":
             items = validate_evaluation_set(args.evaluation_set, strict_meta=args.strict)
-            print(f"VALID: {len(items)} evaluation items")
-            return 0
+            records = load_jsonl(args.evaluation_set)
+
+            def _ids(p):
+                return set(json.loads(Path(p).read_text(encoding="utf-8"))) if p else None
+
+            corpus_ids, excluded = _ids(args.corpus_doc_ids), _ids(args.excluded_doc_ids)
+            problems = run_evalset_checks(
+                records, corpus_doc_ids=corpus_ids, excluded_doc_ids=excluded,
+                practice_path=args.practice_set, leak_exclude=[args.evaluation_set],
+            )
+            for p in problems:
+                print(f"  - {p}")
+            print(f"{'FAIL' if problems else 'VALID'}: {len(items)} items, {len(problems)} problems")
+            return 1 if problems else 0
 
         if args.command == "run":
             runner = _build_runner(args)

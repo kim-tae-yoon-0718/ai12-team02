@@ -1,36 +1,13 @@
-"""validation/ 하위 모듈 — location / provenance / assets(references)."""
+"""grader.validation 하위 모듈 — provenance / assets(1층 데이터 정상성).
 
-from grader.models import EvaluationItem
+평가셋 계약 검사(스키마·참조무결성·좌표·유출)는 tests/checks/test_check_evalset.py 로 이동.
+"""
+
 from grader.validation import (
     check_data_sanity,
-    check_locations,
     check_provenance,
-    check_references,
     check_reproducible,
 )
-
-
-def _item(**over):
-    base = dict(id="Q1", question="q", task_type="qa", answer_type="value", answer_raw="x")
-    base.update(over)
-    return EvaluationItem.model_validate(base)
-
-
-# ── location ──────────────────────────────────────────────────────────
-
-def test_location_placeholder_ref_no_is_flagged():
-    it = _item(location={"document": "DOC-1", "section": "3장", "ref_no": ""})
-    problems = check_locations([it])
-    assert any("ref_no" in p for p in problems)
-
-
-def test_location_full_coords_pass():
-    it = _item(location={"document": "DOC-1", "section": "Ⅲ. 개요", "ref_no": "표 5"})
-    assert check_locations([it]) == []
-
-
-def test_no_location_is_skipped():
-    assert check_locations([_item()]) == []
 
 
 # ── provenance ────────────────────────────────────────────────────────
@@ -59,12 +36,7 @@ def test_reproducible_flags_dirty_and_unknown():
     assert any("미상" in p for p in problems)
 
 
-# ── references ────────────────────────────────────────────────────────
-
-def test_reference_integrity_missing_doc():
-    it = _item(document_id="DOC-999")
-    assert any("미존재" in p for p in check_references([it], corpus_doc_ids={"DOC-1"}))
-
+# ── 1층 데이터 정상성 ─────────────────────────────────────────────────
 
 def test_data_sanity_still_works_from_assets():
     clean = {"doc_count": 10, "corpus_version": "v2", "extraction_table_version": "v2"}

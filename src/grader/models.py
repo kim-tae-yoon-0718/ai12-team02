@@ -16,12 +16,8 @@ TaskType = Literal["selection", "extraction", "qa"]
 #   unanswerable : 답 없는 질문 — 기권 사유 문자열을 answer_raw 에 담는다(별도 필드 없음)
 AnswerType = Literal["document_set", "value", "list", "summary", "comparison", "unanswerable"]
 
-# task_type 별 허용 answer_type (v0.2 스키마 표). check_evalset_integrity 가 강제한다.
-ALLOWED_ANSWER_TYPES: dict[str, set[str]] = {
-    "selection": {"document_set"},
-    "extraction": {"value", "list"},
-    "qa": {"value", "summary", "comparison", "unanswerable"},
-}
+# task_type ↔ answer_type 허용 조합은 checks.check_evalset.TASK_ANSWER_COMBOS 단일 출처.
+# (여기 두 번째 사본을 두지 않는다 — 2026-09-01 평가셋 검증 단일화)
 
 UnspecifiedType = Literal[
     "abbreviation",

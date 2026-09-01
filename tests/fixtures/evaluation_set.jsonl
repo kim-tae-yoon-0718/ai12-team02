@@ -1,1 +1,1 @@
-{"id": "Q0001", "question": "이 사업 예산이 얼마야?", "task_type": "extraction", "answer_type": "value", "document_id": "DOC-EXAMPLE", "field_tag": null, "answer_raw": "5억원", "answer_normalized": "500000000", "location": {"document": "DOC-EXAMPLE", "section": "3장 2절", "ref_no": "표3"}}
+{"id": "Q0001", "question": "이 사업 예산이 얼마야?", "task_type": "extraction", "answer_type": "value", "document_id": "DOC-EXAMPLE", "field_tag": "major", "answer_raw": "5억원", "answer_normalized": "500000000", "location": {"document": "DOC-EXAMPLE", "section": "3장 2절", "ref_no": "표3"}}

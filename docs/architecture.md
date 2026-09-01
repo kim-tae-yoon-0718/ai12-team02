@@ -20,7 +20,7 @@
 | 층 | 검사 | 모드 | 실패 시 |
 | --- | --- | --- | --- |
 | 1 | 데이터 정상성 (`validation.check_data_sanity`) | `--data-manifest` 있을 때만 | exit 1 |
-| 2 | 평가셋 무결성 (`validation.check_evalset_integrity`, 2-17) | 항상 | exit 1 |
+| 2 | 평가셋 계약 검사 (`checks.check_evalset.run_all`, 2-17 · 임현진 단일 출처) | 항상 | exit 1 |
 | 3 | 추출 테이블 감사 (`extraction.grade_extraction_audit`, 3-2-1) | `--extraction-audit` 있을 때 | `enforce_gates` 시 exit 1 |
 | 4 | 소규모 성능 평가 (층화 부분집합) | `ci` / `development` | 게이트 위반 시 exit 1 |
 | 5 | 전체 평가 | `final` (`--allow-final` + 실제 심판 + `--extraction-audit` 필수) | 게이트 위반 시 exit 1 |
@@ -39,7 +39,8 @@
 | `retrieval.py` | 3-2 검색 평가 + 3-4-3 출처 좌표 채점 | [scoring.md](scoring.md) |
 | `extraction.py` | 3-2-1 추출 테이블 감사 / 3-2-2 문서 특정 | [scoring.md](scoring.md) |
 | `judge.py` `prompts.py` `providers.py` | 3-8/3-9 LLM 심판 하네스 | — |
-| `validation/` | 평가셋·데이터 자체 검증 | [validation.md](validation.md) |
+| `validation/` | 평가셋 파서 + provenance + 1층 데이터 정상성 | [validation.md](validation.md) |
+| `checks/check_evalset.py` | 평가셋 계약 검사 (2-17, 임현진 단일 출처, 벤더링) | [validation.md](validation.md) |
 | `diagnostics/` | 집계 리포트 + 진단표 + 회귀 + 오염 방지 | — |
 | `versioning.py` | `VERSION.txt` (평가셋·코퍼스 버전) 읽기 | [provenance.md](provenance.md) |
 | `runner.py` | 5층 실행기 (진입점) | — |
