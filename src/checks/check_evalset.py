@@ -1,7 +1,8 @@
 import json
 from pathlib import Path 
 from typing import List
-from collections import namedtuple
+import collections
+from collections import namedtuple, Counter
 
 
 # status: "PASS" | "FAIL" | "SKIP"
@@ -79,6 +80,7 @@ def load_jsonl(path: Path) -> List[dict]:
 
 def check_schema(item: dict, line_num: int) -> List[str]:
     """
+    C1: 스키마 준수
     문항 한 줄(jsonl: item)을 받아 스키마가 결여된 사항을 리스트로 반환
     결여 사항이 없을 경우 -> 빈 리스트
     """
@@ -152,6 +154,107 @@ def check_schema(item: dict, line_num: int) -> List[str]:
             errors.append(f"line {line_num}: invalid value(null)")
 
     return errors
+
+
+def check_dup_ids(items: list[dict]) -> List[str]:
+    """
+    C2: 중복 ID
+    item_id 중복 검출
+    error 메시지 반환 (빈 리스트 = 통과)
+    """
+    errors = []
+    id_counts = collections.Counter(item["id"] for item in items)
+    for id, c in id_counts.items():
+        if c > 1:
+            errors.append(f"C2: duplicate item_id: {id} ({c}회)")
+
+    return errors
+
+
+def check_quota(items: list[dict], strict: bool = False) -> List[str]:
+    """
+    C3: 할당량
+    task_type별 문항 수 검사
+    검사 완화(strict = False): 비율·형식만 경고 수준으로 확인 - 문항 50미만이어도 동작
+    검사 강화(strict = True): 총 50문항 (선별25:추출15:QA10) 정확히 일치
+    """
+    errors = []
+    EXPECTED = {"selection": 25, "extraction": 15, "qa": 10}
+    tt_counts = collections.Counter(item["task_type"] for item in items)
+
+    # 공통 검사: EXPECTED에 없는 task_type 검출
+    for tt in tt_counts:
+        if tt not in EXPECTED:
+            errors.append(f"C3: unknown task_type: {tt}")
+
+    # strict 적용: 개수 대조
+    if strict:
+        for tt, n in EXPECTED.items():
+            got = tt_counts.get(tt, 0)
+            if got != n:
+                errors.append(f"C3: {tt} expected {n}, got {got}")
+
+    return errors
+
+
+def check_ref_intg(items: list[dict], doc_ids_path) -> List[str]:
+    """
+    C4: 참조 무결성
+    location 및 정답 문서 ID 배열이 실재로 포함(corpus_doc_ids.json)되어 있는지 검사
+    doc_ids_path 파일 없으면 SKIP
+    """
+    errors = []
+    # TODO 1: doc_ids_path 존재 확인 — 없으면 print("C4: SKIP (...)") 후 빈 리스트 반환'
+    data = json.loads(Path("corpus_doc_ids.json").read_text(encoding="utf-8"))
+    valid_ids = set(data)
+    # TODO 2: corpus_doc_ids.json 로드해서 set으로
+    # TODO 3: 각 item의 location.document 검사 (조건부 필드라 키 없으면 건너뜀 — 2-7 "키 자체 생략" 규칙)
+    # TODO 4: 선별형 정답(문서ID 배열)도 같은 set으로 검사
+    #   주의: 검색대상은 98건이지만 C4 기준은 등록부 100건 (2-8-1 확정) — excluded 2건도 "실재"로 취급
+    return errors
+
+
+def check_version(version_txt_path) -> List[str]:
+    """
+    C5: 코퍼스 버전 일치
+    VERSION.txt의 corpus 값과 실제 코퍼스 버전 대조
+    corpus: [대기] 동안은 SKIP
+    """
+    errors = []
+    # TODO 1: VERSION.txt 파싱 (key: value 3줄, bare 표기)
+    # TODO 2: corpus 값이 "[대기]"면 print("C5: SKIP (...)") 후 반환
+    # TODO 3: 활성화 시 대조 로직 — 지금은 pass로 두고 1-19 도착 후 채움
+    return errors
+
+
+def check_leak(items: list[dict], practice_path) -> List[str]:
+    """
+    C6: 최종셋 유출 방지
+    items.jsonl과 practice_items.jsonl 간의 중복 검사
+    """
+    errors = []
+    # TODO 1: 최종셋 item_id에 "PRAC-" 접두어가 섞여 있으면 에러
+    # TODO 2: practice_path 로드 — practice 쪽 item_id와 최종셋 item_id 교집합 검사
+    # TODO 3: 최종셋이 practice 전용 3개 문서(RFP-000038/000043/000001)를
+    #         근거 문서로 쓰면 에러 (2-13: 최종 50문항 제작 제외 문서)
+    return errors
+
+
+def main():
+    # TODO 1: argparse — 위치인자 items_path, 옵션 --strict, --practice, --doc-ids, --version-txt
+    #   경로 기본값 하드코딩 금지(팀 규약) — 전부 인자나 환경변수($RAG_ROOT)로
+    # TODO 2: load_jsonl() → C0/C1(기존 check_schema) → C2 → C3 → C4 → C5 → C6
+    #   순서 근거: 값싼 검사부터 (2-17)
+    # TODO 3: errors 전부 출력 후, 하나라도 있으면 sys.exit(1) — check.sh가 이 종료코드로 실험을 멈춤
+    pass
+
+
+
+
+
+if __name__ == "__main__":
+    main()
+
 
 
 # 최종 사용 방법
