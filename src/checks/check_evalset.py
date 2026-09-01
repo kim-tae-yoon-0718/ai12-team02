@@ -205,8 +205,7 @@ def check_ref_intg(items: list[dict], doc_ids_path) -> List[str]:
     """
     errors = []
     if not Path(doc_ids_path).exists():
-        print(f"C4: SKIP (doc_ids 파일 없음)")
-        return errors
+        raise FileNotFoundError(doc_ids_path)
     
     data = json.loads(Path(doc_ids_path).read_text(encoding="utf-8"))
     valid_ids = set(data)
@@ -230,6 +229,9 @@ def check_version(version_txt_path) -> List[str]:
     """
     errors = []
     # TODO 1: VERSION.txt 파싱 (key: value 3줄, bare 표기)
+    with open("VERSION.txt", "r", encoding="utf-8") as file:
+        for line in file:
+            clean_line = line.strip()
     # TODO 2: corpus 값이 "[대기]"면 print("C5: SKIP (...)") 후 반환
     # TODO 3: 활성화 시 대조 로직 — 지금은 pass로 두고 1-19 도착 후 채움
     return errors
