@@ -594,20 +594,21 @@ def split_by_paragraph(text: str, budget: int, overlap: int):
     for p in paras:
         if len(p) > budget:
             if cur:
-                pieces.append("\n\n".join(cur))
+                pieces.append(("\n\n".join(cur), False))
                 cur = []
-            pieces.append(p)                      # 자르지 않는다
+            pieces.append((p, True))              # 문단 하나가 초과 — 자르지 않는다
             oversize += 1
             continue
         cand = ("\n\n".join(cur + [p])) if cur else p
         if len(cand) <= budget:
             cur = cur + [p]
         else:
-            pieces.append("\n\n".join(cur))
-            tail = pieces[-1][-overlap:] if overlap > 0 else ""
+            joined = "\n\n".join(cur)
+            pieces.append((joined, False))
+            tail = joined[-overlap:] if overlap > 0 else ""
             cur = ([tail, p] if tail else [p])
     if cur:
-        pieces.append("\n\n".join(cur))
+        pieces.append(("\n\n".join(cur), False))
     return pieces, oversize
 
 
@@ -620,7 +621,7 @@ def split_table(text: str, budget: int):
     """
     kind, head, header, body, tail = table_parts(text)
     if not body:
-        return [(text, 0, 0, 1, 1)], 0
+        return [(text, 0, 0, 1, 1, False)], 0
 
     joiner = "\n" if kind == "pipe" else ""
 
@@ -633,8 +634,14 @@ def split_table(text: str, budget: int):
 
     parts, cur, cur_start, oversize = [], [], 1, 0
     for idx, row in enumerate(body, start=1):
-        if not cur and base + len(row) > budget:
-            parts.append(([row], idx, idx))       # 한 행이 초과 — 그대로 둔다
+        if base + len(row) > budget:
+            # 이 행은 혼자서도 budget을 넘는다 — 자르지 않고 초과로 표시 (C-2 ③-c)
+            # ⚠️ 판정을 루프 첫머리에서 해야 한다. cur가 비었을 때만 보면
+            #    큰 행 앞에 작은 행이 하나라도 있을 때 표시가 누락된다.
+            if cur:
+                parts.append((cur, cur_start, cur_start + len(cur) - 1, False))
+                cur = []
+            parts.append(([row], idx, idx, True))
             oversize += 1
             cur_start = idx + 1
             continue
@@ -644,14 +651,14 @@ def split_table(text: str, budget: int):
         if base + sum(len(r) + len(joiner) for r in cur) + len(row) <= budget:
             cur.append(row)
         else:
-            parts.append((cur, cur_start, cur_start + len(cur) - 1))
+            parts.append((cur, cur_start, cur_start + len(cur) - 1, False))
             cur, cur_start = [row], idx
     if cur:
-        parts.append((cur, cur_start, cur_start + len(cur) - 1))
+        parts.append((cur, cur_start, cur_start + len(cur) - 1, False))
 
     of = len(parts)
-    return [(assemble(rowset), r0, r1, i, of)
-            for i, (rowset, r0, r1) in enumerate(parts, start=1)], oversize
+    return [(assemble(rowset), r0, r1, i, of, over)
+            for i, (rowset, r0, r1, over) in enumerate(parts, start=1)], oversize
 
 
 # ─────────────────────────────────────────────────────────────
@@ -753,14 +760,14 @@ def process_document(reg_row, md_dir, sidecar_dir, cfg, errors):
         budget = max(size - len(prefix) - 1, 200)
         text = "\n\n".join(u["text"] for u in group)
         pieces, oversize = split_by_paragraph(text, budget, overlap)
-        for i, piece in enumerate(pieces):
+        for i, (piece, over) in enumerate(pieces):
             chunks_raw.append({
                 "kind": "text", "path": path, "content": piece,
                 "line_start": group[0]["line_start"], "line_end": group[-1]["line_end"],
                 "para_start": group[0]["para_start"], "para_end": group[-1]["para_end"],
                 "member_paths": uniq,
                 "boiler_type": group[0]["boiler_type"], "boiler_label": group[0]["boiler_label"],
-                "oversize": 1 if (len(piece) > budget) else 0,
+                "oversize": 1 if over else 0,
                 "prefix": prefix,
             })
         group = []
@@ -773,10 +780,10 @@ def process_document(reg_row, md_dir, sidecar_dir, cfg, errors):
             budget = max(tbl_threshold - len(prefix) - 1, 200)
             ratio, blank, total = table_blank_ratio(u["html"])
             if len(u["html"]) <= budget:
-                parts = [(u["html"], 1, max(table_row_count(u["html"]), 1), 1, 1)]
+                parts = [(u["html"], 1, max(table_row_count(u["html"]), 1), 1, 1, False)]
             else:
                 parts, _ = split_table(u["html"], budget)
-            for html, r0, r1, part, of in parts:
+            for html, r0, r1, part, of, over in parts:
                 chunks_raw.append({
                     "kind": "table", "path": path, "content": html,
                     "line_start": u["line_start"], "line_end": u["line_end"],
@@ -784,9 +791,11 @@ def process_document(reg_row, md_dir, sidecar_dir, cfg, errors):
                     "part": part, "of": of,
                     "blank_ratio": ratio, "blank_cells": blank, "total_cells": total,
                     "boiler_type": u["boiler_type"], "boiler_label": u["boiler_label"],
-                    # C-2 ③-c — 초과한 조각마다 표시한다.
-                    # 이전에는 of == 1일 때만 기록해 분할된 표의 초과가 통째로 빠졌다.
-                    "oversize": 1 if len(html) > budget else 0,
+                    # C-2 ③-c — 자르지 못해 남긴 조각에만 표시한다.
+                    # ⚠️ len(html) > budget 으로 재면 안 된다. 머리글 반복분 때문에
+                    #    정상 분할된 조각도 넘을 수 있어 오탐이 생긴다(950자 조각이
+                    #    초과로 찍히던 사례). split_table이 알려주는 값을 쓴다.
+                    "oversize": 1 if over else 0,
                     "prefix": prefix,
                 })
         else:

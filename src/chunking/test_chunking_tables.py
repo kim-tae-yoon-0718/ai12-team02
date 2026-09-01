@@ -173,7 +173,7 @@ def test_nested_split_keeps_tags_balanced():
     """분할된 모든 조각의 <table> 여는/닫는 태그 수가 같아야 한다."""
     parts, oversize = split_table(HTML_NESTED_BIG, budget=800)
     _check(len(parts) > 1, "분할이 일어나지 않아 검증이 무의미하다")
-    for html, r0, r1, part, of in parts:
+    for html, r0, r1, part, of, over in parts:
         assert_tags_balanced(html, f"part {part}/{of}")
 
 
@@ -189,7 +189,7 @@ def test_split_row_ranges_contiguous():
     parts, _ = split_table(HTML_NESTED_BIG, budget=800)
     total = table_row_count(HTML_NESTED_BIG)
     seen = []
-    for _, r0, r1, _, _ in parts:
+    for _, r0, r1, _, _, _ in parts:
         seen.extend(range(r0, r1 + 1))
     _check(seen == sorted(seen), "row 범위 순서가 어긋난다")
     _check(len(seen) == len(set(seen)), "row 범위가 겹친다")
@@ -201,10 +201,10 @@ def test_split_part_of_consistent():
     """part/of의 of는 실제 조각 수와 같아야 한다."""
     for fixture, budget in ((HTML_NESTED_BIG, 800), (PIPE_LONG, 600)):
         parts, _ = split_table(fixture, budget)
-        of_values = {of for *_, of in parts}
+        of_values = {of for *_, of, _ in parts}
         _check(of_values == {len(parts)},
                f"of가 조각 수와 다르다: {of_values} vs {len(parts)}")
-        _check([p for *_, p, _ in parts] == list(range(1, len(parts) + 1)),
+        _check([t[3] for t in parts] == list(range(1, len(parts) + 1)),
                "part 번호가 1..of가 아니다")
 
 
@@ -225,7 +225,7 @@ def test_pipe_split_repeats_header_and_separator():
 def test_pipe_split_pieces_searchable():
     """분할된 조각 하나하나가 검색 본문을 가져야 한다."""
     parts, _ = split_table(PIPE_LONG, budget=600)
-    for text, _, _, part, of in parts:
+    for text, _, _, part, of, _ in parts:
         out = table_search_text(text)
         _check(out.strip() != "", f"part {part}/{of}의 검색 본문이 비었다")
 
@@ -296,6 +296,7 @@ def test_small_table_not_split():
     parts, oversize = split_table(HTML_SIMPLE, budget=10_000)
     _check(len(parts) == 1, "작은 표가 분할됐다")
     _check(parts[0][4] == 1, "of가 1이 아니다")
+    _check(parts[0][5] is False, "작은 표가 초과로 표시됐다")
 
 
 def test_oversize_row_kept_whole():
@@ -343,7 +344,7 @@ def test_invariants_over_budgets():
         for budget in (150, 300, 600, 900, 1500, 5000):
             parts, _ = split_table(fx, budget)
             rows = []
-            for text, r0, r1, part, of in parts:
+            for text, r0, r1, part, of, _ in parts:
                 if table_kind(fx) == "html":
                     assert_tags_balanced(text, f"{name}/budget={budget} part{part}")
                 _check(table_search_text(text).strip() != "",
@@ -398,6 +399,47 @@ def test_outer_cells_depth_aware():
     _check(len(cells) == 2, f"바깥 셀이 2개여야 한다: {len(cells)}")
     _check("용역명" in cells[0], "중첩 표 뒤 텍스트가 첫 셀에 없다")
     _check(cells[1].strip() == "값", f"두 번째 셀이 틀렸다: {cells[1]!r}")
+
+
+def test_oversize_flag_only_on_uncut_rows():
+    """C-2 ③-c — 자르지 못해 남긴 조각에만 표시한다.
+
+    ⚠️ len(조각) > budget 으로 재면 머리글 반복분 때문에 정상 분할된 조각도
+       넘어 오탐이 난다(실제 코퍼스에서 950자 조각이 초과로 찍혔다).
+    """
+    # 모든 행이 작은 표 — 분할은 되지만 초과는 하나도 없어야 한다
+    fx = ('<table><tr><th>구분</th><th>값</th></tr>'
+          + "".join(f'<tr><td>항목{i}</td><td>{"가" * 60}</td></tr>' for i in range(1, 21))
+          + '</table>')
+    parts, oversize = split_table(fx, budget=400)
+    _check(len(parts) > 1, "분할이 안 일어나 검증이 무의미하다")
+    _check(oversize == 0, f"초과가 없어야 하는데 {oversize}건")
+    for html, r0, r1, part, of, over in parts:
+        _check(over is False, f"part {part}/{of}가 초과로 잘못 표시됐다")
+
+    # 한 행이 혼자 budget을 넘는 경우 — 그 조각만 표시
+    big = "나" * 900
+    fx2 = ('<table><tr><th>구분</th><th>값</th></tr>'
+           '<tr><td>작은행</td><td>값</td></tr>'
+           f'<tr><td>큰행</td><td>{big}</td></tr>'
+           '<tr><td>작은행2</td><td>값</td></tr></table>')
+    parts, oversize = split_table(fx2, budget=400)
+    _check(oversize == 1, f"초과가 1건이어야 한다: {oversize}")
+    flagged = [t for t in parts if t[5]]
+    _check(len(flagged) == 1, f"표시된 조각이 1개여야 한다: {len(flagged)}")
+    _check(big in flagged[0][0], "초과 표시가 엉뚱한 조각에 붙었다")
+
+
+def test_paragraph_oversize_flag():
+    from build_chunks import split_by_paragraph
+    text = "짧은 문단.\n\n" + "다" * 900 + "\n\n또 짧은 문단."
+    pieces, oversize = split_by_paragraph(text, budget=300, overlap=50)
+    _check(oversize == 1, f"초과 문단이 1건이어야 한다: {oversize}")
+    flagged = [p for p, over in pieces if over]
+    _check(len(flagged) == 1, f"표시된 조각이 1개여야 한다: {len(flagged)}")
+    for piece, over in pieces:
+        if not over:
+            _check(len(piece) <= 300 + 50, f"정상 조각이 budget을 넘는다: {len(piece)}")
 
 
 if __name__ == "__main__":
