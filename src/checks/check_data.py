@@ -321,12 +321,15 @@ def main():
 
     print("---\n")
     print("## 게이트 판정\n")
+    print("- 대상: 1·2·3·4번 (5번 미구현 · 6번 비활성)")
     if failures:
         print(f"- **위반 {len(failures)}건**")
         for f in failures:
             print(f"    - {f}")
         return 1
-    print("- 위반 없음 ✅")
+    print("- 구현된 검사에서 위반 없음 ✅")
+    print("  ⚠️ 전체 데이터가 정상이라는 뜻이 아니다. 5번(전처리본)은 빈자리이고,")
+    print("     6번(OCR 신호)은 입력을 만드는 parse_file.py 갱신 전이라 비활성이다.")
     return 0
 
 
