@@ -58,6 +58,12 @@ def build_parser() -> argparse.ArgumentParser:
                      help="문항 텍스트가 추적 파일에 유출됐는지 검사(【25】). final 모드는 자동 적용")
     run.add_argument("--data-manifest", default=None, help="1층 데이터 정상성 검사용")
     run.add_argument("--extraction-audit", default=None, help="3층 추출 표본 대조 결과")
+    # 3-1 / 3-2-2 강제 주입 — 검색·문서특정이 완벽할 때의 상한. 일반 실행과 비교 금지.
+    run.add_argument("--force-context", action="store_true",
+                     help="정답 근거 청크를 context 로 주입 (3-1). --chunks 필요")
+    run.add_argument("--force-doc", action="store_true",
+                     help="정답 문서 ID 를 selected_document_ids 로 주입 (3-2-2)")
+    run.add_argument("--chunks", default=None, help="--force-context 용 청크 jsonl")
     run.add_argument("--practice-set", default=None,
                      help="mode=ci 전용 practice 세트(검수 탈락분, practice_items.jsonl). "
                           "없으면 mode=ci 는 하드 실패한다(exit 1) — 최종셋 폴백 없음(임현진 2-17)")
@@ -137,6 +143,9 @@ def main() -> int:
                 strict_meta=args.strict,
                 leak_check=args.leak_check,
                 out_dir=args.out_dir,
+                force_context=args.force_context,
+                force_doc=args.force_doc,
+                chunks_path=args.chunks,
             )
             for L in report["layers"]:
                 line = f"  [{L['layer']}층] {L['status']}"

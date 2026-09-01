@@ -28,6 +28,16 @@
 - `mode=ci`: `--practice-set` **필수**. 없으면 하드 실패(exit 1) — 최종셋 폴백 없음(임현진 2-17).
 - `mode=final`: 누수 방지. `--allow-final`, 실제 심판(StubJudge 불가), 독립 원문 표본 대조(`--extraction-audit`) 모두 필요.
 
+### 강제 주입 (3-1 / 3-2-2 — `force_inject.py`)
+
+특정 단계를 "완벽했다고 가정"하고 채점 → 그 단계만 고치면 성능이 얼마나 오르는지의 **상한**.
+
+- `--force-context --chunks <jsonl>` : 정답 근거 청크를 context·citation 으로 주입 (3-1)
+- `--force-doc` : 정답 문서 ID 를 `selected_document_ids` 로 주입 (3-2-2)
+
+★ `report.manifest.forced` 에 표시된다. **일반 실행과 비교 금지** — 상한으로만 읽는다.
+★ 좌표 매칭은 `section` 단위 (박예진 청크에 `block_index` 없어 `ref_no` 매칭 불가).
+
 ## 패키지 지도 (`src/grader/`)
 
 | 모듈 | 역할 | 문서 |
@@ -39,6 +49,7 @@
 | `retrieval.py` | 3-2 검색 평가 + 3-4-3 출처 좌표 채점 | [scoring.md](scoring.md) |
 | `extraction.py` | 3-2-1 추출 테이블 감사 / 3-2-2 문서 특정 | [scoring.md](scoring.md) |
 | `judge.py` `prompts.py` `providers.py` | 3-8/3-9 LLM 심판 하네스 | — |
+| `force_inject.py` | 3-1/3-2-2 강제 주입 (검색·문서특정 완벽 가정 상한) | 위 §강제 주입 |
 | `validation/` | 평가셋 파서 + provenance + 1층 데이터 정상성 | [validation.md](validation.md) |
 | `checks/check_evalset.py` | 평가셋 계약 검사 (2-17, 임현진 단일 출처, 벤더링) | [validation.md](validation.md) |
 | `diagnostics/` | 집계 리포트 + 진단표 + 회귀 + 오염 방지 | — |

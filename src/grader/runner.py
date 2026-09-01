@@ -376,6 +376,9 @@ def execute(
     strict_meta: bool = False,
     leak_check: bool = False,
     out_dir: str | None = None,
+    force_context: bool = False,
+    force_doc: bool = False,
+    chunks_path: str | None = None,
 ) -> tuple[int, dict]:
     """3-6-1 층 실행기. mode: checks(1~3층) | ci(4층, 층화) | development(4층, 층화) |
     final(5층 전체 — --allow-final 필수 + 심판 assert_ready 필수).
@@ -504,6 +507,25 @@ def execute(
         return _finish(EXIT_CONFIG, layers, manifest, out_dir, "--responses 없음 — 4/5층 채점 불가")
 
     responses = index_by_id(validate_model_responses(responses_path))
+
+    # 3-1 / 3-2-2 강제 주입 — 검색·문서특정 단계를 완벽하다고 가정. 상한 측정용.
+    if force_context or force_doc:
+        from . import force_inject as fi
+        items_by_id = {it.id: it for it in validate_evaluation_set(evaluation_set_path)}
+        forced: list[str] = []
+        if force_doc:
+            forced.append("doc")
+            fi.apply_forced_doc(items_by_id, responses)
+        if force_context:
+            if not (chunks_path and os.path.exists(chunks_path)):
+                return _finish(EXIT_CONFIG, layers, manifest, out_dir,
+                               "★--force-context 는 --chunks(청크 jsonl) 가 필요하다 — "
+                               "정답 근거 청크를 주입해야 하므로.")
+            forced.append("context")
+            fi.apply_forced_context(items_by_id, responses, fi.load_chunk_index(chunks_path))
+        manifest["forced"] = forced
+        manifest["forced_note"] = ("★강제 주입 실행 — 일반 실행과 비교 금지. "
+                                   "이 점수는 해당 단계가 완벽할 때의 상한이다.")
 
     if mode == "ci":
         # ★practice 세트가 없으면 최종셋으로 조용히 새지 않고 즉시 하드 실패시킨다(임현진 확정).
