@@ -2,28 +2,16 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Iterable
 
 from pydantic import ValidationError
 
+from checks.check_evalset import load_jsonl  # 로더 단일 출처 (JSONL + concatenated JSON 허용)
+
 from ..models import EvaluationItem, ModelResponse
 
-
-def load_jsonl(path: str | Path) -> list[dict]:
-    path = Path(path)
-    records: list[dict] = []
-    with path.open("r", encoding="utf-8") as f:
-        for line_no, line in enumerate(f, start=1):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                records.append(json.loads(line))
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"{path}:{line_no} JSON 파싱 실패: {exc}") from exc
-    return records
+__all__ = ["load_jsonl", "validate_evaluation_set", "validate_model_responses", "index_by_id"]
 
 
 def validate_evaluation_set(path: str | Path, *, strict_meta: bool = False) -> list[EvaluationItem]:

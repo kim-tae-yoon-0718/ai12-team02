@@ -31,6 +31,8 @@ def build_parser() -> argparse.ArgumentParser:
     validate.add_argument("--corpus-doc-ids", default=None, help="corpus_doc_ids.json — 참조 무결성")
     validate.add_argument("--excluded-doc-ids", default=None, help="excluded_doc_ids.json")
     validate.add_argument("--practice-set", default=None, help="practice_items.jsonl — 유출 검사")
+    validate.add_argument("--final-set", action="store_true",
+                          help="검사 대상이 최종셋 — practice 유출 검사(PRAC 접두어·교집합·전용문서) 추가")
 
     run = sub.add_parser("run", help="층 실행기(3-6-1): checks/ci/development/final")
     run.add_argument("--evaluation-set", required=True)
@@ -110,6 +112,7 @@ def main() -> int:
             problems = run_evalset_checks(
                 records, corpus_doc_ids=corpus_ids, excluded_doc_ids=excluded,
                 practice_path=args.practice_set, leak_exclude=[args.evaluation_set],
+                final_set=args.final_set,
             )
             for p in problems:
                 print(f"  - {p}")

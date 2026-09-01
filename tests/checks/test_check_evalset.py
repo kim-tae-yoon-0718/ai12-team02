@@ -13,6 +13,7 @@ from checks.check_evalset import (
     check_quota,
     check_ref_intg,
     check_schema,
+    load_jsonl,
     run_all,
 )
 
@@ -131,12 +132,18 @@ def test_location_clean_passes():
 # ── C6 유출 ──────────────────────────────────────────────────────────
 
 def test_leak_prac_prefix_in_final():
-    assert any("PRAC-" in e for e in check_leak([_rec(id="PRAC-001")]))
+    assert any("PRAC-" in e for e in check_leak([_rec(id="PRAC-001")], final_set=True))
 
 
 def test_leak_practice_only_doc_as_gold():
     it = _rec(id="Q5", document_id="RFP-000038")  # PRACTICE_ONLY_DOCS
-    assert any("practice 전용 문서" in e for e in check_leak([it]))
+    assert any("practice 전용 문서" in e for e in check_leak([it], final_set=True))
+
+
+def test_leak_practice_checks_off_by_default():
+    """practice 세트 자체를 검사할 땐 PRAC 접두어·전용문서 검사가 오탐이므로 꺼져 있어야 한다."""
+    it = _rec(id="PRAC-001", document_id="RFP-000038")
+    assert check_leak([it]) == []
 
 
 def test_leak_question_in_tracked_file(tmp_path):
@@ -153,11 +160,34 @@ def test_leak_question_in_tracked_file(tmp_path):
 def test_leak_practice_id_overlap(tmp_path):
     prac = tmp_path / "practice_items.jsonl"
     prac.write_text(json.dumps(_rec(id="SHARED-1"), ensure_ascii=False) + "\n", encoding="utf-8")
-    problems = check_leak([_rec(id="SHARED-1")], practice_path=prac)
+    problems = check_leak([_rec(id="SHARED-1")], practice_path=prac, final_set=True)
     assert any("교집합" in e for e in problems)
 
 
 # ── 오케스트레이터 ───────────────────────────────────────────────────
+
+# ── 실제 팀 데이터에서 나온 케이스 ─────────────────────────────────────
+
+def test_load_jsonl_accepts_pretty_printed_concatenated_json(tmp_path):
+    """임현진 evalset/practice_items.jsonl 은 줄바꿈 있는 JSON 을 이어 붙인 형식이다."""
+    p = tmp_path / "practice_items.jsonl"
+    p.write_text('{\n "id": "A",\n "x": 1\n}\n{\n "id": "B",\n "x": 2\n}\n', encoding="utf-8")
+    recs = load_jsonl(p)
+    assert [r["id"] for r in recs] == ["A", "B"]
+
+
+def test_ref_intg_splits_multi_doc_comparison_location():
+    """comparison 문항은 location.document 가 'RFP-000038, RFP-000043' 처럼 이어붙인 문자열."""
+    it = _rec(id="CMP", task_type="qa", answer_type="comparison", answer_raw=[{"항목": "예산"}],
+              location={"document": "RFP-000038, RFP-000043",
+                        "section": "RFP-000038: A / RFP-000043: B", "ref_no": "문단 3"})
+    # 둘 다 유효 → 통과
+    assert check_ref_intg([it], valid_ids={"RFP-000038", "RFP-000043"}) == []
+    # 하나가 코퍼스에 없으면 그 ID 만 지목
+    probs = check_ref_intg([it], valid_ids={"RFP-000038"})
+    assert any("RFP-000043" in e for e in probs)
+    assert not any("RFP-000038, RFP-000043" in e for e in probs)  # 통짜 문자열로 잡지 않음
+
 
 def test_run_all_clean():
     assert run_all([_rec()]) == []

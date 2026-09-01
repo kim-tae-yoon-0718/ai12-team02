@@ -47,6 +47,7 @@ def check_evalset_integrity(
     retrieval_excluded_ids: set[str] | None = None,
     leak_check_root: str | None = None,
     leak_exclude: Iterable[str] = (),
+    final_set: bool = False,
 ) -> list[str]:
     """CI 2층 — 평가셋 계약 검사(2-17). 실제 규칙은 checks.check_evalset 단일 출처.
 
@@ -62,4 +63,5 @@ def check_evalset_integrity(
         quota=quota,
         leak_repo_root=leak_check_root,
         leak_exclude=list(leak_exclude),
+        final_set=final_set,
     )

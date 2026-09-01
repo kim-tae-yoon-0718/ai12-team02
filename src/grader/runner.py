@@ -447,6 +447,7 @@ def execute(
         practice_path=practice_set_path,
         leak_repo_root=leak_root,
         leak_exclude=leak_exclude,
+        final_set=(mode in ("ci", "final")),  # evaluation_set 이 최종셋인 모드
     )
     L2 = {"layer": 2, "status": "FAIL" if problems else "PASS", "problems": problems, "n_items": len(items)}
     layers.append(L2)

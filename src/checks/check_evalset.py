@@ -82,51 +82,73 @@ _COORD_PLACEHOLDERS = {"", "<문서id>", "todo", "[대기]", "?", "-", "n/a", "n
 # ────────────────────────────────────────────── 로딩
 
 def load_jsonl(path: str | Path) -> List[dict]:
-    """JSONL(대괄호·콤마 없이 줄마다 독립 JSON) 로드. 빈 줄은 건너뛴다."""
+    """평가셋 로드. 진짜 JSONL(줄마다 독립 JSON)이 정석이지만,
+    임현진 `evalset/practice_items.jsonl` 처럼 **여러 줄에 걸친 pretty-print JSON 을
+    이어 붙인 파일**도 받아 준다(파일 확장자는 .jsonl 이나 내용은 concatenated JSON).
+    """
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(path)
+
+    text = path.read_text(encoding="utf-8")
+    # 1) 줄 단위 JSONL 시도
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    try:
+        return [json.loads(ln) for ln in lines]
+    except json.JSONDecodeError:
+        pass
+    # 2) 이어 붙인(멀티라인) JSON 객체들 — raw_decode 로 훑는다
+    dec = json.JSONDecoder()
     records: list[dict] = []
-    errors: list[str] = []
-    with path.open("r", encoding="utf-8") as f:
-        for line_num, line in enumerate(f, start=1):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                records.append(json.loads(line))
-            except json.JSONDecodeError as e:
-                errors.append(f"line {line_num}: {e}")
-    if errors:
-        raise ValueError("\n".join(errors))
+    i, n = 0, len(text)
+    while i < n:
+        while i < n and text[i].isspace():
+            i += 1
+        if i >= n:
+            break
+        try:
+            obj, end = dec.raw_decode(text, i)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"{path}: JSON 파싱 실패 (offset {i}): {e}") from e
+        records.append(obj)
+        i = end
     return records
 
 
 # ────────────────────────────────────────────── C1 스키마
+
+_DOC_ID_RE = re.compile(r"RFP-\d{4,}")
+
+
+def _doc_ids_in(value) -> list[str]:
+    """문자열/배열에서 문서 ID 를 뽑는다. comparison 문항은 `location.document` 가
+    `"RFP-000038, RFP-000043"` 처럼 여러 ID 를 이어 붙인 문자열이라 정규식으로 훑는다."""
+    if isinstance(value, list):
+        out: list[str] = []
+        for v in value:
+            out += _doc_ids_in(v)
+        return out
+    if isinstance(value, str) and value:
+        found = _DOC_ID_RE.findall(value)
+        return found or [value]
+    return []
+
 
 def _gold_doc_ids(item: dict) -> list[str]:
     """이 문항이 정답 근거로 가리키는 문서 ID 전부.
 
     - 선별형(answer_type=document_set): answer_raw 가 문서 ID 배열
     - 그 외: document_id (문자열 또는 배열), intermediate_answer (문서 미특정형)
-    - location.document
+    - location.document (comparison 문항은 다중 ID 이어붙인 문자열)
     """
     out: list[str] = []
     if item.get("answer_type") == "document_set":
-        raw = item.get("answer_raw")
-        if isinstance(raw, list):
-            out += [str(d) for d in raw]
-        elif isinstance(raw, str) and raw:
-            out.append(raw)
+        out += _doc_ids_in(item.get("answer_raw"))
     for key in ("document_id", "intermediate_answer", "active_document_id"):
-        v = item.get(key)
-        if isinstance(v, list):
-            out += [str(d) for d in v]
-        elif isinstance(v, str) and v:
-            out.append(v)
+        out += _doc_ids_in(item.get(key))
     loc = item.get("location")
-    if isinstance(loc, dict) and isinstance(loc.get("document"), str) and loc["document"]:
-        out.append(loc["document"])
+    if isinstance(loc, dict):
+        out += _doc_ids_in(loc.get("document"))
     return out
 
 
@@ -333,30 +355,34 @@ def check_leak(
     repo_root: str | Path | None = None,
     min_len: int = 12,
     exclude_paths: List[str | Path] = (),
+    final_set: bool = False,
 ) -> List[str]:
-    """C6: 최종셋 유출 방지.
+    """C6: 유출 방지.
 
-    1) 최종셋 id 에 'PRAC-' 접두어가 섞임
-    2) practice 세트와 id 교집합
-    3) practice 전용 문서(2-13)를 근거로 씀
-    4) 문항 텍스트가 추적 파일(프롬프트·코드)에 그대로 있음 (repo_root 줄 때만)
+    항상: 문항 텍스트가 추적 파일(프롬프트·코드)에 그대로 있는지 (repo_root 줄 때만).
+    final_set=True (지금 검사하는 게 **최종셋**일 때만):
+      1) id 에 'PRAC-' 접두어가 섞임
+      2) practice 세트와 id 교집합
+      3) practice 전용 문서(2-13)를 근거로 씀
+    ★ practice 세트 자체를 검사할 때 이 셋을 켜면 전부 오탐이다.
     """
     errors: list[str] = []
 
-    prac_prefixed = [i.get("id") for i in items if str(i.get("id", "")).startswith("PRAC-")]
-    if prac_prefixed:
-        errors.append(f"C6: 최종셋에 practice id 접두어(PRAC-) {prac_prefixed}")
+    if final_set:
+        prac_prefixed = [i.get("id") for i in items if str(i.get("id", "")).startswith("PRAC-")]
+        if prac_prefixed:
+            errors.append(f"C6: 최종셋에 practice id 접두어(PRAC-) {prac_prefixed}")
 
-    if practice_path and Path(practice_path).exists():
-        prac_ids = {r.get("id") for r in load_jsonl(practice_path)}
-        overlap = sorted({i.get("id") for i in items} & prac_ids)
-        if overlap:
-            errors.append(f"C6: practice 세트와 id 교집합 {overlap}")
+        if practice_path and Path(practice_path).exists():
+            prac_ids = {r.get("id") for r in load_jsonl(practice_path)}
+            overlap = sorted({i.get("id") for i in items} & prac_ids)
+            if overlap:
+                errors.append(f"C6: practice 세트와 id 교집합 {overlap}")
 
-    for item in items:
-        used = set(_gold_doc_ids(item)) & set(PRACTICE_ONLY_DOCS)
-        if used:
-            errors.append(f"C6: {item.get('id')}: practice 전용 문서 {sorted(used)} 를 근거로 씀 (2-13)")
+        for item in items:
+            used = set(_gold_doc_ids(item)) & set(PRACTICE_ONLY_DOCS)
+            if used:
+                errors.append(f"C6: {item.get('id')}: practice 전용 문서 {sorted(used)} 를 근거로 씀 (2-13)")
 
     if repo_root:
         root = Path(repo_root)
@@ -391,8 +417,13 @@ def run_all(
     version_txt_path: str | Path | None = None,
     leak_repo_root: str | Path | None = None,
     leak_exclude: List[str | Path] = (),
+    final_set: bool = False,
 ) -> List[str]:
-    """평가셋 계약 검사 전체 (2-17). 값싼 것부터: C1 → C2 → C3 → 좌표 → C4 → C5 → C6."""
+    """평가셋 계약 검사 전체 (2-17). 값싼 것부터: C1 → C2 → C3 → 좌표 → C4 → C5 → C6.
+
+    final_set=True 이면 최종셋 전용 유출 검사(PRAC 접두어·practice 교집합·전용문서)도 켠다.
+    practice 세트를 검사할 땐 False(기본).
+    """
     problems: list[str] = []
     for i, item in enumerate(records, start=1):
         problems += check_schema(item, i)
@@ -401,7 +432,8 @@ def run_all(
     problems += check_location_coords(records)
     problems += check_ref_intg(records, valid_ids=corpus_doc_ids, excluded_ids=excluded_doc_ids)
     problems += check_version(records, version_txt_path)
-    problems += check_leak(records, practice_path, leak_repo_root, exclude_paths=leak_exclude)
+    problems += check_leak(records, practice_path, leak_repo_root,
+                           exclude_paths=leak_exclude, final_set=final_set)
     return problems
 
 
@@ -414,6 +446,8 @@ def main(argv=None) -> int:
     ap.add_argument("--version-txt", help="VERSION.txt (코퍼스 버전)")
     ap.add_argument("--strict", action="store_true", help="할당량 정확히 대조 (총 50)")
     ap.add_argument("--leak-scan-root", help="추적 파일 유출 스캔 루트 (보통 저장소 루트)")
+    ap.add_argument("--final-set", action="store_true",
+                    help="검사 대상이 최종셋일 때 — PRAC 접두어·practice 교집합·전용문서 유출 검사 추가")
     a = ap.parse_args(argv)
 
     records = load_jsonl(a.items_path)
@@ -429,6 +463,7 @@ def main(argv=None) -> int:
         version_txt_path=a.version_txt,
         leak_repo_root=a.leak_scan_root,
         leak_exclude=[a.items_path] + ([a.practice] if a.practice else []),
+        final_set=a.final_set,
     )
     for p in problems:
         print(p)
