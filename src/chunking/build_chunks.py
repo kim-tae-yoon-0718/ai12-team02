@@ -535,6 +535,16 @@ def _split_text_region(region: str, base_offset: int, line_of):
 # 청크 조립
 # ─────────────────────────────────────────────────────────────
 
+def clean_heading(title: str) -> str:
+    """헤딩 제목에서 HTML 태그를 걷어낸다.
+
+    ⚠️ chapter_title_recovered(1-17 C-1)가 표 안 한 줄을 제목으로 복구하면서
+       <u>일반현황 및 연혁</u> 같은 태그가 딸려온다. 이 값이 사용자에게 보여줄
+       원문 위치(C-3)와 김하루 님 Location.section에 그대로 나간다.
+    """
+    return re.sub(r"\s+", " ", TAG_RE.sub("", title)).strip()
+
+
 def build_prefix(doc_title: str, path: tuple) -> str:
     """C-3 ③ — 문서명 + 전체 장절 경로. 기계 조립, LLM 생성 없음."""
     return " > ".join([doc_title] + list(path))
@@ -697,7 +707,9 @@ def process_document(reg_row, md_dir, sidecar_dir, cfg, errors):
     for kind, body, ln0, ln1 in blocks:
         if kind == "heading":
             m = HEADING_RE.match(body)
-            level, title = len(m.group(1)), m.group(2).strip()
+            level, title = len(m.group(1)), clean_heading(m.group(2))
+            if not title:
+                continue                        # 태그만 있던 줄은 헤딩으로 안 센다
             while stack and stack[-1][0] >= level:
                 stack.pop()
             stack.append((level, title))
@@ -735,7 +747,8 @@ def process_document(reg_row, md_dir, sidecar_dir, cfg, errors):
         if not group:
             return
         paths = [u["path"] for u in group]
-        path = common_prefix(paths) if len(set(paths)) > 1 else paths[0]
+        uniq = list(dict.fromkeys(paths))       # 순서 유지, 중복 제거
+        path = common_prefix(paths) if len(uniq) > 1 else paths[0]
         prefix = build_prefix(doc_title, path)
         budget = max(size - len(prefix) - 1, 200)
         text = "\n\n".join(u["text"] for u in group)
@@ -745,6 +758,7 @@ def process_document(reg_row, md_dir, sidecar_dir, cfg, errors):
                 "kind": "text", "path": path, "content": piece,
                 "line_start": group[0]["line_start"], "line_end": group[-1]["line_end"],
                 "para_start": group[0]["para_start"], "para_end": group[-1]["para_end"],
+                "member_paths": uniq,
                 "boiler_type": group[0]["boiler_type"], "boiler_label": group[0]["boiler_label"],
                 "oversize": 1 if (len(piece) > budget) else 0,
                 "prefix": prefix,
@@ -760,9 +774,8 @@ def process_document(reg_row, md_dir, sidecar_dir, cfg, errors):
             ratio, blank, total = table_blank_ratio(u["html"])
             if len(u["html"]) <= budget:
                 parts = [(u["html"], 1, max(table_row_count(u["html"]), 1), 1, 1)]
-                t_over = 0
             else:
-                parts, t_over = split_table(u["html"], budget)
+                parts, _ = split_table(u["html"], budget)
             for html, r0, r1, part, of in parts:
                 chunks_raw.append({
                     "kind": "table", "path": path, "content": html,
@@ -771,7 +784,9 @@ def process_document(reg_row, md_dir, sidecar_dir, cfg, errors):
                     "part": part, "of": of,
                     "blank_ratio": ratio, "blank_cells": blank, "total_cells": total,
                     "boiler_type": u["boiler_type"], "boiler_label": u["boiler_label"],
-                    "oversize": t_over if of == 1 else 0,
+                    # C-2 ③-c — 초과한 조각마다 표시한다.
+                    # 이전에는 of == 1일 때만 기록해 분할된 표의 초과가 통째로 빠졌다.
+                    "oversize": 1 if len(html) > budget else 0,
                     "prefix": prefix,
                 })
         else:
@@ -811,6 +826,9 @@ def process_document(reg_row, md_dir, sidecar_dir, cfg, errors):
             "chunking_version": cfg["chunking_version"],
             "source_document_title": doc_title,
             "section_path": list(c["path"]),
+            # 서로 다른 절을 병합한 경우 구성원 경로를 전부 남긴다.
+            # section_path만 두면 3.1과 3.2를 합친 뒤 "3장"만 남아 근거 위치를 잃는다.
+            "section_paths": [list(p) for p in c.get("member_paths", [c["path"]])],
             "location_label": location,
             "block_type": c["kind"],
             "table_idx": c.get("table_idx"),
@@ -859,6 +877,9 @@ def main():
     ap.add_argument("--config-override", type=Path, default=None)
     ap.add_argument("--only", type=str, default=None,
                     help="쉼표로 구분한 document_id. 해당 문서의 청크만 다시 만든다 (C-5)")
+    ap.add_argument("--skip-extraction-check", action="store_true",
+                    help="추출표 대조를 건너뛴다. C-5 ③ 안전장치를 끄는 것이므로 "
+                         "사유를 기록해야 한다")
     ap.add_argument("--tokenize", action="store_true",
                     help="토큰 길이 집계까지 수행 (transformers 필요)")
     ap.add_argument("--repo-root", type=Path, default=None)
@@ -890,11 +911,24 @@ def main():
     extraction_versions = read_extraction_versions(table_dir)
     errors = []
 
-    if not extraction_versions:
-        errors.append({"level": "warn",
-                       "msg": "추출표에서 document_version을 찾지 못해 대조를 건너뜁니다"})
-
     # C-5 ③ 중단 조건 — document_version 대조
+    # ⚠️ 못 읽으면 경고만 남기고 진행하면, 버전이 정말 같은지 확인 못 한 채
+    #    공식 청크가 만들어진다. 대조 자체가 불가능하면 중단한다.
+    if args.skip_extraction_check:
+        errors.append({"level": "warn",
+                       "msg": "--skip-extraction-check — C-5 ③ 추출표 대조를 건너뜀"})
+        extraction_versions = {}
+    elif not extraction_versions:
+        die(f"추출표에서 document_id·document_version을 읽지 못했습니다: {table_dir}\n"
+            f"       C-5 ③ 대조를 수행할 수 없어 중단합니다. "
+            f"컬럼 구조를 확인하거나 --skip-extraction-check 로 명시적으로 건너뛰세요.")
+
+    if extraction_versions:
+        missing = [r["document_id"] for r in registry
+                   if r["document_id"] not in extraction_versions]
+        if missing:
+            die(f"추출표에 없는 문서가 {len(missing)}건 있습니다: {missing[:5]}")
+
     mismatches = []
     for r in registry:
         ev = extraction_versions.get(r["document_id"])
@@ -916,6 +950,34 @@ def main():
         die(f"--only 에 등록부에 없는 document_id가 있습니다: "
             f"{sorted(only - {r['document_id'] for r in targets})}")
 
+    chunks_path = out_dir / "chunks.jsonl"
+    existing = []
+    if only:
+        # ⚠️ 부분 갱신은 "이미 완전한 전체 파일이 있다"를 전제로 한다.
+        #    전제를 확인하지 않으면 100문서짜리 자리에 1문서짜리가 생기거나,
+        #    설정을 바꾼 뒤 한 문서만 갱신해 99개는 옛 설정인 혼합 파일이 된다.
+        if not chunks_path.exists():
+            die(f"부분 갱신할 기존 산출물이 없습니다: {chunks_path}\n"
+                f"       --only 없이 전체 청킹을 먼저 실행하세요.")
+        with chunks_path.open(encoding="utf-8") as f:
+            existing = [json.loads(line) for line in f]
+
+        prev_docs = {c["document_id"] for c in existing}
+        reg_docs = {r["document_id"] for r in registry}
+        if prev_docs != reg_docs:
+            die(f"기존 산출물의 문서 집합이 등록부와 다릅니다 "
+                f"(기존 {len(prev_docs)}건 / 등록부 {len(reg_docs)}건). "
+                f"전체 청킹을 먼저 실행하세요.")
+
+        # 설정이 바뀐 채 부분 갱신하면 한 파일 안에 두 설정의 청크가 섞인다.
+        for key in ("chunking_version", "corpus_version"):
+            want = cfg["chunking_version"] if key == "chunking_version" else cfg["corpus"]
+            prev = {c.get(key) for c in existing}
+            if prev != {want}:
+                die(f"기존 산출물의 {key}가 현재 설정과 다릅니다 "
+                    f"(기존 {sorted(prev)} / 현재 {want}). "
+                    f"설정이 바뀌었다면 전체 청킹을 실행하세요.")
+
     started = datetime.now(timezone.utc)
     all_chunks, per_doc = [], {}
     for r in targets:
@@ -924,17 +986,10 @@ def main():
         per_doc[r["document_id"]] = stat
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    chunks_path = out_dir / "chunks.jsonl"
 
     if only:
         # C-5 — 해당 document_id의 청크만 교체한다.
-        kept = []
-        if chunks_path.exists():
-            with chunks_path.open(encoding="utf-8") as f:
-                for line in f:
-                    obj = json.loads(line)
-                    if obj["document_id"] not in only:
-                        kept.append(obj)
+        kept = [c for c in existing if c["document_id"] not in only]
         merged = kept + all_chunks
         merged.sort(key=lambda c: (c["document_id"], c["chunk_id"]))
     else:
@@ -991,8 +1046,11 @@ def main():
         "per_document": per_doc,
     }
 
+    token_failed = False
     if args.tokenize:
         stats["token_len"] = tokenize_stats(all_chunks, errors)
+        # 명시적으로 요청한 측정이 실패했으면 성공으로 끝내지 않는다.
+        token_failed = not stats["token_len"]
 
     (out_dir / "stats.json").write_text(
         json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1012,10 +1070,10 @@ def main():
     print(f"  길이(자) 중앙 {stats['char_len']['median']} p95 {stats['char_len']['p95']} "
           f"최대 {stats['char_len']['max']}")
     print(f"  소요 {stats['elapsed_sec']}초  →  {out_dir}")
-    err_n = sum(1 for e in errors if e["level"] == "error")
-    if err_n:
-        print(f"[경고] error {err_n}건 — errors.jsonl 확인", file=sys.stderr)
-        sys.exit(2)
+    if token_failed:
+        print("[실패] --tokenize 를 요청했으나 토큰 길이를 측정하지 못했습니다. "
+              "errors.jsonl 확인.", file=sys.stderr)
+        sys.exit(3)
 
 
 def tokenize_stats(chunks, errors):

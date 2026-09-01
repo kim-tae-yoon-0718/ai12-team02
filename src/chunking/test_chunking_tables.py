@@ -17,7 +17,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from build_chunks import (                                    # noqa: E402
     CELL_RE, TABLE_CLOSE_RE, TABLE_OPEN_RE,
-    find_tables, split_blocks, split_table,
+    can_merge, clean_heading, common_prefix,
+    find_tables, outer_cells, split_blocks, split_table,
     table_blank_ratio, table_kind, table_parts,
     table_row_count, table_search_text,
 )
@@ -80,6 +81,27 @@ HTML_ROWSPAN = (
 def tag_balance(html: str):
     return (len(TABLE_OPEN_RE.findall(html)),
             len(TABLE_CLOSE_RE.findall(html)))
+
+
+INNER_TAGS = ("table", "tr", "td", "th", "thead", "tbody")
+
+
+def inner_tag_balance(html: str):
+    """table 뿐 아니라 tr·td·th·thead·tbody 짝도 센다.
+
+    바깥 <table>만 세면 행·셀이 깨져도 통과한다 (리뷰 지적).
+    """
+    out = {}
+    for tag in INNER_TAGS:
+        opens = len(re.findall(rf"<{tag}\b", html, re.I))
+        closes = len(re.findall(rf"</{tag}\s*>", html, re.I))
+        out[tag] = (opens, closes)
+    return out
+
+
+def assert_tags_balanced(html: str, where: str):
+    for tag, (o, c) in inner_tag_balance(html).items():
+        _check(o == c, f"{where}: <{tag}> 짝 불일치 {o} vs {c}")
 
 
 def _check(cond, msg):
@@ -152,9 +174,7 @@ def test_nested_split_keeps_tags_balanced():
     parts, oversize = split_table(HTML_NESTED_BIG, budget=800)
     _check(len(parts) > 1, "분할이 일어나지 않아 검증이 무의미하다")
     for html, r0, r1, part, of in parts:
-        opens, closes = tag_balance(html)
-        _check(opens == closes,
-               f"part {part}/{of}에서 태그 짝이 안 맞는다: {opens} vs {closes}")
+        assert_tags_balanced(html, f"part {part}/{of}")
 
 
 def test_nested_split_header_repeated():
@@ -282,9 +302,8 @@ def test_oversize_row_kept_whole():
     """C-2 ③-c — 한 행이 budget을 넘어도 자르지 않는다."""
     parts, oversize = split_table(HTML_NESTED_BIG, budget=100)
     _check(oversize > 0, "초과 행이 기록되지 않았다")
-    for html, *_ in parts:
-        opens, closes = tag_balance(html)
-        _check(opens == closes, "초과 행 처리에서 태그가 깨졌다")
+    for i, (html, *_) in enumerate(parts, start=1):
+        assert_tags_balanced(html, f"초과 행 처리 part{i}")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -326,13 +345,59 @@ def test_invariants_over_budgets():
             rows = []
             for text, r0, r1, part, of in parts:
                 if table_kind(fx) == "html":
-                    o, c = tag_balance(text)
-                    _check(o == c, f"{name}/budget={budget} part{part}: 태그 불균형")
+                    assert_tags_balanced(text, f"{name}/budget={budget} part{part}")
                 _check(table_search_text(text).strip() != "",
                        f"{name}/budget={budget} part{part}: 검색 본문 빔")
                 rows.extend(range(r0, r1 + 1))
             _check(rows == list(range(1, total + 1)),
                    f"{name}/budget={budget}: 행 보존 실패 {len(rows)}/{total}")
+
+
+# ─────────────────────────────────────────────────────────────
+# 헤딩 정제 · 병합 경로 보존 (PR #7 후속 지적)
+# ─────────────────────────────────────────────────────────────
+
+def test_clean_heading_strips_tags():
+    """chapter_title_recovered가 붙인 HTML 태그가 출처 표기에 나가면 안 된다."""
+    _check(clean_heading("<u>일반현황 및 연혁</u>") == "일반현황 및 연혁",
+           f"태그가 남았다: {clean_heading('<u>일반현황 및 연혁</u>')!r}")
+    _check(clean_heading("3.1  기술평가") == "3.1 기술평가", "공백 정리가 안 됐다")
+    _check(clean_heading("<br>") == "", "태그만 있는 제목이 비지 않았다")
+
+
+def test_heading_tags_not_in_section_path():
+    doc = "# <u>Ⅰ. 사업안내</u>\n\n본문입니다.\n"
+    kinds = [(k, b) for k, b, *_ in split_blocks(doc)]
+    heading = [b for k, b in kinds if k == "heading"][0]
+    m = re.match(r"^(#{1,6})[ \t]+(.*\S)\s*$", heading)
+    _check("<" not in clean_heading(m.group(2)), "장절 경로에 태그가 남는다")
+
+
+def test_merge_rule_siblings_only():
+    """C-1 ④ — 3.1과 3.2는 합치고 3장과 4장은 합치지 않는다."""
+    _check(can_merge(("3장", "3.1"), ("3장", "3.2")), "형제 절이 안 합쳐진다")
+    _check(not can_merge(("3장",), ("4장",)), "다른 장이 합쳐진다")
+    _check(can_merge(("3장",), ("3장",)), "같은 경로가 안 합쳐진다")
+    _check(not can_merge(("3장",), ("3장", "3.1")), "깊이가 다른데 합쳐진다")
+
+
+def test_common_prefix_is_shared_parent():
+    paths = [("Ⅰ. 사업안내", "1. 사업개요"),
+             ("Ⅰ. 사업안내", "2. 사업목표"),
+             ("Ⅰ. 사업안내", "3. 사업유형")]
+    _check(common_prefix(paths) == ("Ⅰ. 사업안내",),
+           f"공통 부모가 틀렸다: {common_prefix(paths)}")
+    # section_path만 두면 여기서 1·2·3 구분이 사라진다.
+    # 그래서 청크에 section_paths(구성원 경로 전부)를 함께 남긴다.
+
+
+def test_outer_cells_depth_aware():
+    row = ('<tr><th><table><tr><th>안</th><th></th></tr></table>'
+           '<br>용역명 : OO사업</th><td>값</td></tr>')
+    cells = outer_cells(row)
+    _check(len(cells) == 2, f"바깥 셀이 2개여야 한다: {len(cells)}")
+    _check("용역명" in cells[0], "중첩 표 뒤 텍스트가 첫 셀에 없다")
+    _check(cells[1].strip() == "값", f"두 번째 셀이 틀렸다: {cells[1]!r}")
 
 
 if __name__ == "__main__":
