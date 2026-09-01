@@ -29,6 +29,7 @@ import subprocess
 import sys
 import unicodedata
 from collections import Counter, defaultdict
+collections_Counter = Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -181,40 +182,144 @@ def read_registry(path: Path) -> list:
     return rows
 
 
-def read_extraction_versions(table_dir: Path):
-    """추출표에서 document_id → {document_version, ...} 을 뽑는다.
+def load_extraction_metadata(table_dir: Path, cfg: dict):
+    """추출표 공식 메타데이터를 읽고 버전을 교차 확인한다.
 
-    ⚠️ 문서마다 12행(12필드)이다. 마지막 행만 남기면 앞선 11행 중 하나가
-       달라도 마지막이 정상이면 통과한다. 전 행을 읽고 문서 안에서 값이
-       갈리는지까지 본다.
-
-    반환: (versions, row_count, inconsistent)
-        versions      document_id → document_version
-        inconsistent  한 문서 안에서 값이 갈린 목록
+    폴더 이름이 v3이라고 안의 내용도 v3인 것은 아니다.
+    공식 이름표는 extraction_metadata.json 이다(팀 결정 2026-09-01).
+    산출물별 이름표: 코퍼스 VERSION.txt / 등록부 registry_metadata.json /
+    추출표 extraction_metadata.json. VERSION.txt 를 새로 만들지 않는다.
     """
-    if not table_dir.exists():
-        return {}, 0, []
-    for cand in sorted(table_dir.glob("*.csv")):
-        try:
-            with cand.open(newline="", encoding="utf-8-sig") as f:
-                reader = csv.DictReader(f)
-                if not reader.fieldnames:
-                    continue
-                if not ("document_id" in reader.fieldnames
-                        and "document_version" in reader.fieldnames):
-                    continue
-                seen, rows = {}, 0
-                for r in reader:
-                    rows += 1
-                    seen.setdefault(r["document_id"], set()).add(r["document_version"])
-                if not seen:
-                    continue
-                bad = [{"document_id": d, "versions": sorted(v)}
-                       for d, v in seen.items() if len(v) > 1]
-                return ({d: sorted(v)[0] for d, v in seen.items()}, rows, bad)
-        except Exception:
-            continue
-    return {}, 0, []
+    meta_path = table_dir / "extraction_metadata.json"
+    if not meta_path.exists():
+        die(f"추출표 공식 메타데이터가 없습니다: {meta_path}")
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception as e:                                     # noqa: BLE001
+        die(f"extraction_metadata.json 을 읽지 못했습니다: {e}")
+
+    want = {
+        "extraction_version": cfg["table"],
+        "corpus_version": cfg["corpus"],
+        "registry_version": cfg["corpus"],   # 등록부는 코퍼스와 같은 버전을 쓴다
+    }
+    bad = {k: (meta.get(k), v) for k, v in want.items() if meta.get(k) != v}
+    if bad:
+        die("추출표 메타데이터의 버전이 설정과 다릅니다: " +
+            " / ".join(f"{k}: {a} (기대 {b})" for k, (a, b) in bad.items()))
+
+    schema = meta.get("schema_version")
+    if not schema or not str(schema).endswith("/" + str(cfg["table"])):
+        die(f"schema_version 이 추출표 버전과 맞지 않습니다: {schema} "
+            f"(기대 '.../{cfg['table']}')")
+
+    for k in ("row_count", "document_count", "field_count"):
+        if not isinstance(meta.get(k), int) or meta[k] <= 0:
+            die(f"추출표 메타데이터의 {k} 가 비었거나 잘못됐습니다: {meta.get(k)}")
+
+    # 생성 근거가 비어 있으면 어느 코드·입력으로 만든 표인지 되짚을 수 없다.
+    for k in ("generated_at", "generator", "corpus_dir", "registry_dir",
+              "rules_sha256", "decisions_file"):
+        if not meta.get(k):
+            die(f"추출표 메타데이터에 {k} 가 없습니다. 공식 산출물로 쓸 수 없습니다.")
+
+    return meta
+
+
+def check_registry_metadata(registry_dir: Path, cfg: dict, ext_meta: dict):
+    """등록부 공식 메타데이터(registry_metadata.json)와 교차 확인한다."""
+    meta_path = registry_dir / "registry_metadata.json"
+    if not meta_path.exists():
+        die(f"등록부 공식 메타데이터가 없습니다: {meta_path}")
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception as e:                                     # noqa: BLE001
+        die(f"registry_metadata.json 을 읽지 못했습니다: {e}")
+
+    if meta.get("corpus_version") != cfg["corpus"]:
+        die(f"등록부 메타데이터의 corpus_version 이 설정과 다릅니다: "
+            f"{meta.get('corpus_version')} (기대 {cfg['corpus']})")
+    if meta.get("document_count") != ext_meta["document_count"]:
+        die(f"등록부와 추출표의 문서 수가 다릅니다: "
+            f"등록부 {meta.get('document_count')} / 추출표 {ext_meta['document_count']}")
+    return meta
+
+
+def validate_extraction_table(table_dir: Path, cfg: dict, meta: dict, registry: list):
+    """추출표 CSV의 기본 구조를 강제로 확인한다.
+
+    ⚠️ 폴더의 첫 번째 *.csv 를 쓰면 보조 CSV(field_alias_candidates 등)를
+       잘못 읽는다. 공식 파일명을 명시해서 연다.
+    """
+    csv_path = table_dir / f"extraction_table_{cfg['table']}.csv"
+    if not csv_path.exists():
+        die(f"공식 추출표 CSV가 없습니다: {csv_path}")
+
+    with csv_path.open(newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        cols = reader.fieldnames or []
+        for need in ("document_id", "document_version", "field_name"):
+            if need not in cols:
+                die(f"추출표에 {need} 컬럼이 없습니다: {cols[:8]}")
+        rows = list(reader)
+
+    n_rows = len(rows)
+    if n_rows != meta["row_count"]:
+        die(f"추출표 행 수가 메타데이터와 다릅니다: 실제 {n_rows} / "
+            f"메타데이터 {meta['row_count']}")
+
+    blank = [i + 2 for i, r in enumerate(rows)
+             if not (r["document_id"] or "").strip() or not (r["field_name"] or "").strip()]
+    if blank:
+        die(f"document_id 또는 field_name 이 빈 행이 {len(blank)}건 있습니다: {blank[:5]}")
+
+    by_doc, versions, pairs = {}, {}, collections_Counter()
+    for r in rows:
+        d, fld = r["document_id"], r["field_name"]
+        by_doc.setdefault(d, []).append(fld)
+        versions.setdefault(d, set()).add(r["document_version"])
+        pairs[(d, fld)] += 1
+
+    dup = [k for k, v in pairs.items() if v > 1]
+    if dup:
+        die(f"(document_id, field_name) 중복이 {len(dup)}건 있습니다: {dup[:5]}")
+
+    if len(by_doc) != meta["document_count"]:
+        die(f"추출표 문서 수가 메타데이터와 다릅니다: 실제 {len(by_doc)} / "
+            f"메타데이터 {meta['document_count']}")
+
+    fc = meta["field_count"]
+    wrong = {d: len(f) for d, f in by_doc.items() if len(f) != fc}
+    if wrong:
+        die(f"필드 수가 {fc}가 아닌 문서가 {len(wrong)}건 있습니다: "
+            f"{list(wrong.items())[:5]}")
+
+    field_sets = {frozenset(f) for f in by_doc.values()}
+    if len(field_sets) != 1:
+        die(f"문서마다 필드 구성이 다릅니다 (서로 다른 조합 {len(field_sets)}종)")
+
+    split = [{"document_id": d, "versions": sorted(v)}
+             for d, v in versions.items() if len(v) > 1]
+    if split:
+        die(f"한 문서 안에서 document_version 이 갈립니다 ({len(split)}건): {split[:3]}")
+
+    reg_map = {r["document_id"]: r["document_version"] for r in registry}
+    missing = sorted(set(reg_map) - set(by_doc))
+    extra = sorted(set(by_doc) - set(reg_map))
+    if missing:
+        die(f"추출표에 없는 등록부 문서가 {len(missing)}건 있습니다: {missing[:5]}")
+    if extra:
+        die(f"등록부에 없는 문서가 추출표에 {len(extra)}건 있습니다: {extra[:5]}")
+
+    mismatch = [{"document_id": d, "registry": reg_map[d],
+                 "extraction": sorted(versions[d])[0]}
+                for d in reg_map if sorted(versions[d])[0] != reg_map[d]]
+    if mismatch:
+        die(f"등록부와 추출표의 document_version 이 다릅니다 ({len(mismatch)}건): "
+            f"{mismatch[:3]}")
+
+    return {"csv": csv_path.name, "rows": n_rows, "documents": len(by_doc),
+            "fields_per_document": fc}
 
 
 def sha256_of(path: Path) -> str:
@@ -933,53 +1038,24 @@ def main():
             die(f"입력을 찾을 수 없습니다: {p}")
 
     registry = read_registry(registry_path)
-    extraction_versions, ext_rows, ext_bad = read_extraction_versions(table_dir)
     errors = []
 
-    # C-5 ③ 중단 조건 — document_version 대조
-    # ⚠️ 못 읽으면 경고만 남기고 진행하면, 버전이 정말 같은지 확인 못 한 채
-    #    공식 청크가 만들어진다. 대조 자체가 불가능하면 중단한다.
+    registry_dir = registry_path.parent
     if args.skip_extraction_check:
         # ⚠️ 안전장치를 끈 결과가 공식 폴더에 저장되면 안 된다.
-        #    검증을 건너뛴 산출물은 별도 폴더로만 나간다.
         out_dir = processed / f"chunks_{cfg['chunking_version']}_unchecked"
         errors.append({"level": "warn",
-                       "msg": "--skip-extraction-check — C-5 ③ 추출표 대조를 건너뜀. "
+                       "msg": "--skip-extraction-check — C-5 ③ 추출표 검증을 건너뜀. "
                               f"공식 폴더가 아닌 {out_dir.name} 에 저장한다"})
-        extraction_versions = {}
-    elif not extraction_versions:
-        die(f"추출표에서 document_id·document_version을 읽지 못했습니다: {table_dir}\n"
-            f"       C-5 ③ 대조를 수행할 수 없어 중단합니다. "
-            f"컬럼 구조를 확인하거나 --skip-extraction-check 로 명시적으로 건너뛰세요.")
-
-    if extraction_versions:
-        if ext_bad:
-            die(f"추출표 한 문서 안에서 document_version이 갈립니다 ({len(ext_bad)}건): "
-                f"{ext_bad[:3]}")
-        missing = [r["document_id"] for r in registry
-                   if r["document_id"] not in extraction_versions]
-        if missing:
-            die(f"추출표에 없는 문서가 {len(missing)}건 있습니다: {missing[:5]}")
-        extra = [d for d in extraction_versions
-                 if d not in {r["document_id"] for r in registry}]
-        if extra:
-            die(f"등록부에 없는 문서가 추출표에 {len(extra)}건 있습니다: {extra[:5]}")
-        print(f"추출표 대조: {ext_rows}행 / 문서 {len(extraction_versions)}건 — 이상 없음")
-
-    mismatches = []
-    for r in registry:
-        ev = extraction_versions.get(r["document_id"])
-        if ev is not None and str(ev) != str(r["document_version"]):
-            mismatches.append({"document_id": r["document_id"],
-                               "registry": r["document_version"], "extraction": ev})
-    if mismatches:
-        out_dir.mkdir(parents=True, exist_ok=True)
-        with (out_dir / "errors.jsonl").open("w", encoding="utf-8") as f:
-            for m in mismatches:
-                f.write(json.dumps({"level": "error", "msg": "document_version 불일치",
-                                    **m}, ensure_ascii=False) + "\n")
-        die(f"등록부와 추출표의 document_version이 다릅니다 ({len(mismatches)}건). "
-            f"errors.jsonl 확인.")
+        ext_report = None
+    else:
+        ext_meta = load_extraction_metadata(table_dir, cfg)
+        check_registry_metadata(registry_dir, cfg, ext_meta)
+        ext_report = validate_extraction_table(table_dir, cfg, ext_meta, registry)
+        print(f"추출표 검증: {ext_report['csv']} — {ext_report['rows']}행 / "
+              f"문서 {ext_report['documents']}건 / "
+              f"문서당 {ext_report['fields_per_document']}필드 · "
+              f"schema {ext_meta['schema_version']} — 이상 없음")
 
     only = set(x.strip() for x in args.only.split(",")) if args.only else None
     targets = [r for r in registry if (only is None or r["document_id"] in only)]
@@ -1071,6 +1147,8 @@ def main():
         "generated_at": started.isoformat(),
         "elapsed_sec": round((datetime.now(timezone.utc) - started).total_seconds(), 1),
         "config": {k: cfg[k] for k in REQUIRED_KEYS},
+        "embedding": {k: cfg.get(k) for k in OPTIONAL_KEYS},
+        "extraction_check": ext_report,
         "git": gi,
         "mode": "partial" if only else "full",
         "documents_in_file": len({c["document_id"] for c in all_chunks}),
@@ -1096,10 +1174,13 @@ def main():
     #    나중에 하면 명령은 실패했는데 공식 파일은 이미 바뀌는 일이 생긴다.
     token_failed = False
     if args.tokenize:
-        stats["token_len"] = tokenize_stats(
-            all_chunks, errors,
-            cfg.get("embedding_model") or "text-embedding-3-small",
-            cfg.get("embedding_max_length"))
+        model = cfg.get("embedding_model")
+        max_len = cfg.get("embedding_max_length")
+        if not model or not max_len:
+            die("--tokenize 를 쓰려면 base.yaml 의 embedding_model 과 "
+                "embedding_max_length 가 채워져 있어야 합니다. "
+                "임의 기본값으로 진행하지 않습니다.", code=3)
+        stats["token_len"] = tokenize_stats(all_chunks, errors, model, int(max_len))
         # 명시적으로 요청한 측정이 실패했으면 성공으로 끝내지 않는다.
         token_failed = not stats["token_len"]
 
@@ -1138,7 +1219,7 @@ def main():
         tl = stats["token_len"]
         over = tl.get("over_limit")
         print(f"  토큰({tl['model']}) 중앙 {tl['median']} p95 {tl['p95']} 최대 {tl['max']}"
-              + (f" / 입력 한도 초과 {over}건" if over is not None else " / 한도 미확정"))
+              + f" / {tl['max_input_length']}토큰 초과 {over}건")
     print(f"  소요 {stats['elapsed_sec']}초  →  {out_dir}")
 
 
@@ -1169,12 +1250,8 @@ def tokenize_stats(chunks, errors, model: str, max_len):
         "mean": round(sum(lens) / len(lens), 1),
         "median": pct(lens, 0.50), "p95": pct(lens, 0.95), "max": lens[-1],
     }
-    if max_len:
-        out["max_input_length"] = max_len
-        out["over_limit"] = sum(1 for x in lens if x > int(max_len))
-    else:
-        errors.append({"level": "warn",
-                       "msg": "embedding_max_length 가 비어 있어 초과 건수를 세지 못했습니다"})
+    out["max_input_length"] = int(max_len)
+    out["over_limit"] = sum(1 for x in lens if x > int(max_len))
     return out
 
 
