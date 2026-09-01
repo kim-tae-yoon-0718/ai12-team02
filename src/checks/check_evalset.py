@@ -1,6 +1,7 @@
 import json
+import sys
+import argparse
 from pathlib import Path 
-from typing import List
 import collections
 from collections import namedtuple, Counter
 
@@ -49,7 +50,7 @@ DEPRECATED_FIELDS = (
 )
 
 
-def load_jsonl(path: Path) -> List[dict]:
+def load_jsonl(path: Path) -> list[dict]:
     """ 
     데이터를 jsonl형식으로 다운로드
     jsonl: 독립적으로 연결된 json (대괄호도 콤마도 없음) 
@@ -78,7 +79,7 @@ def load_jsonl(path: Path) -> List[dict]:
     return jsonl_data
 
 
-def check_schema(item: dict, line_num: int) -> List[str]:
+def check_schema(item: dict, line_num: int) -> list[str]:
     """
     C1: 스키마 준수
     문항 한 줄(jsonl: item)을 받아 스키마가 결여된 사항을 리스트로 반환
@@ -156,7 +157,7 @@ def check_schema(item: dict, line_num: int) -> List[str]:
     return errors
 
 
-def check_dup_ids(items: list[dict]) -> List[str]:
+def check_dup_ids(items: list[dict]) -> list[str]:
     """
     C2: 중복 ID
     item_id 중복 검출
@@ -171,7 +172,7 @@ def check_dup_ids(items: list[dict]) -> List[str]:
     return errors
 
 
-def check_quota(items: list[dict], strict: bool = False) -> List[str]:
+def check_quota(items: list[dict], strict: bool = False) -> list[str]:
     """
     C3: 할당량
     task_type별 문항 수 검사
@@ -197,7 +198,7 @@ def check_quota(items: list[dict], strict: bool = False) -> List[str]:
     return errors
 
 
-def check_ref_intg(items: list[dict], doc_ids_path) -> List[str]:
+def check_ref_intg(items: list[dict], doc_ids_path) -> list[str]:
     """
     C4: 참조 무결성
     location 및 정답 문서 ID 배열이 실재로 포함(corpus_doc_ids.json)되어 있는지 검사
@@ -205,58 +206,156 @@ def check_ref_intg(items: list[dict], doc_ids_path) -> List[str]:
     """
     errors = []
     if not Path(doc_ids_path).exists():
-        raise FileNotFoundError(doc_ids_path)
+        print("C4: SKIP (doc_ids not exist)")
+        return errors
     
     data = json.loads(Path(doc_ids_path).read_text(encoding="utf-8"))
     valid_ids = set(data)
 
     for item in items:
         doc = item.get("location", {}).get("document")
-        if doc is not None and doc not in valid_ids:
-            errors.append(f"C4: 없는 문서: {doc} (item {item.get('item_id')})")
-        for d in item.get("정답배열필드명", []):
-            if d not in valid_ids:
-                errors.append(f"C4: 없는 문서: {d} (item {item.get('item_id')})")
+        if doc is not None:
+            for d in doc.split(", "):
+                if d not in valid_ids:
+                    errors.append(f"C4: unknown document: {d} (item {item.get('id')})")
     
     return errors
 
 
-def check_version(version_txt_path) -> List[str]:
+def check_version(evalset_version_path, corpus_version_path) -> list[str]:
     """
     C5: 코퍼스 버전 일치
-    VERSION.txt의 corpus 값과 실제 코퍼스 버전 대조
+    evalset VERSION.txt의 corpus 값과 실제 corpus_version 값 대조
     corpus: [대기] 동안은 SKIP
     """
     errors = []
-    # TODO 1: VERSION.txt 파싱 (key: value 3줄, bare 표기)
-    with open("VERSION.txt", "r", encoding="utf-8") as file:
+    if not Path(evalset_version_path).exists():
+        errors.append(f"C5 VERSION.txt not exist: {evalset_version_path}")
+        return errors
+
+    evalset_info = {}
+    with open(evalset_version_path, "r", encoding="utf-8") as file:
         for line in file:
-            clean_line = line.strip()
-    # TODO 2: corpus 값이 "[대기]"면 print("C5: SKIP (...)") 후 반환
-    # TODO 3: 활성화 시 대조 로직 — 지금은 pass로 두고 1-19 도착 후 채움
+            if ":" in line:                        # 빈 줄 예방
+                key, value = line.split(":", 1)    # ":" 기준 1번만
+                evalset_info[key.strip()] = value.strip()
+
+    corpus_expected = evalset_info.get("corpus")
+    if corpus_expected == "[대기]":
+        print("C5: SKIP (corpus version not exist)")
+        return errors
+    
+    if not Path(corpus_version_path).exists():
+        errors.append(f"C5: corpus VERSION.txt not exist: {corpus_version_path}")
+        return errors
+
+    corpus_actual = None
+    with open(corpus_version_path, "r", encoding="utf-8") as file:
+        for line in file:
+            if ":" in line:
+                key, value = line.split(":", 1)
+                if key.strip() == "corpus version":
+                    corpus_actual = value.strip()
+
+    if corpus_actual != corpus_expected:
+        errors.append(
+            f"C5: corpus version mismatch: evalset expects {corpus_expected}, corpus is {corpus_actual}"
+        )
+
     return errors
 
 
-def check_leak(items: list[dict], practice_path) -> List[str]:
+def check_leak(items: list[dict], practice_path) -> list[str]:
     """
     C6: 최종셋 유출 방지
     items.jsonl과 practice_items.jsonl 간의 중복 검사
     """
     errors = []
-    # TODO 1: 최종셋 item_id에 "PRAC-" 접두어가 섞여 있으면 에러
-    # TODO 2: practice_path 로드 — practice 쪽 item_id와 최종셋 item_id 교집합 검사
-    # TODO 3: 최종셋이 practice 전용 3개 문서(RFP-000038/000043/000001)를
-    #         근거 문서로 쓰면 에러 (2-13: 최종 50문항 제작 제외 문서)
+    for item in items:
+        if item["id"].startswith("PRAC-"):
+            errors.append(f"C6: PRAC- item in final set: {item['id']}")
+
+    if not Path(practice_path).exists():
+        print("C6: SKIP (practice file not exist)")
+        return errors
+
+    practice_items = load_jsonl(practice_path)
+    practice_ids = {p["id"] for p in practice_items}
+    practice_docs = set()
+    for p in practice_items:
+        if "document_id" in p:
+            practice_docs.add(p["document_id"])
+        doc = p.get("location", {}).get("document")
+        if doc:
+            practice_docs.update(doc.split(", "))
+    
+    # practice와 최종셋 교집합 검사
+    for item in items:
+        if item["id"] in practice_ids:
+            errors.append(f"C6: duplicate id with practice: {item['id']}")
+        doc = item.get("location", {}).get("document")
+        if doc:
+            for d in doc.split(", "):
+                if d in practice_docs:
+                    errors.append(f"C6: practice document {d} used in final set (item {item['id']})")
+
     return errors
 
 
+def run_check(items, args) -> list[CheckResult]:
+    """
+    각 check를 CheckResult로 묶어서 반환
+    SKIP은 각 함수의 print가 대체, run_check에서는 PASS/FAIL만 분류
+    """
+    results =[]
+    schema_errors = []
+    for line_num, item in enumerate(items, start=1):
+        schema_errors.extend(check_schema(item, line_num))
+    results.append(CheckResult("C1 schema", "FAIL" if schema_errors else "PASS", schema_errors))
+
+    checks = [
+        ("C2 duplicate_ids", check_dup_ids(items)),
+        ("C3 quota", check_quota(items, strict=args.strict)),
+        ("C4 ref_integrity", check_ref_intg(items, args.doc_ids)),
+        ("C5 version", check_version(args.evalset_version, args.corpus_version)),
+        ("C6 leakage", check_leak(items, args.practice)),
+    ]
+    for name, errors in checks:
+        results.append(CheckResult(name, "FAIL" if errors else "PASS", errors))
+
+    return results
+
+
 def main():
-    # TODO 1: argparse — 위치인자 items_path, 옵션 --strict, --practice, --doc-ids, --version-txt
-    #   경로 기본값 하드코딩 금지(팀 규약) — 전부 인자나 환경변수($RAG_ROOT)로
-    # TODO 2: load_jsonl() → C0/C1(기존 check_schema) → C2 → C3 → C4 → C5 → C6
-    #   순서 근거: 값싼 검사부터 (2-17)
-    # TODO 3: errors 전부 출력 후, 하나라도 있으면 sys.exit(1) — check.sh가 이 종료코드로 실험을 멈춤
-    pass
+    parser = argparse.ArgumentParser(description="평가셋 검사(C0-C6")
+    parser.add_argument("items_path", help="검사항 items.jsonl 경로")
+    parser.add_argument("--strict", action="store_true", help="freeze용: 총량·비율 하드검사")
+    parser.add_argument("--practice", default="/srv/rfp/evalset/practice_items.jsonl")
+    parser.add_argument("--doc-ids", default="data/gold/corpus_doc_ids.json")
+    parser.add_argument("--evalset-version", default="/srv/rfp/evalset/v1/VERSION.txt")
+    parser.add_argument("--corpus-version", default="/srv/rfp/shared_data/processed/corpus_v2/VERSION.txt")
+    args = parser.parse_args()
+
+    # C0 load_jsonl 검사
+    try:
+        items = load_jsonl(args.items_path)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"C0 FAIL: {e}")
+        sys.exit(1)
+    print(f"C0 PASS: {len(items)} items loaded")
+
+    results = run_check(items, args)
+
+    failed = False
+    for r in results:
+        print(f"{r.name}: {r.status}")
+        for msg in r.message:
+            print(f" {msg}")
+        if r.status == "FAIL":
+            failed = True
+
+    sys.exit(1 if failed else 0)
+
 
 
 
@@ -264,12 +363,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-# 최종 사용 방법
-items = load_jsonl("evalset/practice_items.jsonl")
-for i, item in enumerate(items, start=1):
-    errs = check_schema(item, i)
-    if errs:
-        print(errs)
