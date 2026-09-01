@@ -302,7 +302,7 @@ def check_leak(items: list[dict], practice_path) -> list[str]:
         for l in locations:
             d = l.get("document")
             if d in practice_docs:
-                errors.append(f"C6: document {d} used in practice set (item {item['id']})")
+                errors.append(f"C6: practice document {d} used in final set (item {item['id']})")
 
     return errors
 
@@ -332,8 +332,8 @@ def run_check(items, args) -> list[CheckResult]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="평가셋 검사(C0-C6")
-    parser.add_argument("items_path", help="검사항 items.jsonl 경로")
+    parser = argparse.ArgumentParser(description="평가셋 검사(C0-C6)")
+    parser.add_argument("items_path", help="검사 할 items.jsonl 경로")
     parser.add_argument("--strict", action="store_true", help="freeze용: 총량·비율 하드검사")
     parser.add_argument("--practice", default="/srv/rfp/evalset/practice_items.jsonl")
     parser.add_argument("--doc-ids", default="data/gold/corpus_doc_ids.json")
