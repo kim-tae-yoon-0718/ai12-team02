@@ -117,11 +117,12 @@ def check_schema(item: dict, line_num: int) -> list[str]:
                 errors.append(f"line {line_num}: wrong timeset '{value}' time must be {REFERENCE_TIME}")
 
         elif isinstance(spec, set):
-            if not isinstance(value, dict):
-                errors.append(f"line {line_num}: type error '{value}'")
-            else: 
-                if not spec.issubset(value.keys()):
-                    missing_keys = spec - value.keys()
+            locations = value if isinstance(value, list) else [value]
+            for loc in locations:
+                if not isinstance(loc, dict):
+                    errors.append(f"line {line_num}: type error '{loc}'")
+                elif not spec.issubset(loc.keys()):
+                    missing_keys = spec - loc.keys()
                     errors.append(f"line {line_num}: location missing key(s) '{missing_keys}'")
 
     # 3: DEPRECATED_FIELDS에 있는 키가 item에 남아있는지 확인
@@ -213,11 +214,12 @@ def check_ref_intg(items: list[dict], doc_ids_path) -> list[str]:
     valid_ids = set(data)
 
     for item in items:
-        doc = item.get("location", {}).get("document")
-        if doc is not None:
-            for d in doc.split(", "):
-                if d not in valid_ids:
-                    errors.append(f"C4: unknown document: {d} (item {item.get('id')})")
+        loc = item.get("location")
+        locations = loc if isinstance(loc, list) else [loc] if loc else []
+        for l in locations:
+            d = l.get("document")
+            if d is not None and d not in valid_ids:
+                errors.append(f"C4: unknown document: {d} (item {item.get('id')})")
     
     return errors
 
@@ -285,19 +287,22 @@ def check_leak(items: list[dict], practice_path) -> list[str]:
     for p in practice_items:
         if "document_id" in p:
             practice_docs.add(p["document_id"])
-        doc = p.get("location", {}).get("document")
-        if doc:
-            practice_docs.update(doc.split(", "))
+        loc = p.get("location")
+        locations = loc if isinstance(loc, list) else [loc] if loc else []
+        for l in locations:
+            if l.get("document"):
+                practice_docs.add(l["document"])
     
-    # practice와 최종셋 교집합 검사
+    # practice와 최종셋 대조 검사
     for item in items:
         if item["id"] in practice_ids:
             errors.append(f"C6: duplicate id with practice: {item['id']}")
-        doc = item.get("location", {}).get("document")
-        if doc:
-            for d in doc.split(", "):
-                if d in practice_docs:
-                    errors.append(f"C6: cannot use practice document {d} in final set (item {item['id']})")
+        loc = item.get("location")
+        locations = loc if isinstance(loc, list) else [loc] if loc else []
+        for l in locations:
+            d = l.get("document")
+            if d in practice_docs:
+                errors.append(f"C6: document {d} used in practice set (item {item['id']})")
 
     return errors
 
