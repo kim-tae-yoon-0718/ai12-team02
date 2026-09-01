@@ -31,7 +31,7 @@ DEFAULT_PRECISION = "ref_no"
 
 
 def _gold_locations(item: EvaluationItem) -> list[Location]:
-    return [item.location] if item.location is not None else []
+    return item.gold_locations()  # 비교형은 문서별 좌표 배열 (2-8-4)
 
 
 def _found_ranks(golds: list[Location], cands: list[RetrievedItem], precision: str) -> list[int]:
@@ -145,16 +145,21 @@ def grade_citation(item: EvaluationItem, response: ModelResponse,
     """
     if not enabled:
         return {"applicable": False, "reason": "grading.grade_citations=false"}
-    if item.location is None:
+    golds = item.gold_locations()
+    if not golds:
         return {"applicable": False, "reason": "정답 location 없음 — citation 채점 대상 아님"}
     if not response.citations:
         # ★형식 위반이 아니다 — check_format은 이걸로 FAIL을 만들지 않는다. 여기서만
         # score=0으로 반영해 진단(citation_accuracy/no_citation_rate)에 잡히게 한다.
         return {"applicable": True, "matched": False, "score": 0.0, "n_citations": 0,
                 "precision_unit": precision, "reason": "citation 없음(출처 미표기)"}
-    matched = any(match_location(item.location, c, precision) for c in response.citations)
-    return {"applicable": True, "matched": matched, "score": 1.0 if matched else 0.0,
-            "n_citations": len(response.citations), "precision_unit": precision}
+    # 비교형: 정답 좌표가 여러 개 — 각 좌표가 citation 하나 이상과 맞으면 그 몫만큼 점수.
+    hit = sum(1 for g in golds
+              if any(match_location(g, c, precision) for c in response.citations))
+    score = hit / len(golds)
+    return {"applicable": True, "matched": hit == len(golds), "score": score,
+            "n_citations": len(response.citations), "n_gold_locations": len(golds),
+            "precision_unit": precision}
 
 
 def aggregate_citation(per_item: list[dict]) -> dict:

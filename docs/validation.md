@@ -23,52 +23,50 @@
 
 ```python
 from checks.check_evalset import run_all
-run_all(records,                       # raw dict (JSONL 한 줄) 리스트 — pydantic 파싱 전
-        corpus_doc_ids=None, excluded_doc_ids=None,
-        quota=None, quota_strict=False,
-        practice_path=None, version_txt_path=None,
+run_all(records,                       # raw dict 리스트 — pydantic 파싱 전
+        doc_ids_path=None, excluded_ids=None, practice_path=None,
+        evalset_version_path=None, corpus_version_path=None,
+        strict=False, final_set=False,
         leak_repo_root=None, leak_exclude=()) -> list[str]   # 빈 리스트면 통과
 ```
 
-값싼 것부터: **C1 스키마 → C2 중복 id → C3 할당량 → 좌표 → C4 참조 무결성 → C5 버전 → C6 유출**
+값싼 것부터: **C1 스키마 → C2 중복 id → C3 할당량 → C4 참조 무결성 → 1-9-1 → C5 버전 → C6 유출**
 
 - **C1** `check_schema` — 필수 5필드 · FIELD_SPEC 타입/enum · 폐기 필드(v0.2) · task↔answer 조합 ·
-  필드 의존성 · selection 은 answer_source 필수 · 명시적 null 금지 · 정답 형태(list/unanswerable)
-- **C2** `check_dup_ids`
-- **C3** `check_quota` — 기본 선별25:추출15:QA10. `strict=False` 면 미지의 task_type 만 경고
-- **좌표** `check_location_coords` — 3필드 실제 값 여부 + part/of `(N/M)` 경고 (2-9)
-- **C4** `check_ref_intg` — 정답 근거 문서가 코퍼스 실재 + 검색 대상
-  (`excluded_doc_ids` = 수집 중복 `RFP-000006`/`RFP-000017`, 검색대상 98건). ID 없으면 SKIP
-- **C5** `check_version` — VERSION.txt corpus 값 대조. `[대기]`/파일 없음 → SKIP
-- **C6** `check_leak` — practice id 접두어(PRAC-)·practice 세트 교집합·practice 전용 문서(2-13)·
-  문항 텍스트가 추적 파일에 유출(`--leak-check` / final 모드)
+  필드 의존성 · selection 은 answer_source 필수 · 명시적 null 금지. **`location` 이 배열이면
+  원소마다 3키 검증** (비교형 2-8-4)
+- **C2** `check_dup_ids` / **C3** `check_quota` (기본 선별25:추출15:QA10, `strict` 면 정확 대조)
+- **C4** `check_ref_intg` — `location.document`(배열 포함)가 corpus_doc_ids.json 에 실재. 파일 없으면 SKIP
+- **1-9-1** `check_excluded_as_gold` *(grader 부가분)* — 수집 중복 문서(RFP-000006/17)를 정답 근거로 쓰면 금지
+- **C5** `check_version` — evalset VERSION.txt 의 `corpus:` 와 corpus VERSION.txt 대조. `[대기]` → SKIP
+- **C6** `check_leak` — `final_set=True` 일 때: PRAC- 접두어 · practice 세트 id/문서 교집합
+- **【25】** `scan_tracked_files` *(grader 부가분)* — 문항 텍스트가 프롬프트·코드에 유출 (final / `--leak-check`)
+
+> **HJ 원본에 없는 것** (grader 부가분): `check_excluded_as_gold`(1-9-1), `scan_tracked_files`(【25】),
+> `load_jsonl` 의 멀티라인 JSON 허용. HJ 머지 시 이 셋만 재조정.
 
 ## CLI
 
 ```bash
-# 독립 실행
-python -m checks.check_evalset data/evalsets/final/final.jsonl \
-  --doc-ids data/gold/corpus_doc_ids.json --excluded-doc-ids data/gold/excluded_doc_ids.json \
-  --practice data/evalsets/practice/practice_items.jsonl --strict --leak-scan-root .
-
-# grader run 실행 시 2층으로 자동 포함
-python -m grader.cli run --evaluation-set ... --mode ci \
-  --corpus-doc-ids data/gold/corpus_doc_ids.json --excluded-doc-ids data/gold/excluded_doc_ids.json
+python -m checks.check_evalset final.jsonl --doc-ids data/gold/corpus_doc_ids.json \
+  --evalset-version /srv/rfp/evalset/v1/VERSION.txt --final-set --strict --leak-scan-root .
 ```
 
-## 박예진 청크 좌표 어댑터 (`models.Location.from_chunk`, 구현됨)
+## 좌표 어댑터 (`models.Location.from_chunk`)
 
-이태민 검색 출력이 박예진 청크 스키마(`section_path` 배열 + `location_label`
-`"제18조(평가배점) · 표 7 (2/3)"`)로 오면 `{document, section, ref_no}` 로 변환한다.
-`RetrievedItem` / `ContextChunk` 는 `location` 이 없고 `section_path`/`location_label` 이
+**임현진 09-01 확정** — `location = {document, section, ref_no}`:
+- `section` ← 청킹 산출물 `section_path` 의 **리프 요소** (`{title:...}` dict / 문자열 둘 다 처리)
+- `ref_no` ← extraction_v3 기계 표기 **`"{block_type} {block_index}"`** (예: `"paragraph 3"`, `"table 12"`).
+  block_index = 문서 전체 블록 순번. **사람 표기 "문단 N"·분할 표 `(part/of)` 는 폐기.**
+- 비교형(2-8-4): `location` 은 **문서별 객체 배열**. `EvaluationItem.gold_locations()` 가 항상 리스트로 정규화.
+  `grade_citation` 은 정답 좌표 하나하나가 citation 과 맞는 비율로 점수.
+
+`ContextChunk` / `RetrievedItem` 은 `location` 이 없고 `block_type`+`block_index`(또는 옛 `location_label`)가
 있으면 자동 합성한다.
 
-- `section` ← `section_path[-1]` (없으면 `location_label` 의 ` · ` 앞부분)
-- `ref_no` ← ` · ` 뒤에서 `(part/of)` 제거 → `"표 7"` / `"문단 1-4"`
-
-**팀 확정 (2026-08-31)**: 좌표 단위는 `ref_no = "표 7"`, **part/of 미포함**. `check_location_coords`
-는 옛 형식 `표 7 (2/3)` 가 남아 있으면 경고하고(정리 유도), 채점(`Location.key("ref_no")`)은
-자동으로 떼고 매칭한다.
+> ⚠️ **박예진 청크(chunks_v2)는 아직 `block_index` 를 안 실어 보낸다** (`table_idx`·`location_label "표 1"` 만).
+> evalset ref_no(`"table 12"`)와 청크 ref_no 가 **번호 체계가 달라** `precision=ref_no` citation 매칭이
+> 성립하지 않는다. 박예진↔이태민 확인 필요 — 그전까지는 `config.retrieval.precision: section` 권장.
 
 ## 박예진 산출물 → grader 입력 (`scripts/`)
 

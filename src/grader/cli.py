@@ -104,15 +104,16 @@ def main() -> int:
         if args.command == "validate":
             items = validate_evaluation_set(args.evaluation_set, strict_meta=args.strict)
             records = load_jsonl(args.evaluation_set)
-
-            def _ids(p):
-                return set(json.loads(Path(p).read_text(encoding="utf-8"))) if p else None
-
-            corpus_ids, excluded = _ids(args.corpus_doc_ids), _ids(args.excluded_doc_ids)
+            excluded = (set(json.loads(Path(args.excluded_doc_ids).read_text(encoding="utf-8")))
+                        if args.excluded_doc_ids else None)
             problems = run_evalset_checks(
-                records, corpus_doc_ids=corpus_ids, excluded_doc_ids=excluded,
-                practice_path=args.practice_set, leak_exclude=[args.evaluation_set],
+                records,
+                doc_ids_path=args.corpus_doc_ids,
+                excluded_ids=excluded,
+                practice_path=args.practice_set,
+                strict=args.strict,
                 final_set=args.final_set,
+                leak_exclude=[args.evaluation_set],
             )
             for p in problems:
                 print(f"  - {p}")

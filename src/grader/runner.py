@@ -428,26 +428,27 @@ def execute(
     # ★최종 모드는 항상 주석 키(_source_note 등) 금지. practice/dev/ci 는 옵션.
     items = validate_evaluation_set(evaluation_set_path, strict_meta=(strict_meta or mode == "final"))
     raw_records = load_jsonl(evaluation_set_path)
-    corpus_ids = None
-    if corpus_doc_ids_path and os.path.exists(corpus_doc_ids_path):
-        with open(corpus_doc_ids_path, encoding="utf-8") as f:
-            corpus_ids = set(json.load(f))
     excluded_ids = None
     if excluded_doc_ids_path and os.path.exists(excluded_doc_ids_path):
         with open(excluded_doc_ids_path, encoding="utf-8") as f:
             excluded_ids = set(json.load(f))
+    # C5 코퍼스 버전 대조 — RAG_ROOT 있으면 VERSION.txt 경로 조립
+    rag_root = os.environ.get("RAG_ROOT")
+    evalset_ver = os.path.join(rag_root, "evalset/v1/VERSION.txt") if rag_root else None
+    corpus_ver = os.path.join(rag_root, "shared_data/processed/corpus_v2/VERSION.txt") if rag_root else None
     # 유출 검사: --leak-check 또는 최종 모드일 때. 저장소 루트(pyproject.toml 위치)에서 git ls-files.
     leak_root = str(Path(__file__).resolve().parent.parent.parent) if (leak_check or mode == "final") else None
     leak_exclude = [p for p in (evaluation_set_path, practice_set_path) if p]
     problems = run_evalset_checks(
         raw_records,
-        corpus_doc_ids=corpus_ids,
-        excluded_doc_ids=excluded_ids,
-        quota=runner.config.gate.task_quota,
+        doc_ids_path=corpus_doc_ids_path,
+        excluded_ids=excluded_ids,
         practice_path=practice_set_path,
+        evalset_version_path=evalset_ver,
+        corpus_version_path=corpus_ver,
+        final_set=(mode in ("ci", "final")),  # evaluation_set 이 최종셋인 모드
         leak_repo_root=leak_root,
         leak_exclude=leak_exclude,
-        final_set=(mode in ("ci", "final")),  # evaluation_set 이 최종셋인 모드
     )
     L2 = {"layer": 2, "status": "FAIL" if problems else "PASS", "problems": problems, "n_items": len(items)}
     layers.append(L2)

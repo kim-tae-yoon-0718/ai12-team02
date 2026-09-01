@@ -94,13 +94,13 @@ _PART_OF_RE = re.compile(r"\s*\(\d+\s*/\s*\d+\)\s*$")
 
 
 def _strip_part(ref: str) -> str:
-    """분할 표의 `표 7 (2/3)` → `표 7`.
+    """ref_no 정규화.
 
-    ★팀 확정 좌표 형식 (2026-08-31, 박예진 파싱 ↔ 김하루 채점 ↔ 임현진 평가셋):
-      좌표 단위는 `ref_no = "표 7"` 로 통일한다. part/of 는 **포함하지 않는다** —
-      어느 조각에 답이 있든 "표 7 에 있다"로 채점한다. 박예진 청크는 처음부터 이 방향,
-      임현진 평가셋도 part/of 제외로 통일(박예진 안내). 옛 데이터에 `(N/M)` 이 남아
-      있어도 매칭 단계에서 여기서 떼므로 안전하다.
+    ★팀 확정 좌표 형식 (2026-09-01, 임현진): ref_no = extraction_v3 기계 표기
+      `"{block_type} {block_index}"` (예: "paragraph 3", "table 12"). block_index 는
+      문서 전체 블록 순번. location 3필드 전부 v3 레코드가 정답 원천.
+      → 사람 표기("문단 N")·분할 표 `(part/of)` 는 **폐기**. 옛 데이터에 `(N/M)` 이
+        남아 있어도 매칭 단계에서 여기서 떼므로 안전하다.
     """
     return _PART_OF_RE.sub("", str(ref or "")).strip()
 
@@ -121,17 +121,28 @@ class Location(BaseModel):
 
     @classmethod
     def from_chunk(cls, document_id: str, section_path: list[str] | None,
-                   location_label: str | None) -> "Location":
-        """박예진 청크(C-3) 좌표를 grader 의 {document, section, ref_no} 로 변환한다.
+                   location_label: str | None, *,
+                   block_type: str | None = None, block_index: int | None = None) -> "Location":
+        """검색 산출물(박예진 청크 / extraction_v3 블록)을 {document, section, ref_no} 로.
 
-        section_path : ["2. 사업개요", "제18조(평가배점)"]  (마지막 원소가 절)
-        location_label: "제18조(평가배점) · 표 7 (2/3)"  또는 "... · 문단 1-4"
-        → ref_no 는 ` · ` 뒤 부분에서 (part/of) 를 뗀 것.
+        section : section_path 의 리프 요소 (임현진 09-01 확정).
+        ref_no  : block_type·block_index 가 오면 `"{block_type} {block_index}"` (v3 표기).
+                  없으면 옛 location_label(` · ` 뒤, part/of 제거)에서 뽑는다(하위호환).
         """
-        sp = [s for s in (section_path or []) if s]
+        # section_path 원소가 문자열이거나 {title: ...} dict 둘 다 받는다
+        sp = []
+        for s in (section_path or []):
+            if isinstance(s, dict):
+                s = s.get("title") or s.get("heading") or ""
+            if s:
+                sp.append(str(s))
         section = sp[-1] if sp else ""
         label = str(location_label or "")
-        ref_no = _strip_part(label.rsplit(" · ", 1)[-1]) if " · " in label else ""
+
+        if block_type is not None and block_index is not None:
+            ref_no = f"{block_type} {block_index}"
+        else:
+            ref_no = _strip_part(label.rsplit(" · ", 1)[-1]) if " · " in label else ""
         if not section and " · " in label:
             section = label.rsplit(" · ", 1)[0].strip()
         return cls(document=document_id, section=section, ref_no=ref_no)
@@ -188,7 +199,8 @@ class EvaluationItem(BaseModel):
     #   summary=체크포인트배열 / comparison=비교표 / unanswerable=사유 문자열
     answer_raw: Any | None = None
     answer_normalized: Any | None = None
-    location: Location | None = None
+    # 단일 문항: 단일 객체. 비교형(2-8-4): 문서별 객체 배열 (임현진 09-01 확정).
+    location: Location | list[Location] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -226,6 +238,12 @@ class EvaluationItem(BaseModel):
         별도 스키마 필드가 아니라 answer_raw 뷰다(김하루 채점기 호환)."""
         return list(self.answer_raw) if isinstance(self.answer_raw, list) else []
 
+    def gold_locations(self) -> list["Location"]:
+        """정답 좌표를 항상 리스트로 — 비교형(2-8-4)은 문서별 객체 배열, 그 외는 단일."""
+        if self.location is None:
+            return []
+        return list(self.location) if isinstance(self.location, list) else [self.location]
+
     @property
     def unanswerable_reason(self) -> str | None:
         """기권 사유 — v0.2에서 answer_type=unanswerable 일 때 answer_raw 문자열.
@@ -245,7 +263,8 @@ def _chunk_location_before(data: Any) -> Any:
     if doc and ("section_path" in data or "location_label" in data):
         data = dict(data)
         data["location"] = Location.from_chunk(
-            doc, data.get("section_path"), data.get("location_label")
+            doc, data.get("section_path"), data.get("location_label"),
+            block_type=data.get("block_type"), block_index=data.get("block_index"),
         ).model_dump()
     return data
 
