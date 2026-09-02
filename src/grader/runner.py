@@ -439,6 +439,7 @@ def execute(
     rag_root = os.environ.get("RAG_ROOT")
     evalset_ver = os.path.join(rag_root, "evalset/v1/VERSION.txt") if rag_root else None
     corpus_ver = os.path.join(rag_root, "shared_data/processed/corpus_v2/VERSION.txt") if rag_root else None
+    chunk_ver = os.path.join(rag_root, "shared_data/processed/chunks_v3/VERSION.txt") if rag_root else None
     # 유출 검사: --leak-check 또는 최종 모드일 때. 저장소 루트(pyproject.toml 위치)에서 git ls-files.
     leak_root = str(Path(__file__).resolve().parent.parent.parent) if (leak_check or mode == "final") else None
     leak_exclude = [p for p in (evaluation_set_path, practice_set_path) if p]
@@ -449,6 +450,7 @@ def execute(
         practice_path=practice_set_path,
         evalset_version_path=evalset_ver,
         corpus_version_path=corpus_ver,
+        chunking_version_path=chunk_ver,
         final_set=(mode in ("ci", "final")),  # evaluation_set 이 최종셋인 모드
         leak_repo_root=leak_root,
         leak_exclude=leak_exclude,

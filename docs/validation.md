@@ -25,7 +25,7 @@
 from checks.check_evalset import run_all
 run_all(records,                       # raw dict 리스트 — pydantic 파싱 전
         doc_ids_path=None, excluded_ids=None, practice_path=None,
-        evalset_version_path=None, corpus_version_path=None,
+        evalset_version_path=None, corpus_version_path=None, chunking_version_path=None,
         strict=False, final_set=False,
         leak_repo_root=None, leak_exclude=()) -> list[str]   # 빈 리스트면 통과
 ```
@@ -33,12 +33,12 @@ run_all(records,                       # raw dict 리스트 — pydantic 파싱 
 값싼 것부터: **C1 스키마 → C2 중복 id → C3 할당량 → C4 참조 무결성 → 1-9-1 → C5 버전 → C6 유출**
 
 - **C1** `check_schema` — 필수 5필드 · FIELD_SPEC 타입/enum · 폐기 필드(v0.2) · task↔answer 조합 ·
-  필드 의존성 · selection 은 answer_source 필수 · 명시적 null 금지. **`location` 이 배열이면
-  원소마다 3키 검증** (비교형 2-8-4)
+  필드 의존성 · selection 은 answer_source 필수 · 명시적 null 금지. `location`(배열이면 원소마다):
+  `{document, section, ref_no, line}` 4키 필수 — 단, `answer_source=metadata` 는 `line` 면제 (임현진 09-02)
 - **C2** `check_dup_ids` / **C3** `check_quota` (기본 선별25:추출15:QA10, `strict` 면 정확 대조)
 - **C4** `check_ref_intg` — `location.document`(배열 포함)가 corpus_doc_ids.json 에 실재. 파일 없으면 SKIP
 - **1-9-1** `check_excluded_as_gold` *(grader 부가분)* — 수집 중복 문서(RFP-000006/17)를 정답 근거로 쓰면 금지
-- **C5** `check_version` — evalset VERSION.txt 의 `corpus:` 와 corpus VERSION.txt 대조. `[대기]` → SKIP
+- **C5** `check_version` — evalset VERSION.txt 의 `corpus:` / `chunking:` 를 각각 corpus·chunks VERSION.txt 와 대조. `[대기]` → SKIP
 - **C6** `check_leak` — `final_set=True` 일 때: PRAC- 접두어 · practice 세트 id/문서 교집합
 - **【25】** `scan_tracked_files` *(grader 부가분)* — 문항 텍스트가 프롬프트·코드에 유출 (final / `--leak-check`)
 

@@ -24,7 +24,8 @@ EVALSET = [
     {
         "id": "Q002", "question": "언제까지 내야 해", "task_type": "extraction",
         "answer_type": "value", "document_id": "D1", "field_tag": "critical",
-        "answer_raw": "2026-09-15", "location": {"document": "D1", "section": "개요", "ref_no": "1"},
+        "answer_raw": "2026-09-15",
+        "location": {"document": "D1", "section": "개요", "ref_no": "개요 · 문단 1", "line": 12},
     },
     {
         "id": "Q003", "question": "제출 서류 뭐 필요해?", "task_type": "extraction",
@@ -41,7 +42,7 @@ EVALSET = [
 RESPONSES = [
     {"id": "Q001", "answer": "2건입니다", "selected_document_ids": ["D1", "D3", "D4"]},
     {"id": "Q002", "answer": "2026년 9월 16일까지입니다",  # ★critical 필드 오답
-     "citations": [{"document": "D1", "section": "개요", "ref_no": "1"}]},  # 출처는 맞게 붙임(3-4-3)
+     "citations": [{"document": "D1", "section": "개요", "ref_no": "개요 · 문단 1", "line": 12}]},  # 출처는 맞게(3-4-3)
     {"id": "Q003", "answer": "사업자등록증, 법인등기부등본이 필요합니다",
      "structured_answer": ["사업자등록증", "법인등기부등본"]},  # 3개 중 2개 — 오답이어야 함
     {"id": "Q004", "answer": "해당 사업을 코퍼스에서 찾을 수 없습니다", "abstained": True,

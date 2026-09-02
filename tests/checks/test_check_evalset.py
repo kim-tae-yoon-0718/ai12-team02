@@ -66,21 +66,33 @@ def test_explicit_null_rejected():
 # ── location: 단일 객체 + 비교형 배열 ─────────────────────────────────
 
 def test_location_single_object_ok():
-    r = _rec(location={"document": "RFP-000001", "section": "3장", "ref_no": "table 5"})
+    r = _rec(location={"document": "RFP-000001", "section": "3장", "ref_no": "3장 · 표 5", "line": 88})
+    assert check_schema(r, 1) == []
+
+
+def test_location_metadata_line_exempt():
+    """answer_source=metadata (CSV 답변) 는 line 면제 (임현진 09-02)."""
+    r = _rec(answer_source="metadata",
+             location={"document": "RFP-000038", "section": "CSV", "ref_no": "CSV: bid_deadline"})
     assert check_schema(r, 1) == []
 
 
 def test_location_array_ok():
     r = _rec(task_type="qa", answer_type="comparison", location=[
-        {"document": "RFP-000038", "section": "A", "ref_no": "paragraph 3"},
-        {"document": "RFP-000043", "section": "B", "ref_no": "paragraph 5"},
+        {"document": "RFP-000038", "section": "A", "ref_no": "A · 문단 3", "line": 51},
+        {"document": "RFP-000043", "section": "B", "ref_no": "B · 문단 5", "line": 62},
     ])
     assert check_schema(r, 1) == []
 
 
+def test_location_missing_line_flagged():
+    r = _rec(location={"document": "RFP-000038", "section": "A", "ref_no": "A · 표 1"})  # line 없음
+    assert any("line" in e for e in check_schema(r, 1))
+
+
 def test_location_array_missing_key_flagged():
     r = _rec(task_type="qa", answer_type="comparison", location=[
-        {"document": "RFP-000038", "section": "A"},  # ref_no 없음
+        {"document": "RFP-000038", "section": "A", "line": 5},  # ref_no 없음
     ])
     assert any("location missing key" in e for e in check_schema(r, 1))
 

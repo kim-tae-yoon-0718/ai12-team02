@@ -43,7 +43,7 @@ FIELD_SPEC = {
     "field_tag": ("critical", "major", "minor"),
     "answer_source": ("table", "verified", "metadata"),
     "answer_normalized": "any",
-    "location": {"document", "section", "ref_no"},
+    "location": {"document", "section", "ref_no", "line"},  # metadata 문항은 line 면제(아래)
 }
 TASK_ANSWER_COMBOS = {
     "selection": ("document_set",),
@@ -95,12 +95,14 @@ def check_schema(item: dict, line_num: int) -> list[str]:
                 errors.append(f"line {line_num}: type error '{value}' for field '{field_name}'")
         elif isinstance(spec, set):
             # 비교형(2-8-4): location 은 문서별 객체 배열. 단일 문항은 단일 객체.
+            # metadata 문항(CSV 답변)은 본문 블록이 없어 line 을 면제한다(임현진 09-02).
             locations = value if isinstance(value, list) else [value]
+            required_keys = (spec - {"line"}) if item.get("answer_source") == "metadata" else spec
             for loc in locations:
                 if not isinstance(loc, dict):
                     errors.append(f"line {line_num}: type error '{loc}'")
-                elif not spec.issubset(loc.keys()):
-                    errors.append(f"line {line_num}: location missing key(s) '{spec - loc.keys()}'")
+                elif not required_keys.issubset(loc.keys()):
+                    errors.append(f"line {line_num}: location missing key(s) '{required_keys - loc.keys()}'")
 
     for field_name in item:
         if field_name in DEPRECATED_FIELDS:
@@ -174,8 +176,21 @@ def check_ref_intg(items: list[dict], doc_ids_path) -> list[str]:
     return errors
 
 
-def check_version(evalset_version_path, corpus_version_path) -> list[str]:
-    """C5: evalset VERSION.txt 의 corpus 값과 corpus VERSION.txt 대조. [대기] SKIP."""
+def _read_version_key(path, key: str) -> str | None:
+    """VERSION.txt 에서 `<key> : <value>` 한 줄을 읽는다."""
+    if not path or not Path(path).exists():
+        return None
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        if ":" in line:
+            k, v = line.split(":", 1)
+            if k.strip() == key:
+                return v.strip()
+    return None
+
+
+def check_version(evalset_version_path, corpus_version_path, chunking_version_path=None) -> list[str]:
+    """C5: evalset VERSION.txt 의 corpus / chunking 값을 실제 코퍼스·청크 VERSION.txt 와 대조.
+    각 값이 `[대기]` 이거나 파일이 없으면 SKIP (임현진 09-02: chunking 추가)."""
     errors = []
     if not evalset_version_path or not Path(evalset_version_path).exists():
         print("C5: SKIP (evalset VERSION.txt not exist)")
@@ -185,22 +200,22 @@ def check_version(evalset_version_path, corpus_version_path) -> list[str]:
         if ":" in line:
             key, value = line.split(":", 1)
             evalset_info[key.strip()] = value.strip()
-    corpus_expected = evalset_info.get("corpus")
-    if corpus_expected in (None, "[대기]", "TBD", ""):
-        print("C5: SKIP (corpus version pending)")
-        return errors
-    if not corpus_version_path or not Path(corpus_version_path).exists():
-        errors.append(f"C5: corpus VERSION.txt not exist: {corpus_version_path}")
-        return errors
-    corpus_actual = None
-    for line in Path(corpus_version_path).read_text(encoding="utf-8").splitlines():
-        if ":" in line:
-            key, value = line.split(":", 1)
-            if key.strip() == "corpus version":
-                corpus_actual = value.strip()
-    if corpus_actual != corpus_expected:
-        errors.append(
-            f"C5: corpus version mismatch: evalset expects {corpus_expected}, corpus is {corpus_actual}")
+
+    for label, expected_key, actual_path, actual_key in (
+        ("corpus", "corpus", corpus_version_path, "corpus version"),
+        ("chunking", "chunking", chunking_version_path, "chunking version"),
+    ):
+        expected = evalset_info.get(expected_key)
+        if expected in (None, "[대기]", "TBD", ""):
+            print(f"C5: SKIP ({label} version pending)")
+            continue
+        if not actual_path or not Path(actual_path).exists():
+            errors.append(f"C5: {label} VERSION.txt not exist: {actual_path}")
+            continue
+        actual = _read_version_key(actual_path, actual_key)
+        if actual != expected:
+            errors.append(
+                f"C5: {label} version mismatch: evalset expects {expected}, {label} is {actual}")
     return errors
 
 
@@ -362,6 +377,7 @@ def run_all(
     practice_path=None,
     evalset_version_path=None,
     corpus_version_path=None,
+    chunking_version_path=None,
     strict: bool = False,
     final_set: bool = False,
     leak_repo_root=None,
@@ -381,7 +397,7 @@ def run_all(
         problems += check_ref_intg(records, doc_ids_path)
     problems += check_excluded_as_gold(records, excluded_ids)
     if evalset_version_path:
-        problems += check_version(evalset_version_path, corpus_version_path)
+        problems += check_version(evalset_version_path, corpus_version_path, chunking_version_path)
     if final_set:
         problems += check_leak(records, practice_path)
     if leak_repo_root:
@@ -399,6 +415,8 @@ def main(argv=None) -> int:
     parser.add_argument("--evalset-version", default="/srv/rfp/evalset/v1/VERSION.txt")
     parser.add_argument("--corpus-version",
                         default="/srv/rfp/shared_data/processed/corpus_v2/VERSION.txt")
+    parser.add_argument("--chunking-version",
+                        default="/srv/rfp/shared_data/processed/chunks_v3/VERSION.txt")
     parser.add_argument("--leak-scan-root", default=None, help="【25】 추적 파일 유출 스캔 루트")
     args = parser.parse_args(argv)
 
@@ -415,6 +433,7 @@ def main(argv=None) -> int:
         practice_path=args.practice,
         evalset_version_path=args.evalset_version,
         corpus_version_path=args.corpus_version,
+        chunking_version_path=args.chunking_version,
         strict=args.strict,
         final_set=args.final_set,
         leak_repo_root=args.leak_scan_root,
