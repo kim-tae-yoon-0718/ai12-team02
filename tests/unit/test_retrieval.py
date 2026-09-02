@@ -110,6 +110,24 @@ def test_heading_ref_no_matches():
     assert grade_citation(it, resp, "ref_no")["matched"] is True
 
 
+def test_citation_missing_evidence_vs_wrong_citation(_=None):
+    """비교형: 정답 위치 여러 개 — '일부 근거 누락'과 '잘못된 근거'를 구분한다(팀장 09-01)."""
+    it = _item(location=[
+        Location(document="A", section="예산절", ref_no="paragraph 3"),
+        Location(document="B", section="기간절", ref_no="paragraph 2"),
+    ])
+    # A는 정확히 인용, B는 인용 안 함, 대신 엉뚱한 C를 인용
+    resp = _resp(citations=[
+        Location(document="A", section="예산절", ref_no="paragraph 3"),
+        Location(document="C", section="아무절", ref_no="table 9"),
+    ])
+    r = grade_citation(it, resp, "section")
+    assert r["score"] == 0.5
+    assert r["n_missing_evidence"] == 1   # B 근거 누락
+    assert r["n_wrong_citations"] == 1    # C 잘못된 인용
+    assert r["wrong_citations"][0]["document"] == "C"
+
+
 def test_no_gold_location_is_not_applicable():
     it = _item(location=None)
     result = grade_citation(it, _resp(citations=[Location(document="A", section="1장", ref_no="본문")]))

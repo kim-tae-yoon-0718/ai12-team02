@@ -166,8 +166,15 @@ def grade_citation(item: EvaluationItem, response: ModelResponse,
     per_gold = [(g, any(match_location(g, c, precision) for c in response.citations)) for g in golds]
     hit = sum(1 for _, ok in per_gold if ok)
     score = hit / len(golds)
+    # 3-4-3: "일부 근거 누락"(정답 위치인데 인용 안 함) vs "잘못된 근거"(인용했는데 아무 정답
+    # 위치와도 안 맞음) 를 구분한다 — 팀장 09-01. 둘은 다른 실패고 처방이 다르다.
+    wrong_cites = [c.model_dump(exclude_none=True) for c in response.citations
+                   if not any(match_location(g, c, precision) for g in golds)]
     out = {"applicable": True, "matched": hit == len(golds), "score": score,
            "n_citations": len(response.citations), "n_gold_locations": len(golds),
+           "n_missing_evidence": len(golds) - hit,   # 정답 위치인데 인용 안 됨
+           "n_wrong_citations": len(wrong_cites),    # 인용했는데 정답 위치 아님
+           "wrong_citations": wrong_cites,
            "precision_unit": precision}
     # field 키가 있으면(비교형) 필드별로도 낸다 — 임현진 09-01 "field 로 그룹핑해서 매칭"
     if any(g.field for g, _ in per_gold):
@@ -192,12 +199,16 @@ def aggregate_citation(per_item: list[dict]) -> dict:
                                 "citation 채점 대상 없음"}
     matched = sum(1 for r in rows if r.get("matched"))
     no_citation = sum(1 for r in rows if r.get("n_citations") == 0)
+    partial_missing = sum(1 for r in rows if r.get("n_missing_evidence", 0) > 0 and r.get("n_citations"))
+    wrong_cite = sum(1 for r in rows if r.get("n_wrong_citations", 0) > 0)
     return {
         "n": n,
-        "citation_accuracy": round(matched / n, 4),
-        "no_citation_rate": round(no_citation / n, 4),
-        "note": "3-4-3 출처 좌표 채점 — 정답 위치 vs 인용 좌표 일치율. "
-                "check_format의 FAIL 판정 대상이 아니라 진단 지표다.",
+        "citation_accuracy": round(matched / n, 4),       # 정답 위치를 모두 정확히 인용
+        "no_citation_rate": round(no_citation / n, 4),    # 출처 아예 안 붙임
+        "partial_missing_rate": round(partial_missing / n, 4),  # 인용은 했으나 일부 근거 누락
+        "wrong_citation_rate": round(wrong_cite / n, 4),  # 정답 위치 아닌 곳을 인용(잘못된 근거)
+        "note": "3-4-3 — 정답 위치 vs 인용 좌표. 안 붙임/일부 누락/틀리게 붙임을 분리 집계."
+                " check_format의 FAIL 대상 아님(진단 지표).",
     }
 
 
