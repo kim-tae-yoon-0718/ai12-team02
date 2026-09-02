@@ -87,5 +87,5 @@ RAG_ROOT=/srv/rfp python -m grader.cli run --mode checks \
 ```bash
 pip install -e ".[dev]"
 python -m grader.cli --help
-pytest -q          # 159 tests
+pytest -q          # 180 tests
 ```
