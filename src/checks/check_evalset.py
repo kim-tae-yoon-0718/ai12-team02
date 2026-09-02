@@ -27,7 +27,7 @@ FIELD_SPEC = {
     "field_tag": ("critical", "major", "minor"),
     "answer_source": ("table", "verified", "metadata"),
     'answer_normalized': "any",
-    "location": {"document", "section", "ref_no"},
+    "location": {"document", "section", "ref_no", "line"},
 }
 TASK_ANSWER_COMBOS ={
     "selection": ("document_set",),    # answer_type 값만
@@ -118,11 +118,12 @@ def check_schema(item: dict, line_num: int) -> list[str]:
 
         elif isinstance(spec, set):
             locations = value if isinstance(value, list) else [value]
+            required_keys = (spec - {"line"}) if item.get("answer_source") == "metadata" else spec
             for loc in locations:
                 if not isinstance(loc, dict):
                     errors.append(f"line {line_num}: type error '{loc}'")
-                elif not spec.issubset(loc.keys()):
-                    missing_keys = spec - loc.keys()
+                elif not required_keys.issubset(loc.keys()):
+                    missing_keys = required_keys - loc.keys()
                     errors.append(f"line {line_num}: location missing key(s) '{missing_keys}'")
 
     # 3: DEPRECATED_FIELDS에 있는 키가 item에 남아있는지 확인
@@ -224,10 +225,11 @@ def check_ref_intg(items: list[dict], doc_ids_path) -> list[str]:
     return errors
 
 
-def check_version(evalset_version_path, corpus_version_path) -> list[str]:
+def check_version(evalset_version_path, corpus_version_path, chunking_version_path) -> list[str]:
     """
-    C5: 코퍼스 버전 일치
-    evalset VERSION.txt의 corpus 값과 실제 corpus_version 값 대조
+    C5: 코퍼스 버전 및 청킹 버전 일치
+    evalset VERSION.txt의 corpus + chunking 값과 실제 corpus_version + chunking_version 값 대조
+    chunking: [대기] 동안은 SKIP
     corpus: [대기] 동안은 SKIP
     """
     errors = []
@@ -245,24 +247,42 @@ def check_version(evalset_version_path, corpus_version_path) -> list[str]:
     corpus_expected = evalset_info.get("corpus")
     if corpus_expected == "[대기]":
         print("C5: SKIP (corpus version not exist)")
-        return errors
+    else:
+        if not Path(corpus_version_path).exists():
+            errors.append(f"C5: corpus VERSION.txt not exist: {corpus_version_path}")
+        else:
+            corpus_actual = None
+            with open(corpus_version_path, "r", encoding="utf-8") as file:
+                for line in file:
+                    if ":" in line:
+                        key, value = line.split(":", 1)
+                        if key.strip() == "corpus version":
+                            corpus_actual = value.strip()
+
+            if corpus_actual != corpus_expected:
+                errors.append(
+                    f"C5: corpus version mismatch: evalset expects {corpus_expected}, corpus is {corpus_actual}"
+                )
+
+    chunking_expected = evalset_info.get("chunking")
+    if chunking_expected == "[대기]":
+        print("C5: SKIP (chunking version not exist)")
+    else:
+        if not Path(chunking_version_path).exists():
+            errors.append(f"C5: chunking VERSION.txt not exist: {chunking_version_path}")
+        else:
+            chunking_actual = None
+            with open(chunking_version_path, "r", encoding="utf-8") as file:
+                for line in file:
+                    if ":" in line:
+                        key, value = line.split(":", 1)
+                        if key.strip() == "chunking version":
+                            chunking_actual = value.strip()
     
-    if not Path(corpus_version_path).exists():
-        errors.append(f"C5: corpus VERSION.txt not exist: {corpus_version_path}")
-        return errors
-
-    corpus_actual = None
-    with open(corpus_version_path, "r", encoding="utf-8") as file:
-        for line in file:
-            if ":" in line:
-                key, value = line.split(":", 1)
-                if key.strip() == "corpus version":
-                    corpus_actual = value.strip()
-
-    if corpus_actual != corpus_expected:
-        errors.append(
-            f"C5: corpus version mismatch: evalset expects {corpus_expected}, corpus is {corpus_actual}"
-        )
+            if chunking_actual != chunking_expected:
+                errors.append(
+                    f"C5: chunking version mismatch: evalset expects {chunking_expected}, chunking is {chunking_actual}"
+                    )
 
     return errors
 
@@ -322,7 +342,7 @@ def run_check(items, args) -> list[CheckResult]:
         ("C2 duplicate_ids", check_dup_ids(items)),
         ("C3 quota", check_quota(items, strict=args.strict)),
         ("C4 ref_integrity", check_ref_intg(items, args.doc_ids)),
-        ("C5 version", check_version(args.evalset_version, args.corpus_version)),
+        ("C5 version", check_version(args.evalset_version, args.corpus_version, args.chunking_version)),
         ("C6 leakage", check_leak(items, args.practice)),
     ]
     for name, errors in checks:
@@ -339,6 +359,7 @@ def main():
     parser.add_argument("--doc-ids", default="data/gold/corpus_doc_ids.json")
     parser.add_argument("--evalset-version", default="/srv/rfp/evalset/v1/VERSION.txt")
     parser.add_argument("--corpus-version", default="/srv/rfp/shared_data/processed/corpus_v2/VERSION.txt")
+    parser.add_argument("--chunking-version", default="/srv/rfp/shared_data/processed/chunks_v3/VERSION.txt")
     args = parser.parse_args()
 
     # C0 load_jsonl 검사
