@@ -26,6 +26,7 @@ G-2 — 조건 질의 (4-9-8 확정).
 from __future__ import annotations
 import json
 import re
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -42,7 +43,7 @@ _FUTURE_ALLOWED_STATUS = {"extraction_failed", "review_required"}
 # 허용한다 — "사업명"·"입찰_참여_마감일"은 4-9-8 v3에서 12필드 밖으로 빠졌으므로
 # 이 표에서 조건 질의 대상이 아니다(4-9-8 확정 스키마와 대조 완료).
 _ALLOWED_FIELDS = {"예산", "지역제한"}
-_ALLOWED_OPERATORS = {">=", "<=", ">", "<", "==", "contains", "is_empty"}
+_ALLOWED_OPERATORS = {">=", "<=", ">", "<", "==", "contains", "is_empty", "not_empty"}
 
 # 12필드 추출형(extract) 질문에서 어느 필드를 묻는지 감지하는 키워드.
 # _ALLOWED_FIELDS(조건 질의용)와는 별개 — 여기는 "얼마·언제·뭐야" 같은 단일값
@@ -116,10 +117,18 @@ def needs_explanation(question: str) -> bool:
     return any(kw in question for kw in _NEEDS_EXPLANATION_KEYWORDS)
 
 # 자연어 → (필드, 연산자) 매핑 규칙 (baseline 시작값, 표현 다양성 실측 전)
+# ⚠️ 정정(리뷰 반영): router.py는 초과/미만/넘는을 select로 이미 분류하는데
+# 여기(조건 해석)엔 이상/이하만 있어서 "분류는 됐는데 조건은 이해 못 함"이
+# 실제로 재현됐다 — 라우터가 인식하는 만큼 여기도 맞춰야 한다.
 _CONDITION_PATTERNS: list[tuple[str, str, str]] = [
     (r"(\d[\d,]*)\s*(억|만)?\s*원?\s*이상", "예산", ">="),
     (r"(\d[\d,]*)\s*(억|만)?\s*원?\s*이하", "예산", "<="),
+    (r"(\d[\d,]*)\s*(억|만)?\s*원?\s*초과", "예산", ">"),
+    (r"(\d[\d,]*)\s*(억|만)?\s*원?\s*미만", "예산", "<"),
+    (r"(\d[\d,]*)\s*(억|만)?\s*원?\s*(?:넘는|넘은|넘어가는|넘어서는)", "예산", ">"),
+    (r"(\d[\d,]*)\s*(억|만)?\s*원?\s*(?:작은|안\s*되는|안되는)", "예산", "<"),
     (r"지역제한\s*없는", "지역제한", "is_empty"),
+    (r"지역제한\s*있는", "지역제한", "not_empty"),
 ]
 
 
@@ -238,6 +247,28 @@ def load_extraction_table(path: Path) -> list[dict]:
     if bad_status:
         raise ExtractionTableFormatError(f"{path}: 허용 안 된 status 값 발견: {bad_status}")
 
+    # ⚠️ 버그 수정(리뷰 반영): 예전엔 전체 행 수·문서 수만 맞으면 통과였음 —
+    # "문서 A 예산 행 2개 + 문서 B 사업기간 행 0개"처럼 총 개수는 맞는데
+    # 내부가 뒤섞인 경우를 못 잡았다. 활성 행 기준으로 (문서, 필드) 조합이
+    # 정확히 한 번씩만 있는지 검증한다.
+    active_rows = [r for r in rows if _row_active(r)]
+    combo_counts = Counter((r["document_id"], r["field_name"]) for r in active_rows)
+    dupes = [k for k, v in combo_counts.items() if v > 1]
+    if dupes:
+        raise ExtractionTableFormatError(
+            f"{path}: 같은 문서·같은 필드에 활성 행이 2개 이상: {dupes[:5]}"
+            + (f" 외 {len(dupes)-5}건" if len(dupes) > 5 else "")
+        )
+    if expected_docs and expected_fields:
+        all_fields = {r["field_name"] for r in rows}
+        for doc_id in doc_ids:
+            present = {f for (d, f) in combo_counts if d == doc_id}
+            missing = all_fields - present
+            if missing:
+                raise ExtractionTableFormatError(
+                    f"{path}: {doc_id}에 누락된 필드: {missing}"
+                )
+
     return rows
 
 
@@ -270,7 +301,10 @@ def run_condition_query(
         value = row.get("answer_normalized")
 
         if status == "value_present":
-            if _evaluate(value, cq.operator, cq.value):
+            if cq.operator == "not_empty":
+                # "지역제한 있는" — 실제 값이 있다는 사실 자체가 조건 충족
+                matched.append(QueryResult(row["document_id"], status, value))
+            elif _evaluate(value, cq.operator, cq.value):
                 matched.append(QueryResult(row["document_id"], status, value))
         elif status == "field_absent":
             # ⚠️ 정정(리뷰 반영): 기존엔 "항목 없음=is_empty 조건 충족"으로 안전하게
@@ -302,7 +336,20 @@ def run_condition_query(
                     warning=f"{row['document_id']}: '{cq.field}'는 값을 확인하지 못했습니다({status})",
                 )
             )
-        # conflict는 baseline에서 조건 판정 보류 (원문 내 상충, 별도 처리 필요)
+        elif status == "conflict":
+            # ⚠️ 버그 수정(리뷰 반영): 예전엔 conflict 상태에 대한 분기가
+            # 아예 없어서 경고도 없이 조용히 빠졌다 — "값이 서로 달라 자동
+            # 판정에서 제외했다"는 사실을 반드시 알려야 한다(4-9-8 확정:
+            # 서로 다른 값과 위치를 함께 표시).
+            matched.append(
+                QueryResult(
+                    row["document_id"], status, None,
+                    warning=(
+                        f"{row['document_id']}: '{cq.field}'는 원문 내 값이 서로 달라 "
+                        f"자동 판정에서 제외됨 — 직접 확인 필요"
+                    ),
+                )
+            )
 
     total = len(matched)
     return matched[:max_results], total

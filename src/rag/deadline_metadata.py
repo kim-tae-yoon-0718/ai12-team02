@@ -31,9 +31,17 @@ def _stem_nfc(filename: str) -> str:
     return unicodedata.normalize("NFC", os.path.splitext(filename)[0])
 
 
-def _load_csv_rows_by_document_id(csv_path: Path, registry_path: Path) -> dict[str, dict]:
+def _load_csv_rows_by_document_id(
+    csv_path: Path, registry_path: Path, strict: bool = True,
+) -> dict[str, dict]:
     """document_id -> 원본 CSV 행(딕셔너리) 매핑. 마감일·기관명 등 여러 용도의
-    공용 조인 — CSV·registry 파싱을 여기서만 한다(같은 로직 두 번 안 짬)."""
+    공용 조인 — CSV·registry 파싱을 여기서만 한다(같은 로직 두 번 안 짬).
+
+    ⚠️ 버그 수정(리뷰 반영, 문제10): 예전엔 매핑 안 되는 CSV 행이 있어도
+    경고만 찍고 계속 진행했다 — 그러면 그 문서는 마감일 필터·기관명 검색·
+    마감일 질문에서 조용히 빠진다. 공식 데이터는 100/100 매핑이 확인된
+    상태이므로, strict=True(기본)에서는 하나라도 안 맞으면 중단한다.
+    테스트 목적으로 부분 데이터를 쓸 땐 strict=False로 우회."""
     with open(registry_path, "r", encoding="utf-8") as f:
         registry_doc = json.load(f)
     if "documents" not in registry_doc:
@@ -47,20 +55,27 @@ def _load_csv_rows_by_document_id(csv_path: Path, registry_path: Path) -> dict[s
         rows = list(csv.DictReader(f))
 
     result: dict[str, dict] = {}
-    unmatched = 0
+    unmatched_files: list[str] = []
     for row in rows:
         doc_id = stem_to_doc_id.get(_stem_nfc(row["파일명"]))
         if doc_id is None:
-            unmatched += 1
+            unmatched_files.append(row["파일명"])
             continue
         result[doc_id] = row
-    if unmatched:
-        print(f"⚠️  CSV {unmatched}행이 registry 문서와 매핑되지 않았습니다.")
+    if unmatched_files:
+        if strict:
+            raise ValueError(
+                f"{csv_path}: {len(unmatched_files)}행이 등록부 문서와 매핑되지 "
+                f"않습니다({unmatched_files[:5]}{'...' if len(unmatched_files) > 5 else ''}). "
+                f"공식 데이터는 100/100 매핑이 확인된 상태라 이건 데이터 문제입니다. "
+                f"테스트 목적이면 strict=False로 우회하세요."
+            )
+        print(f"⚠️  CSV {len(unmatched_files)}행이 registry 문서와 매핑되지 않았습니다(strict=False로 통과).")
     return result
 
 
 def load_deadline_by_document_id(
-    csv_path: Path, registry_path: Path, cfg: dict[str, Any],
+    csv_path: Path, registry_path: Path, cfg: dict[str, Any], strict: bool = True,
 ) -> dict[str, datetime | None]:
     """document_id -> 마감일(datetime) 매핑. 마감일이 빈 값(미상)이면 None.
     CSV·registry 어느 한쪽에도 없는 문서는 매핑에서 아예 빠진다(호출측이
@@ -72,7 +87,7 @@ def load_deadline_by_document_id(
             "CSV의 실제 컬럼명을 채워야 합니다."
         )
 
-    rows_by_doc = _load_csv_rows_by_document_id(csv_path, registry_path)
+    rows_by_doc = _load_csv_rows_by_document_id(csv_path, registry_path, strict=strict)
     if rows_by_doc and deadline_field not in next(iter(rows_by_doc.values())):
         raise KeyError(f"{csv_path}: 컬럼 '{deadline_field}'가 없습니다.")
 
@@ -92,11 +107,13 @@ def load_deadline_by_document_id(
     return mapping
 
 
-def load_org_index(csv_path: Path, registry_path: Path) -> dict[str, list[str]]:
+def load_org_index(
+    csv_path: Path, registry_path: Path, strict: bool = True,
+) -> dict[str, list[str]]:
     """발주 기관 이름(원문 그대로) -> document_id 목록. org_only 질문
     ("발주기관명만으로 묻는 질문")에서 문서를 특정하는 데 씀. 청킹·임베딩
     대상 아님 — CSV를 그대로 읽는 구조화 조회."""
-    rows_by_doc = _load_csv_rows_by_document_id(csv_path, registry_path)
+    rows_by_doc = _load_csv_rows_by_document_id(csv_path, registry_path, strict=strict)
     index: dict[str, list[str]] = {}
     for doc_id, row in rows_by_doc.items():
         org = (row.get("발주 기관") or "").strip()
@@ -135,7 +152,13 @@ def detect_unknown_org(question: str, org_index: dict[str, list[str]]) -> str | 
     생성을 태우기 전에 걸러내는 용도. 유사도 임계값 대신 구조화된 데이터
     (실제 발주기관 목록)로 판단한다(4-9-8 원칙 — 검증된 데이터 우선).
     기관명 표현 자체가 없으면(일반 질문) None — 이 경우는 정상적으로
-    검색 경로를 탄다."""
+    검색 경로를 탄다.
+
+    ⚠️ 버그 수정(리뷰 반영): 예전엔 후보 중 하나라도 알려진 기관과 매칭되면
+    그 즉시 None을 반환해서, "서울시청 사업이랑 가짜미래재단 사업을
+    비교해줘"처럼 진짜 기관 하나 + 가짜 기관 하나가 같이 있으면 가짜 쪽을
+    검사도 안 하고 놓쳤다(실제 재현 확인). 이제 후보 전부를 검사해서
+    하나라도 미확인이면 그걸 반환한다."""
     candidates = _ORG_SUFFIX_RE.findall(question)
     if not candidates:
         return None
@@ -143,9 +166,10 @@ def detect_unknown_org(question: str, org_index: dict[str, list[str]]) -> str | 
     for candidate in candidates:
         # 후보가 알려진 기관명의 부분 문자열이거나, 알려진 기관명이 후보의
         # 부분 문자열이면(표기 경계 차이) 알려진 기관으로 인정한다.
-        if any(candidate in org or org in candidate for org in known_orgs):
-            return None
-    return candidates[0]
+        is_known = any(candidate in org or org in candidate for org in known_orgs)
+        if not is_known:
+            return candidate
+    return None
 
 
 def find_documents_by_org_mention(question: str, org_index: dict[str, list[str]]) -> list[str]:

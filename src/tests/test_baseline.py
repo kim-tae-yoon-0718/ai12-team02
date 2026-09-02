@@ -904,7 +904,11 @@ class TestRunEvalErrorAggregation:
                 sys.argv = ["run_eval.py", "--evalset", str(evalset), "--index", str(idx_dir),
                            "--extraction-table", str(extraction_table_path), "--out", str(out_dir)]
                 import run_eval
-                run_eval.main()
+                # 리뷰 반영 — 오류 1건 이상이면 이제 SystemExit(1)로 끝난다
+                # (문제13). summary.json 자체는 exit 전에 이미 저장돼 있다.
+                with pytest.raises(SystemExit) as exc_info:
+                    run_eval.main()
+                assert exc_info.value.code == 1
 
             summary = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
             assert summary["error_count"] == 1  # 이게 0이면 리뷰가 지적한 버그가 재발한 것

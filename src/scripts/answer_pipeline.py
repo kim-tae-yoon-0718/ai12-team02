@@ -12,6 +12,7 @@
 from __future__ import annotations
 import argparse
 import json
+import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -134,13 +135,17 @@ class Answer:
 
 
 def format_source(m: ChunkMetadata) -> str:
-    """4-13 확정 형식: 문서명 > 장절 > 표/문단번호."""
+    """4-13 확정 형식: 문서명 > 장절 > 표/문단번호.
+    ⚠️ 버그 수정(리뷰 반영, 문제8): 일반 문단은 location_label(예: "제18조
+    평가배점 · 문단 1~4")이 없으면 장절까지만 남고 정확한 위치가 사라졌다."""
     parts = [m.document_name, m.chapter]
     if m.chunk_type == "table" and m.table_idx is not None:
         label = f"표 {m.table_idx}"
         if m.part is not None and m.of is not None:
             label += f" ({m.part}/{m.of})"
         parts.append(label)
+    elif m.location_label:
+        parts.append(m.location_label)
     return " > ".join(p for p in parts if p)
 
 
@@ -295,7 +300,12 @@ def answer_select_by_table(
 
     return Answer(
         text=body, task_type="select", route_matched_rule=None,
-        route_is_fallback=False, sources=[], abstained=False,
+        route_is_fallback=False,
+        # ⚠️ 버그 수정(리뷰 반영, 문제8): 화면 텍스트엔 문서 ID가 보이지만
+        # 채점기가 확인할 정식 sources 필드는 비어있었다. 조건에 쓰인
+        # 필드를 근거 출처로 명시한다.
+        sources=[f"{r.document_id} (추출표: {conditions[0].field})" for r in results],
+        abstained=False,
         condition_query=[c.__dict__ for c in conditions],
         condition_result_doc_ids=[r.document_id for r in results],
     )
@@ -517,7 +527,9 @@ def answer_compare_by_table(
 
     return Answer(
         text=body, task_type="compare", route_matched_rule=None, route_is_fallback=False,
-        sources=[], abstained=False,
+        # ⚠️ 버그 수정(리뷰 반영, 문제8): 비교형도 sources가 비어있었음
+        sources=[f"{doc_id} (추출표: {field})" for field in fields for doc_id in doc_ids],
+        abstained=False,
         condition_query=[{"fields": fields, "document_ids": doc_ids, "route": "G-2"}],
         condition_result_doc_ids=doc_ids,
     )
@@ -663,6 +675,12 @@ def main():
     result = answer(args.question, store, get_embed_client, get_gen_client, table, cfg,
                      deadline_map=deadline_map, session=session, org_index=org_index)
 
+    error_detail = result.error_detail
+    if error_detail:
+        # 비밀정보(API 키 등)가 예외 메시지에 실려 나올 가능성 대비 — sk-로
+        # 시작하는 문자열은 앞 6자만 남기고 마스킹한다.
+        error_detail = re.sub(r"sk-[A-Za-z0-9]{6}[A-Za-z0-9]+", "sk-******(마스킹됨)", error_detail)
+
     print(json.dumps(
         {
             "question": args.question,
@@ -673,9 +691,17 @@ def main():
             "sources": result.sources,
             "abstained": result.abstained,
             "active_document_after": session.active_document_id,
+            "error_stage": result.error_stage,
+            "error_detail": error_detail,
         },
         ensure_ascii=False, indent=2,
     ))
+
+    if result.error_stage:
+        # ⚠️ 버그 수정(리뷰 반영): 예전엔 에러가 나도 종료코드가 성공(0)이라
+        # 외부 스크립트·팀원이 "처리 중 오류가 발생했습니다"라는 답변 텍스트만
+        # 보고 실행 자체는 성공했다고 오판할 수 있었다.
+        sys.exit(1)
 
 
 if __name__ == "__main__":

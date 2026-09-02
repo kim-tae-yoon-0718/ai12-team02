@@ -13,6 +13,7 @@ duplicate_of_document_id가 유일한 근거이고, 그 판단은 build_index.py
 """
 from __future__ import annotations
 import json
+import os
 import shutil
 import tempfile
 import numpy as np
@@ -44,6 +45,10 @@ class ChunkMetadata:
     table_degraded: bool = False
     # 임베딩 모델 최대 길이 초과 플래그(청킹 산출물에서 옴) — 조용히 잘리지 않았는지 확인용
     oversize: bool = False
+    # ⚠️ 버그 수정(리뷰 반영, 문제8): 청크에 실려오는 location_label(예:
+    # "제18조 평가배점 · 문단 1~4")을 예전엔 인덱스에 저장 안 해서, 일반
+    # 문단 출처는 문서명+장절까지만 남고 정확한 문단 위치가 사라졌다.
+    location_label: str = ""
 
 
 @dataclass
@@ -220,10 +225,18 @@ class VectorStore:
 
     # ---- 저장/로드 ----
     def save(self, index_dir: Path, tag: IndexTag) -> None:
-        """임시 디렉터리에 전부 쓴 뒤 최종 위치로 교체한다(원자적 저장) —
-        저장 도중 실패해도 기존 인덱스가 반쪽짜리로 덮이지 않는다."""
+        """임시 디렉터리에 세 파일을 전부 완성한 뒤, 그 폴더 자체를 최종
+        위치로 통째로 교체한다(원자적 저장) — 저장 도중 실패해도 기존
+        인덱스가 반쪽짜리로 섞이지 않는다.
+
+        ⚠️ 버그 수정(리뷰 반영): 예전엔 tmp_dir 안에 세 파일을 완성해두고도
+        마지막에 파일을 하나씩 옮겨서(vectors.npy → metadata.jsonl →
+        index_tag.json 순), 두 번째 파일을 옮기다 실패하면 "벡터는 새 버전,
+        메타데이터는 옛 버전" 같은 섞임이 생길 수 있었다. 이제 tmp_dir을
+        os.rename으로 통째로 index_dir 자리에 밀어넣는다 — 같은 파일시스템
+        안에서 디렉터리 rename은 단일 원자적 연산이라 중간 상태가 없다."""
         index_dir = Path(index_dir)
-        index_dir.mkdir(parents=True, exist_ok=True)
+        index_dir.parent.mkdir(parents=True, exist_ok=True)
         tmp_dir = Path(tempfile.mkdtemp(prefix=".tmp_index_", dir=index_dir.parent))
         try:
             if self.vectors is not None:
@@ -234,12 +247,21 @@ class VectorStore:
             with open(tmp_dir / "index_tag.json", "w", encoding="utf-8") as f:
                 json.dump(asdict(tag), f, ensure_ascii=False, indent=2)
 
-            for name in ("vectors.npy", "metadata.jsonl", "index_tag.json"):
-                src = tmp_dir / name
-                if src.exists():
-                    shutil.move(str(src), str(index_dir / name))
-        finally:
+            backup_dir = None
+            if index_dir.exists():
+                backup_dir = index_dir.with_name(index_dir.name + f".old_{os.getpid()}")
+                os.rename(index_dir, backup_dir)
+            try:
+                os.rename(tmp_dir, index_dir)
+            except Exception:
+                if backup_dir is not None:
+                    os.rename(backup_dir, index_dir)  # 실패하면 원래 상태로 복구
+                raise
+            if backup_dir is not None:
+                shutil.rmtree(backup_dir, ignore_errors=True)
+        except Exception:
             shutil.rmtree(tmp_dir, ignore_errors=True)
+            raise
 
     @classmethod
     def load(cls, index_dir: Path) -> "VectorStore":

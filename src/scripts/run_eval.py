@@ -65,6 +65,11 @@ def main():
              "안 줄 때, 에러 대신 필터 없이 진행하도록 명시적으로 허용한다. "
              "테스트 목적 외에는 쓰지 않는다."
     )
+    parser.add_argument(
+        "--allow-errors", action="store_true",
+        help="문항 중 오류가 있어도 실패 종료코드 대신 성공으로 끝내는 것을 "
+             "명시적으로 허용한다. 기본값은 오류 1건 이상이면 실패 종료."
+    )
     args = parser.parse_args()
 
     cfg = load_config(args.experiment_config)
@@ -108,6 +113,12 @@ def main():
 
     items = load_evalset(Path(args.evalset))
     print(f"평가 문항 {len(items)}개 로드 완료")
+    if not items:
+        # ⚠️ 버그 수정(리뷰 반영): 빈 평가셋도 예전엔 그냥 "평가 완료"로
+        # 끝났다 — 파일 경로를 잘못 넘겼거나 필터링 실수로 0문항이 된
+        # 경우를 놓칠 수 있어 명시적으로 막는다.
+        print("❌ 평가셋에 문항이 0개입니다 — 경로가 맞는지 확인하세요.")
+        sys.exit(1)
 
     # 4-14(활성 문서 상태) — 평가셋 문항이 'session_id' 필드로 대화 단위를
     # 밝히고 있으면 그룹이 바뀔 때마다 세션을 리셋한다.
@@ -141,9 +152,18 @@ def main():
         q = item["question"]
         cur_session_id = item.get("session_id")
         if has_session_ids:
-            if cur_session_id != prev_session_id:
+            if not cur_session_id:
+                # ⚠️ 버그 수정(리뷰 반영): 예전엔 session_id가 없는 문항끼리
+                # cur_session_id(None) == prev_session_id(None)로 같다고
+                # 판정돼서 서로 이어졌다 — 다른 문항엔 session_id가 있는데
+                # 이 문항만 없다는 건 "독립 문항"이라는 뜻으로 보고, 항상
+                # 새 세션으로 처리한다(다른 무관한 문항으로 절대 안 새게).
+                session = SessionState()
+                prev_session_id = None
+            elif cur_session_id != prev_session_id:
                 session = SessionState()  # session_id 그룹 전환 — 이전 문항 상태 안 이어받음
                 prev_session_id = cur_session_id
+            # else: 같은 session_id가 이어짐 — 세션 유지
         elif not args.continuous_session:
             session = SessionState()  # 기본값 — 매 문항 독립, 이전 문항 상태 절대 안 섞임
         # else: --continuous-session이고 session_id도 없음 → 세션을 리셋하지 않고 이어감
@@ -237,6 +257,15 @@ def main():
     print(f"✅ 평가 완료: {out_dir}")
     print(f"   기권율 {summary['abstain_rate']:.1%}, 분기 폴백 {fallback_count}건, "
           f"에러 {summary['error_count']}건")
+
+    if summary["error_count"] > 0 and not args.allow_errors:
+        # ⚠️ 버그 수정(리뷰 반영): 예전엔 오류가 몇 건이든 종료코드가 항상
+        # 성공(0)이라, 자동 실행 파이프라인이 "에러 3건 있어도 평가 정상
+        # 완료"로 오판할 수 있었다. 의도적으로 오류를 허용하려면
+        # --allow-errors를 명시해야 한다.
+        print(f"❌ 오류 {summary['error_count']}건 있어 실패로 종료합니다. "
+              f"의도적으로 넘기려면 --allow-errors를 명시하세요.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

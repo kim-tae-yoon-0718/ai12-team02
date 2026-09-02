@@ -86,6 +86,7 @@ def map_chunk(c: dict) -> dict:
         "processed_sha256": c["processed_sha256"],
         "sidecar_sha256": c["sidecar_sha256"],
         "corpus_version": c.get("corpus_version", ""),
+        "chunking_version": c.get("chunking_version", ""),
         "text": c["search_text"],
         "document_name": c.get("source_document_title", ""),
         "chapter": " > ".join(section_path) if section_path else "",
@@ -98,7 +99,32 @@ def map_chunk(c: dict) -> dict:
         "table_degraded": bool(c.get("table_degraded", False)),
         "oversize": bool(c.get("oversize", False)),
         "chunk_retrieval_eligible": bool(c.get("retrieval_eligible", True)),
+        "location_label": c.get("location_label", ""),
     }
+
+
+def validate_chunk_consistency(chunks: list[dict]) -> None:
+    """⚠️ 버그 수정(리뷰 반영, 문제2): base.yaml 확정 규칙 "같은 문서 안에
+    서로 다른 문서 버전이나 파일 지문이 섞이면 인덱싱을 중단한다"가 실제로는
+    "값이 있는지"만 확인하고 "문서 내에서 서로 같은 값인지"는 확인 안 됐다
+    — 예: RFP-000001의 청크 절반이 document_version=1, 나머지가 =2여도
+    통과할 수 있었다. 같은 document_id 안에서 아래 값이 전부 같은지 검사."""
+    check_keys = [
+        "document_version", "processed_sha256", "sidecar_sha256",
+        "corpus_version", "chunking_version",
+    ]
+    by_doc: dict[str, list[dict]] = {}
+    for c in chunks:
+        by_doc.setdefault(c["document_id"], []).append(c)
+
+    for doc_id, doc_chunks in by_doc.items():
+        for key in check_keys:
+            values = {c.get(key) for c in doc_chunks}
+            if len(values) > 1:
+                raise ValueError(
+                    f"{doc_id}: 청크마다 '{key}' 값이 다릅니다({values}) — "
+                    f"같은 문서 안에 서로 다른 버전이 섞여 있습니다. 인덱싱을 중단합니다."
+                )
 
 
 def load_retrieval_eligible_ids(registry_path: Path | None) -> set[str] | None:
@@ -131,6 +157,17 @@ def load_retrieval_eligible_ids(registry_path: Path | None) -> set[str] | None:
     return eligible
 
 
+def load_registry_document_ids(registry_path: Path) -> set[str]:
+    """등록부에 있는 전체 document_id(검색 대상 여부 무관). --only에
+    오타 문서ID(예: RFP-00001)를 넣었을 때 "등록부에 아예 없는 ID"와
+    "등록부엔 있지만 이번엔 제외 대상"을 구분하는 데 씀(리뷰 문제4)."""
+    with open(registry_path, "r", encoding="utf-8") as f:
+        doc = json.load(f)
+    if "documents" not in doc:
+        raise ValueError(f"{registry_path}: 최상위 객체에 'documents' 키가 없습니다.")
+    return {row["document_id"] for row in doc["documents"]}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--chunks", required=True, help="C단계 청크 JSONL 경로")
@@ -140,6 +177,11 @@ def main():
         "--only", required=False,
         help="쉼표로 구분한 document_id 목록 — 지정하면 그 문서들만 기존 인덱스에서 "
              "교체(문서 단위 증분 갱신). 생략하면 전체 재생성."
+    )
+    parser.add_argument(
+        "--allow-no-registry", action="store_true",
+        help="문서 등록부 없이 인덱싱을 허용한다(테스트 목적). 기본값은 필수 — "
+             "등록부 없이 돌리면 검색 제외 대상(콘텐츠 중복 등)이 그대로 섞여 들어간다."
     )
     args = parser.parse_args()
     only_ids = set(args.only.split(",")) if args.only else None
@@ -157,6 +199,15 @@ def main():
               f"{cfg.get('embedding_provider')!r}). 로컬 트랙 스크립트는 별도입니다.")
         sys.exit(1)
 
+    # ⚠️ 버그 수정(리뷰 반영, 문제3): 예전엔 --registry가 완전히 선택사항이라
+    # 안 주면 경고만 하고 100건 전부(콘텐츠 중복 2건 포함) 검색 대상으로
+    # 삼았다. 공식 인덱스는 등록부가 필수 — 명시적으로 우회해야만 생략 가능.
+    if not args.registry and not args.allow_no_registry:
+        print("❌ --registry가 없습니다. 공식 인덱스는 문서 등록부가 필수입니다 "
+              "(콘텐츠 중복 문서 제외를 위해). 테스트 목적으로 등록부 없이 돌리려면 "
+              "--allow-no-registry를 명시하세요.")
+        sys.exit(1)
+
     out_dir = index_dir(cfg)
     try:
         config_mismatch_check(out_dir, cfg)
@@ -168,9 +219,16 @@ def main():
     print(f"청크 {len(raw_chunks)}개 로드 완료(원본 필드명 그대로)")
     chunks = [map_chunk(c) for c in raw_chunks]
 
-    eligible_ids = load_retrieval_eligible_ids(
-        Path(args.registry) if args.registry else None
-    )
+    try:
+        validate_chunk_consistency(chunks)
+    except ValueError as e:
+        print(f"❌ {e}")
+        sys.exit(1)
+
+    registry_path = Path(args.registry) if args.registry else None
+    eligible_ids = load_retrieval_eligible_ids(registry_path)
+    all_registry_ids = load_registry_document_ids(registry_path) if registry_path else None
+
     before = len(chunks)
     if eligible_ids is not None:
         chunks = [c for c in chunks if c["document_id"] in eligible_ids]
@@ -181,14 +239,31 @@ def main():
 
     is_incremental = only_ids is not None
     if is_incremental:
+        # ⚠️ 버그 수정(리뷰 반영, 문제4): 예전엔 "청크가 없는 문서"를 전부
+        # 같은 경고 하나로 뭉뚱그렸다 — 그러면 다음 세 가지를 구분 못 한다:
+        # (a) 사용자가 문서 ID를 오타(RFP-00001)로 입력한 경우 — 에러로 중단
+        # (b) 등록부엔 있지만 이번엔 검색 제외로 바뀐 경우 — 기존 벡터만 비활성화
+        # (c) 등록부엔 검색 대상인데 청크 파일에서 실수로 빠진 경우 — 에러로 중단
         missing = only_ids - {c["document_id"] for c in chunks}
-        # --only로 지정했는데 청크가 하나도 안 남은 문서 = 청크 파일에 아예 없거나
-        # retrieval_eligible=false로 이번에 새로 제외된 경우. 후자는 기존 인덱스에서
-        # soft delete만 하고 새로 넣지는 않는다 — 조용히 넘어가지 않고 알린다.
-        if missing:
+        if missing and all_registry_ids is not None:
+            not_in_registry = missing - all_registry_ids
+            if not_in_registry:
+                print(f"❌ --only에 지정한 문서 ID가 등록부에 아예 없습니다(오타 "
+                      f"가능성): {sorted(not_in_registry)}")
+                sys.exit(1)
+            still_missing = missing - not_in_registry
+            excluded_now = still_missing & (all_registry_ids - (eligible_ids or set()))
+            data_gap = still_missing - excluded_now
+            if data_gap:
+                print(f"❌ --only에 지정한 문서가 등록부엔 검색 대상인데 청크 "
+                      f"파일에 없습니다(청크 생성 누락 가능성): {sorted(data_gap)}")
+                sys.exit(1)
+            if excluded_now:
+                print(f"   이번에 검색 제외로 바뀐 문서 — 기존 벡터만 비활성화: "
+                      f"{sorted(excluded_now)}")
+        elif missing:
             print(f"⚠️  --only로 지정했지만 색인할 청크가 없는 문서: {sorted(missing)} "
-                  f"— 청크 파일에 없거나 retrieval_eligible=false일 수 있습니다. "
-                  f"기존 인덱스에 있었다면 비활성화(soft delete)만 적용합니다.")
+                  f"— 등록부가 없어 오타/제외/누락을 구분 못 합니다.")
         chunks = [c for c in chunks if c["document_id"] in only_ids]
         print(f"--only 필터링: {only_ids} 대상 청크 {len(chunks)}개")
 
@@ -244,6 +319,7 @@ def main():
                 of=chunks[i]["of"],
                 table_degraded=chunks[i]["table_degraded"],
                 oversize=chunks[i]["oversize"],
+                location_label=chunks[i]["location_label"],
             )
             for i in idxs
         ]
