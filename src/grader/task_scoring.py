@@ -131,13 +131,17 @@ def grade_list(item: EvaluationItem, response: ModelResponse,
 
     extra = [x for x in got_items if not any(match(str(g), str(x)) for g in gold_items)]
     coverage = len(hit) / len(gold_items) if gold_items else 1.0
-    score = 1.0 if not miss else 0.0  # exact-all — 고정 정책, 설정으로 바꿀 수 없다
+    # exact-all: 빠뜨림도 덧붙임도 없어야 통과 (고정 정책). ★덧붙임(환각 항목)을 통과시키면
+    # "다 넣고 환각도 덧붙인" 답이 "하나 빠뜨린" 답보다 높게 나온다 — 뒤집힌 순서(3-4-4).
+    # 빠뜨림/덧붙임은 detail 에 따로 센다(합산 금지) — score 는 이진.
+    score = 1.0 if (not miss and not extra) else 0.0
 
     return TaskScore(kind="list", score=score, detail={
         "completeness_rule": "exact_all",  # 코드 고정값. 스키마 필드 아님.
         "coverage": coverage, "hit": hit, "missing": miss, "extra": extra,
         "n_missing": len(miss), "n_extra": len(extra),
-        "note": "빠뜨림과 덧붙임은 별도 집계 — 합산 금지(3-4-4)",
+        "fail_reason": ("missing" if miss else "extra" if extra else None),
+        "note": "빠뜨림과 덧붙임은 별도 집계 — 합산 금지(3-4-4). 둘 다 없어야 통과",
     })
 
 

@@ -91,6 +91,29 @@ def test_list_omission_and_addition_are_separated():
     assert s.detail["n_extra"] == 1
 
 
+def test_list_hallucinated_extra_item_fails(_=None):
+    """3-4-4: '다 넣고 환각도 덧붙인' 답이 '하나 빠뜨린' 답보다 높으면 뒤집힌 순서.
+    → 덧붙임도 exact-all 실패로 처리한다(빠뜨림/덧붙임은 detail 에 따로 센다)."""
+    it = _item(answer_type="list", answer_normalized=["가", "나", "다"])
+    all_plus_fake = _resp(answer="전부", structured_answer=["가", "나", "다", "보안서약서(환각)"])
+    one_missing = _resp(answer="가 나", structured_answer=["가", "나"])
+    s_fake = grade_list(it, all_plus_fake)
+    s_miss = grade_list(it, one_missing)
+    assert s_fake.score == 0.0 and s_fake.detail["fail_reason"] == "extra"
+    assert s_miss.score == 0.0 and s_miss.detail["fail_reason"] == "missing"
+
+
+def test_short_answer_verbose_gold_exact_match_passes():
+    """정답 자체가 날짜/금액 포함 서술형일 때, pred 가 정답 그대로면 verbose 패널티로
+    0점 나면 안 된다 (PRAC-QA-001 류)."""
+    from grader.task_scoring import grade_short_answer
+    gold = "입찰 참여 마감일(2024-06-24 16:00)을 넘지 않았으므로, 참여 가능합니다."
+    it = _item(task_type="qa", answer_type="value", answer_raw=gold)
+    assert grade_short_answer(it, _resp(answer=gold), DEFAULT_CFG).score == 1.0
+    # 정답에 없는 내용 덧붙이면 여전히 0
+    assert grade_short_answer(it, _resp(answer=gold + " 낙찰 확률도 높습니다"), DEFAULT_CFG).score == 0.0
+
+
 # ------------------------------------------------------------------ summary (checkpoint — v0.2: answer_raw)
 
 def test_summary_without_checkpoints_is_not_applicable():

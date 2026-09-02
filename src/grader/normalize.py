@@ -200,6 +200,14 @@ def match_short(gold, pred, accept=None, kind: str = "auto",
     golds = [gold] + list(accept)
     pred_s = str(pred if pred is not None else "")
 
+    # 0) 정확 일치 — 정답 자체가 서술형(날짜/금액을 포함한 문장)이어도 pred 가 정답 그대로면 통과.
+    #    (이 검사를 뒤에 두면 "정답 == pred" 인데 verbose 패널티로 0점 나는 버그가 생긴다)
+    np = normalize_text(pred_s)
+    for g in golds:
+        ng = normalize_text(g)
+        if ng and ng == np:
+            return True, "normalized_exact"
+
     # 1) 날짜
     g_date = parse_date(gold)
     if g_date:
@@ -218,12 +226,7 @@ def match_short(gold, pred, accept=None, kind: str = "auto",
                     return True, "amount"
                 return False, "amount_match_but_verbose(정답+덧붙임 의심)"
 
-    # 3) 문자열
-    np = normalize_text(pred_s)
-    for g in golds:
-        ng = normalize_text(g)
-        if ng and ng == np:
-            return True, "normalized_exact"
+    # 3) 문자열 (정확 일치는 위 0)에서 이미 처리)
     if allow_partial:
         for g in golds:
             ng = normalize_text(g)
