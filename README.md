@@ -280,7 +280,7 @@ tests/      unit/ · integration/ · regression/ · checks/ · fixtures/   (180 
 
 - 스키마 v0.2 (임현진 `check_evalset.py` FIELD_SPEC 와 정합)
 - `location = {document, section, ref_no}`, 비교형은 `[{document, field, section, ref_no}, …]` 배열
-- `ref_no` = extraction_v3 표기 `"{block_type} {block_index}"` (`paragraph 3` / `table 12` / `heading 0`) — "문단 N"·`(part/of)` 폐기
+- `ref_no` = `location_label` 그대로 (`"4. 제안 요청내용 · 문단 1-57"`) + `line`(단일값/청크는 md_line_start). 평가셋·청크 동일 규약 (박예진·임현진 09-02 최종)
 - `answer_source=metadata` → `section="CSV"`, `ref_no="CSV: {컬럼명}"`, 좌표 채점 제외
 - 평가셋 계약 검사 = `src/checks/check_evalset.py` 단일 출처
 - 6-자산 provenance = `base.yaml §①` 단일 출처, VERSION.txt 자동 조회
@@ -290,7 +290,6 @@ tests/      unit/ · integration/ · regression/ · checks/ · fixtures/   (180 
 
 | 대기 | 담당 | 도착하면 |
 | --- | --- | --- |
-| 평가셋 `location` 에 `line` 필드 | 임현진 | `config` `precision: section → ref_no` 되돌리면 좌표 정밀 매칭 성립 |
 | 3-4 threshold (선별·요약·비교 PASS/FAIL 경계) | baseline (이태민 + 박예진 4-1) | `PENDING_THRESHOLD` 해소 |
 | 3-9 사람 채점 표본 | 전원 교차 | `verification_path` 채우면 `tier=final` 가능 |
 | 3-13 변동 폭 실측 | baseline | 회귀 판정선(n-sigma) 확정 |

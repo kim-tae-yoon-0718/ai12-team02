@@ -50,12 +50,10 @@ retrieval:
   retrieval_k: 20
   reranker_k: 10
   context_k: 5
-  # 2-9 확정 단위는 ref_no(document+section+ref_no)지만, 현재 evalset ref_no("paragraph 3",
-  # v3 block_type+block_index)와 청크가 낼 수 있는 ref_no("표 1", location_label 기반)의 번호
-  # 체계가 달라 ref_no 매칭이 항상 0이 된다. evalset location 에 `line` 이 들어오면(임현진
-  # 09-01 "line 도 대조") match_location 이 line 범위로 대조해 ref_no 정밀도가 성립한다.
-  # 그때까지 section 으로 둔다 — "맞는 절을 찾았나"는 그대로 잰다.
-  precision: section   # document | section | ref_no  [TODO: evalset line 도착 시 ref_no 로]
+  # 2-9 확정 단위. 2026-09-02 박예진·임현진 최종: 평가셋 location 과 청크가 같은 규약을 쓴다
+  # (ref_no = location_label 그대로, line = md_line_start). match_location 이 양쪽 line 이
+  # 있으면 청크 line 범위 포함으로, 없으면 ref_no 문자열로 대조한다.
+  precision: ref_no    # document | section | ref_no — 2-9 확정 단위
   eval_k: [3, 5]        # 다단계 k 분석 (이태민 top_k=5)
 
 grading:

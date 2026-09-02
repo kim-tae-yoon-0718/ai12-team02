@@ -54,29 +54,24 @@ python -m checks.check_evalset final.jsonl --doc-ids data/gold/corpus_doc_ids.js
 
 ## 좌표 어댑터 (`models.Location.from_chunk`)
 
-**임현진 09-01 확정** — `location = {document, section, ref_no}`:
-- `section` ← 청킹 산출물 `section_path` 의 **리프 요소** (`{title:...}` dict / 문자열 둘 다 처리)
-- `ref_no` ← extraction_v3 기계 표기 **`"{block_type} {block_index}"`** — `table`/`paragraph`/`heading`
-  (예: `"paragraph 3"`, `"table 12"`, `"heading 0"`). 박예진 청크의 `"text"` 는 `"paragraph"` 로 정규화.
-  **사람 표기 "문단 N"·`(part/of)` 폐기.**
-- **예외** `answer_source=metadata` (본문 블록 없음, CSV 답변): `section="CSV"`, `ref_no="CSV: {컬럼명}"` 고정.
-  이 문항은 `grade_citation`/`grade_retrieval` 좌표 채점에서 **제외**(applicable=False).
-- 비교형(2-8-4): `location` 은 **문서별 객체 배열**. `EvaluationItem.gold_locations()` 가 항상 리스트로 정규화.
-  `grade_citation` 은 정답 좌표 하나하나가 citation 과 맞는 비율로 점수.
+**박예진·임현진 최종 확정 (2026-09-02)** — 평가셋 `location` 과 청크가 **같은 규약**:
 
-`ContextChunk` / `RetrievedItem` 은 `location` 이 없고 `block_type`+`block_index`(또는 옛 `location_label`)가
-있으면 자동 합성한다.
+| 필드 | 값 |
+| --- | --- |
+| `document` | `document_id` |
+| `section` | `section_path` 의 리프(마지막) 요소 |
+| `ref_no` | `location_label` 을 **그대로** (예: `"4. 제안 요청내용 · 문단 1-57"`, `"2. 사업개요 · 표 1"`) |
+| `line` | 평가셋 = 단일값 / 청크 = `md_line_start` (`line_end` 는 매칭용 범위 = `md_line_end`) |
 
-### 원문 위치 → 청크 대응 (3-2 — grader 책임)
+`match_location(precision="ref_no")` 대조 순서:
+1. 문서 + 절(section) 먼저 일치해야 함
+2. 양쪽에 `line` 이 있으면 → **청크 `[line, line_end]` 범위에 평가셋 `line` 이 드는지** (가장 정밀, 같은 라벨이 문서에 여럿일 때 명확)
+3. `line` 없으면 → `ref_no` 문자열 일치
 
-2-9 는 근거를 구현 독립 단위 `{document, section, ref_no}` 로 둔다. 청크는 원문의 어떤 구간을
-덮으므로, "evalset 이 가리키는 블록이 이 청크 안에 있나" 를 grader 가 판정한다:
+- **예외** `answer_source=metadata` (CSV 답변): `section="CSV"`, `ref_no="CSV: {컬럼명}"`, `line` 없음 → `grade_citation`/`grade_retrieval` 좌표 채점 **제외**
+- **비교형(2-8-4)**: `location` 은 문서×필드 배열 `[{document, field, section, ref_no, line}, …]`. `grade_citation` 이 정답 좌표 하나하나를 citations 배열과 대조하고, "근거 누락"(`n_missing_evidence`) vs "잘못된 근거"(`n_wrong_citations`) 를 분리
 
-- **block_type**: 박예진 청크의 `text` → v3 어휘 `paragraph` 로 정규화 (`Location.from_chunk`)
-- **block_index**: source_type(front_matter/body_sentence)별로 세져 한 문서에 `"heading 0"` 이 여럿 —
-  ref_no 만으로는 모호. → **line 번호로 대조**(임현진 09-01): 청크는 `md_line_start`~`md_line_end`,
-  평가셋 location 에 `line` 이 오면 `Location.line` 이 그 범위에 드는지로 매칭. `line` 없으면 ref_no 로 폴백.
-- 매핑은 grader 몫 — 박예진 청크 출력 변경은 필요 없다.
+`ContextChunk` / `RetrievedItem` 은 `location` 이 없고 청크 필드(`section_path`, `location_label`, `md_line_start/end`)가 있으면 `Location.from_chunk` 로 자동 합성한다.
 
 ## 박예진 산출물 → grader 입력 (`scripts/`)
 

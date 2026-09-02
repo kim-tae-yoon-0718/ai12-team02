@@ -130,30 +130,29 @@ class Location(BaseModel):
                    location_label: str | None, *,
                    block_type: str | None = None, block_index: int | None = None,
                    line: int | None = None, line_end: int | None = None) -> "Location":
-        """검색 산출물(박예진 청크 / extraction_v3 블록)을 {document, section, ref_no} 로.
+        """박예진 청크(chunks_v3) 를 {document, section, ref_no, line} 로.
 
-        section : section_path 의 리프 요소 (임현진 09-01 확정).
-        ref_no  : block_type·block_index 가 오면 `"{block_type} {block_index}"` (v3 표기 —
-                  table/paragraph/heading). 박예진 청크는 문단을 "text" 로 내보내므로
-                  v3 어휘 "paragraph" 로 맞춘다. 없으면 옛 location_label 에서 뽑는다(하위호환).
+        박예진·임현진 최종 확정 (2026-09-02):
+          document = document_id
+          section  = section_path 의 리프(마지막) 요소
+          ref_no   = location_label 을 **그대로** (예: "4. 제안 요청내용 · 문단 1-57")
+          line     = md_line_start (단일값). line_end 는 매칭용 범위(md_line_end)
+        평가셋 location 도 같은 규약을 쓰므로 문자열/line 으로 그대로 대조된다.
+        (block_type/block_index 인자는 하위호환용 — 청크에는 안 들어온다)
         """
-        _BT = {"text": "paragraph"}  # 박예진 청크 어휘 → extraction_v3 어휘
-        # section_path 원소가 문자열이거나 {title: ...} dict 둘 다 받는다
         sp = []
         for s in (section_path or []):
             if isinstance(s, dict):
                 s = s.get("title") or s.get("heading") or ""
             if s:
                 sp.append(str(s))
-        section = sp[-1] if sp else ""
         label = str(location_label or "")
+        section = sp[-1] if sp else (label.rsplit(" · ", 1)[0].strip() if " · " in label else "")
 
-        if block_type is not None and block_index is not None:
-            ref_no = f"{_BT.get(block_type, block_type)} {block_index}"
+        if block_type is not None and block_index is not None:  # 하위호환 (안 쓰임)
+            ref_no = f"{block_type} {block_index}"
         else:
-            ref_no = _strip_part(label.rsplit(" · ", 1)[-1]) if " · " in label else ""
-        if not section and " · " in label:
-            section = label.rsplit(" · ", 1)[0].strip()
+            ref_no = label
         return cls(document=document_id, section=section, ref_no=ref_no,
                    line=line, line_end=line_end)
 

@@ -166,18 +166,25 @@ def test_chunk_location_adapter_and_split_table_match():
     from grader.models import Location, RetrievedItem
     from grader.normalize import match_location
 
-    # 이태민 검색 출력이 박예진 청크 스키마로 오면 location 을 합성한다
+    # 이태민 검색 출력이 박예진 청크 스키마로 오면 location 을 합성한다.
+    # 박예진·임현진 확정(09-02): ref_no = location_label 그대로, section = section_path 리프.
     r = RetrievedItem.model_validate({
         "document_id": "RFP-000091",
         "section_path": ["4. 추진일정"],
-        "location_label": "4. 추진일정 · 표 7 (2/3)",
+        "location_label": "4. 추진일정 · 표 7",
+        "md_line_start": 120, "md_line_end": 145,
         "score": 0.9,
     })
-    assert r.location.model_dump(exclude_none=True) == {"document": "RFP-000091", "section": "4. 추진일정", "ref_no": "표 7"}
+    assert r.location.model_dump(exclude_none=True) == {
+        "document": "RFP-000091", "section": "4. 추진일정",
+        "ref_no": "4. 추진일정 · 표 7", "line": 120, "line_end": 145}
 
-    # 분할 표 (2/3) 는 정답 `표 7` 과 ref_no 단위로 일치해야 한다
-    gold = Location(document="RFP-000091", section="4. 추진일정", ref_no="표 7")
+    # 평가셋 location 도 같은 규약 → ref_no 문자열로 일치
+    gold = Location(document="RFP-000091", section="4. 추진일정", ref_no="4. 추진일정 · 표 7")
     assert match_location(gold, r.location, "ref_no") is True
+    # line 이 양쪽에 있으면 청크 범위 포함으로 대조
+    gold_line = Location(document="RFP-000091", section="4. 추진일정", ref_no="다른 라벨", line=130)
+    assert match_location(gold_line, r.location, "ref_no") is True
 
 
 def test_context_chunk_derives_text_from_search_text():
@@ -189,7 +196,7 @@ def test_context_chunk_derives_text_from_search_text():
     })
     assert c.text == "사업 개요 본문"
     assert c.location.section == "2. 개요"
-    assert c.location.ref_no == "문단 1"
+    assert c.location.ref_no == "2. 개요 · 문단 1"  # location_label 그대로 (09-02 확정)
 
 
 def test_multi_k_eval_records_k3_and_k5():
