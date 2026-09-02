@@ -87,12 +87,20 @@ class GenerationClient:
 
         kwargs: dict[str, Any] = dict(
             model=self.model,
-            temperature=self.temperature,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
         )
+        # ⚠️ 버그 수정(실제 실행 중 발견): GPT-5 계열(gpt-5-mini 등)은
+        # temperature=0을 지원 안 함 — API가 "기본값(1)만 지원"이라고 명시적
+        # 거부함(invalid_request_error, unsupported_value). 4-12 확정
+        # "temperature=0 고정(재현성)"이 이 모델군에선 물리적으로 불가능한
+        # 제약이라, gpt-5 계열은 temperature 자체를 안 보내 기본값(1)을
+        # 쓰게 한다 — 재현성이 이전만큼 안 보장되는 트레이드오프가 생겼다는
+        # 뜻이라 팀 확인 필요.
+        if not self.model.startswith("gpt-5"):
+            kwargs["temperature"] = self.temperature
         if self.max_tokens:
             kwargs["max_tokens"] = self.max_tokens
 
