@@ -32,11 +32,19 @@ table: v3                     # 확정 2026-09-01 — rfp_extraction_table_v3.
                               #   external_reference(47)/not_disclosed(2)/conflict(1)/
                               #   extraction_failed(0)
                               #   공식 이름표: extraction_metadata.json (VERSION.txt 아님)
-index: v1             # 확정 — 폴더는 v1로 시작. 실제 생성은 chunk/embedding 확정 후
+index: v2             # 확정 2026-09-02 — shared_data/processed/index_v2 공식 공개.
+                      #   chunks_v3(검색대상 14,828청크·98문서) + document_registry_v2 +
+                      #   text-embedding-3-small(1536차원)로 생성.
+                      #   ⚠️ index_v1은 chunking v1 / extraction v2 로 낡아 실행 코드가
+                      #   차단한다(vector_store.validate_index_tag). v1은 삭제하지 않고 보존.
 index_build_timestamp: null   # auto — 인덱스 생성 시각. 4-9-2 꼬리표, 5명 병렬 작업
                               #   버전 구분용. reference_datetime과 무관(별개 값)
-evalset: v1           # TODO — 임현진 평가셋 동결 시점에 확정
-scorer: v1            # TODO — 김하루 채점기 확정 시점에 확정
+evalset: v1           # 확정(잠정) 2026-09-02 — /srv/rfp/evalset/v1/VERSION.txt
+                      #   (evalset v1 / corpus v2 / chunking v3). 연습 문항 8개는
+                      #   /srv/rfp/evalset/practice_items.jsonl
+scorer: null          # TODO — 김하루 채점기 실행 파일이 서버 공유 경로에 아직 없음
+                      #   (2026-09-02 /srv/rfp, /home/spai1205, git 브랜치 전수 확인).
+                      #   ⚠️ null인 채로 "채점 완료"라고 기록하지 않는다.
 
 # ─────────────────────────────
 # ② 청킹 (4-7, 4-7-1) — 박예진 담당
@@ -144,22 +152,39 @@ generation_model: "gpt-5-mini"  # 재확정 2026-09-02 — gpt-4o-mini는 팀 AP
                               #   naver-hyperclovax/HyperCLOVAX-SEED-Text-Instruct-1.5B,
                               #   google/gemma-3-12b-it, meta-llama/Llama-3.1-8B-Instruct
                               #   (HF 접근 승인 대기)
-temperature: 0                # 확정 — 재현성 확보. 실험 간 비교의 성립 조건.
-                              #   ⚠️ 2026-09-02 실제 실행 중 발견: GPT-5 계열
-                              #   (gpt-5-mini 등)은 temperature=0을 아예 지원
-                              #   안 함(API가 명시적으로 거부, 기본값 1만 허용).
-                              #   generation_client.py가 gpt-5 계열이면 이 값을
-                              #   무시하고 안 보내도록 자동 처리하지만, 그 경우
-                              #   재현성이 이 확정만큼 보장 안 됨 — 팀 확인 필요.
-max_tokens: null              # TODO — 모델 선택 후 결정. 잘림 확인 필수
+temperature: null             # 확정 2026-09-02 — GPT-5 Mini에서는 **API 기본값을
+                              #   사용하며 동일 문장의 완전한 재현은 보장하지 않음**.
+                              #   gpt-5-mini는 temperature 자체를 지원하지 않아
+                              #   (기본값만 허용) 요청에 이 키를 아예 싣지 않는다.
+                              #   null = "보내지 않음"이라는 뜻이며, 예전처럼
+                              #   `temperature: 0`을 확정값처럼 적어두고 실제로는
+                              #   무시하던 모순을 제거했다.
+                              #   ⚠️ temperature를 지원하는 모델로 바꿀 때만
+                              #   숫자를 채운다(그 경우에만 요청에 실린다).
+top_p: null                   # 확정 2026-09-02 — gpt-5-mini 미지원. 보내지 않음
+logprobs: null                # 확정 2026-09-02 — gpt-5-mini 미지원. 보내지 않음
+max_completion_tokens: 4096   # 확정 2026-09-02 시작값 — GPT-5 계열은 max_tokens가
+                              #   아니라 max_completion_tokens를 받는다.
+                              #   잘림이 확인되면 이 값만 올린다.
+# max_tokens 키 삭제 2026-09-02 — gpt-5-mini가 거부하는 인자다. 이름만 남겨두면
+#   다른 모델용 설정이 섞여 들어가므로 아예 없앤다.
 abstain_layers: ["prompt"]    # 확정 — baseline은 프롬프트 지시만.
                               #   검색상태 판정·생성후 검증은 baseline 이후
-pricing:                      # 생성+임베딩 비용 계산용(cost_usd) — 팀 확인 필요
+# 생성+임베딩 비용 계산용(cost_usd).
+# ⚠️ 단위는 **100만(1M) 토큰당 달러**다. 키 이름에 단위를 박아 1천 토큰 단가와
+#   헷갈리지 않게 한다(예전 input_per_1k 이름은 폐기 — 값이 1M 기준인데 이름은
+#   1k라 1,000배 오차가 날 수 있었다).
+# 출처: OpenAI 공식 가격표 (2026-09-02 확인)
+#   - gpt-5-mini            : 입력 $0.25 / 캐시입력 $0.025 / 출력 $2.00  (per 1M)
+#   - text-embedding-3-small: 입력 $0.02                               (per 1M)
+pricing_unit: "per_1m_tokens"
+pricing:
   gpt-5-mini:
-    input_per_1k: null        # TODO
-    output_per_1k: null       # TODO
+    input_per_1m: 0.25
+    cached_input_per_1m: 0.025
+    output_per_1m: 2.0
   text-embedding-3-small:
-    input_per_1k: null        # TODO
+    input_per_1m: 0.02
 # ─────────────────────────────
 # ⑥ 프롬프트 5종 (파일명만 적음. 버전은 파일명에)
 # ─────────────────────────────
@@ -171,7 +196,10 @@ prompt_route:     "route_v1.txt"       # F-0 경로 분기    — 이태민
 prompt_condition: "condition_v1.txt"   # G-2 조건 번역    — 이태민
                                        #   ⚠️ baseline은 규칙 기반이라 이 파일 미호출.
                                        #   자연어→필드/연산자 변환을 LLM으로 할 때만 사용
-prompt_generate:  "generate_v1.txt"    # J  답변 생성     — 이태민 (baseline에서 실제 사용)
+prompt_generate:  "generate_v2.txt"    # J  답변 생성     — 이태민 (baseline에서 실제 사용)
+                                       #   v2(2026-09-02): 근거 인용 규약(USED_EVIDENCE)
+                                       #   추가 — 모델이 실제로 쓴 근거만 citations 로 남긴다.
+                                       #   v1은 수정하지 않고 그대로 보존(팀 규약)
 # prompt_score는 없음 — 확정 2026-08-31: 체크리스트3(김하루) 실제 채점 프롬프트
 #   (judge_checkpoint.v1.md, judge_faithfulness.v1.md, judge_list_item.v1.md)를
 #   그대로 사용. 체크리스트4 쪽 score_v1.txt는 별도로 만들지 않음
@@ -181,6 +209,8 @@ prompt_generate:  "generate_v1.txt"    # J  답변 생성     — 이태민 (bas
 # ─────────────────────────────
 # ⑦ 문서·버전 추적 (4-9-2·4-7-2, C→D 연결 필수 필드)
 # ─────────────────────────────
+document_registry_version: v2  # 확정 2026-08-30 — document_registry_v2.
+                              #   identity_v2(document_identity_v2.csv)도 이 폴더 안에 있다
 retrieval_eligible_only: true  # 확정 2026-08-31 — 검색은 document_registry_v2의
                               #   retrieval_eligible=true인 98문서만 대상(중복 2건 제외)
 track_document_version: true  # 확정 — 모든 청크·벡터에 document_id, document_version,
@@ -201,11 +231,15 @@ reference_datetime_source: "external"  # 확정 — 코드가 현재 시각을 �
 reference_datetime: "2024-06-01"       # 확정 2026-08-26 (박예진 1-9 실측) +
                                        #   2026-08-27 임현진(2-6-2) 공식 확정 — 값 일치 확인
                                        #   ⭐now 금지. 평가셋이 저절로 틀려짐 (1-9 ④)
-deadline_filter_field: "입찰 참여 마감일"  # 확정 2026-08-27, 2026-08-27 정정(김태윤) —
-                                       #   CSV 실제 컬럼명 그대로 사용(지어내지 않음).
-                                       #   CSV 92건 확보·검증 표본은 7건뿐(85건 교차검증 불가,
-                                       #   CSV 오기 2건 확인: 15행 금액오류, 94행 다른 필드 혼입).
-                                       #   본문 확보 가능 7건도 예외 없이 이 컬럼 사용(일관성)
+# ⭐ 2026-09-02 (4-4 확정) 마감일 자료 출처를 identity_v2로 통일.
+#    - 마감일 값·근거 위치 : document_registry_v2/document_identity_v2.csv (identity_v2)
+#    - 일반 QA 원문 근거   : chunks_v3
+#    - 나머지 12필드       : rfp_extraction_table_v3
+#    원본 shared_data/raw/data_list.csv를 실행 경로가 직접 읽던 코드는 폐기했다.
+identity_source: "identity_v2"          # 확정 2026-09-02 — 마감일·발주기관·사업명의 유일 출처
+deadline_filter_field: "bid_deadline"   # 확정 2026-09-02 — identity_v2의 실제 컬럼명 그대로
+                                       #   (예전 값 "입찰 참여 마감일"은 data_list.csv 컬럼명이라
+                                       #    identity_v2에는 존재하지 않는다)
 deadline_filter_disclosure: true      # 확정, 정정(김태윤) — 단순 고지가 아니라 아래
                                        #   메시지를 코드로 고정 부착(모델 판단 아님,
                                        #   1-4-1② 좌표 기계부착과 동일 원칙)

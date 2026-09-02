@@ -263,3 +263,4 @@ Thumbs.db
 node_modules/
 package-lock.json
 .package-lock.json
+.openai_key

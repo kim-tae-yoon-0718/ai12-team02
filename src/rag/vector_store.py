@@ -22,6 +22,14 @@ from pathlib import Path
 from typing import Any
 
 
+def chunk_index_from_id(chunk_id: str) -> int | None:
+    """chunk_id("RFP-000001-0007")의 접미 순번을 정수로. 형식이 다르면 None."""
+    if not chunk_id:
+        return None
+    tail = str(chunk_id).rsplit("-", 1)[-1]
+    return int(tail) if tail.isdigit() else None
+
+
 @dataclass
 class ChunkMetadata:
     chunk_id: str
@@ -53,12 +61,32 @@ class ChunkMetadata:
     # 필요. chapter는 " > "로 이미 합쳐진 문자열이라 원래 리스트 형태를 잃는데,
     # section_path는 원본 리스트를 그대로 보존한다.
     section_path: list = None  # type: ignore[assignment]
+    # 2026-09-02 추가 — 청크가 여러 절에 걸쳐 있을 때의 원본 목록(chunks_v3
+    # 'section_paths'). 있으면 그대로 보존한다(합쳐서 버리지 않는다).
+    section_paths: list = None  # type: ignore[assignment]
     md_line_start: int | None = None
     md_line_end: int | None = None
+    # 2026-09-02 추가 — 텍스트 청크의 block_index를 None으로 지우지 않기 위한
+    # 문서 내 청크 순번(chunk_id 접미 4자리). 표 청크는 table_idx를 쓴다.
+    chunk_index: int | None = None
+    preprocess_version: str = ""
+    chunking_version: str = ""
 
     def __post_init__(self):
         if self.section_path is None:
             self.section_path = []
+        if self.section_paths is None:
+            self.section_paths = []
+        if self.chunk_index is None:
+            self.chunk_index = chunk_index_from_id(self.chunk_id)
+
+    @property
+    def block_index(self) -> int | None:
+        """근거 위치용 블록 번호. 표는 표 번호, 그 밖에는 문서 내 청크 순번.
+        ⚠️ 텍스트 청크에서 None으로 비우지 않는다(4-3 확정)."""
+        if self.chunk_type == "table" and self.table_idx is not None:
+            return self.table_idx
+        return self.chunk_index
 
 
 @dataclass
@@ -82,6 +110,125 @@ class IndexTag:
 
 class ConfigMismatchError(RuntimeError):
     pass
+
+
+class IndexTagError(RuntimeError):
+    """인덱스 꼬리표(index_tag.json)가 없거나 깨졌거나 설정과 다를 때."""
+
+
+# 인덱스 꼬리표에 반드시 있어야 하는 항목. 하나라도 없으면 그 인덱스는 신뢰하지 않는다.
+INDEX_TAG_REQUIRED_KEYS = (
+    "chunk_size", "chunk_overlap", "embedding_model", "embedding_provider",
+    "corpus_version", "preprocess_version", "chunking_version",
+    "registry_version", "extraction_version", "vector_dimension",
+    "build_timestamp",
+)
+
+# 설정(cfg) 키 → 꼬리표(tag) 키. 빌드와 실행이 **같은 표**를 본다(기준 이중화 금지).
+INDEX_TAG_CFG_MAP = (
+    ("chunk_size", "chunk_size"),
+    ("chunk_overlap", "chunk_overlap"),
+    ("embedding_model", "embedding_model"),
+    ("embedding_provider", "embedding_provider"),
+    ("corpus", "corpus_version"),
+    ("preprocess", "preprocess_version"),
+    ("chunking_version", "chunking_version"),
+    ("__registry__", "registry_version"),
+    ("extraction_version", "extraction_version"),
+)
+
+
+def _cfg_value(cfg: dict[str, Any], cfg_key: str) -> Any:
+    if cfg_key == "__registry__":
+        return cfg.get("document_registry_version", cfg.get("corpus"))
+    return cfg.get(cfg_key)
+
+
+def read_index_tag(index_dir: Path) -> dict[str, Any]:
+    """index_tag.json 을 읽는다. 없거나 JSON 이 깨졌으면 IndexTagError."""
+    tag_path = Path(index_dir) / "index_tag.json"
+    if not tag_path.exists():
+        raise IndexTagError(
+            f"인덱스 꼬리표가 없습니다: {tag_path}\n"
+            f"버전을 확인할 수 없는 인덱스는 사용하지 않습니다 — "
+            f"build_index.py 로 다시 만드세요."
+        )
+    try:
+        with open(tag_path, "r", encoding="utf-8") as f:
+            tag = json.load(f)
+    except json.JSONDecodeError as e:
+        raise IndexTagError(f"{tag_path}: 꼬리표 JSON 을 읽지 못했습니다 — {e}") from e
+    if not isinstance(tag, dict):
+        raise IndexTagError(f"{tag_path}: 꼬리표가 객체가 아닙니다({type(tag).__name__}).")
+    return tag
+
+
+def validate_index_tag(
+    index_dir: Path, cfg: dict[str, Any], *, check_vectors: bool = True,
+) -> dict[str, Any]:
+    """실행 전 인덱스 검증 (2026-09-02 확정, 결함 1-1).
+
+    ⚠️ 예전엔 인덱싱할 때만 버전을 봤고, 답변 실행 경로는 `VectorStore.load()` 를
+    그냥 불렀다. 그래서 chunks_v3 설정으로 옛 index_v1(chunking v1 / extraction v2)을
+    실수로 불러도 아무도 막지 않았다.
+
+    검사 항목
+      ① 꼬리표 존재·JSON 파싱          ② 필수 항목 누락
+      ③ 코퍼스·전처리·청킹·등록부·추출표 버전, 임베딩 모델/제공자, 청크 크기/겹침
+      ④ 벡터 차원 (꼬리표 vs 실제 vectors.npy)
+
+    ★ 이 함수는 build_index.py 와 answer_pipeline.build_runtime 이 **같이** 쓴다.
+    ★ 반드시 임베딩·생성 클라이언트를 만들기 **전에** 부른다(실패 시 API 호출 0회).
+    """
+    index_dir = Path(index_dir)
+    tag = read_index_tag(index_dir)
+
+    missing = [k for k in INDEX_TAG_REQUIRED_KEYS if k not in tag]
+    if missing:
+        raise IndexTagError(
+            f"{index_dir}: 인덱스 꼬리표에 필수 항목이 없습니다: {missing}\n"
+            f"꼬리표가 오래된 형식일 수 있습니다 — 인덱스를 다시 만드세요."
+        )
+
+    mismatches: list[str] = []
+    for cfg_key, tag_key in INDEX_TAG_CFG_MAP:
+        expected = _cfg_value(cfg, cfg_key)
+        actual = tag.get(tag_key)
+        if expected is None:
+            continue
+        if actual != expected:
+            label = "document_registry_version" if cfg_key == "__registry__" else cfg_key
+            mismatches.append(
+                f"  - {tag_key}: 인덱스={actual!r} / 설정({label})={expected!r}"
+            )
+
+    dim_note = None
+    if check_vectors:
+        vec_path = index_dir / "vectors.npy"
+        if not vec_path.exists():
+            raise IndexTagError(f"{index_dir}: vectors.npy 가 없습니다 — 인덱스가 불완전합니다.")
+        actual_dim = int(np.load(vec_path, mmap_mode="r").shape[1])
+        tag_dim = tag.get("vector_dimension")
+        if tag_dim != actual_dim:
+            mismatches.append(
+                f"  - vector_dimension: 꼬리표={tag_dim!r} / 실제 vectors.npy={actual_dim}"
+            )
+        dim_note = actual_dim
+        expected_dim = cfg.get("embedding_dimension")
+        if expected_dim is not None and actual_dim != expected_dim:
+            mismatches.append(
+                f"  - vector_dimension: 실제={actual_dim} / 설정(embedding_dimension)={expected_dim}"
+            )
+
+    if mismatches:
+        raise IndexTagError(
+            f"인덱스가 현재 설정과 맞지 않습니다 — {index_dir}\n"
+            + "\n".join(mismatches)
+            + "\n낡은 인덱스로 답변하면 잘못된 근거를 내놓습니다. "
+              "설정에 맞는 인덱스를 만들거나(build_index.py --index-out) "
+              "올바른 인덱스 경로를 --index 로 지정하세요."
+        )
+    return {"tag": tag, "vector_dimension": dim_note, "index_dir": str(index_dir)}
 
 
 def config_mismatch_check(index_dir: Path, cfg: dict[str, Any]) -> None:

@@ -97,15 +97,19 @@ def extraction_table_dir(cfg: dict[str, Any]) -> Path:
 
 
 def extraction_table_path(cfg: dict[str, Any]) -> Path:
-    """공식 추출표 JSON 파일 — extraction_table_v2.json (rows 안에 1,200행).
+    """공식 추출표 JSON 파일 — extraction_table_v3.json (rows 안에 1,200행).
     ⚠️ table.jsonl 같은 파일은 존재하지 않는다. 폴더 안 실제 파일명을
     가정할 수 없으면 --extraction-table로 파일 경로를 직접 넘긴다."""
     return extraction_table_dir(cfg) / f"extraction_table_{cfg['table']}.json"
 
 
+def extraction_metadata_path(cfg: dict[str, Any]) -> Path:
+    """공식 이름표 — extraction_metadata.json (VERSION.txt 아님)."""
+    return extraction_table_dir(cfg) / "extraction_metadata.json"
+
+
 def document_registry_dir(cfg: dict[str, Any]) -> Path:
-    # 예진님 8/31 문서 기준 경로. registry 버전 필드가 base.yaml에 아직 없어
-    # 우선 corpus와 같은 버전을 쓴다고 가정 — 실제 필드명 다르면 여기만 수정.
+    # base.yaml의 document_registry_version이 정본. 없으면 corpus 버전을 쓴다.
     version = cfg.get("document_registry_version", cfg["corpus"])
     return resolve_path(
         cfg, "shared_data", "processed", f"document_registry_{version}"
@@ -124,12 +128,31 @@ def index_dir(cfg: dict[str, Any]) -> Path:
     return resolve_path(cfg, "shared_data", "processed", f"index_{cfg['index']}")
 
 
-def deadline_csv_path(cfg: dict[str, Any]) -> Path:
-    """공식 마감일 원본 CSV — data_list.csv. 다른 자산과 달리 버전 필드가
-    없는 고정 파일(체크리스트 확인). 실제 파일명이 다르면 base.yaml에
-    deadline_csv_filename을 추가해서 여기만 고치면 된다."""
-    filename = cfg.get("deadline_csv_filename", "data_list.csv")
-    return resolve_path(cfg, "shared_data", "raw", filename)
+def identity_path(cfg: dict[str, Any]) -> Path:
+    """공식 identity_v2 — document_identity_v2.csv.
+
+    ⚠️ 2026-09-02 (4-4 확정): 마감일·발주기관·사업명의 유일한 공식 출처.
+    예전 코드가 쓰던 shared_data/raw/ 아래 원본 수집 CSV 경로는 폐기했다.
+    (그 원본은 identity_v2를 만든 재료일 뿐, 실행 경로가 직접 읽지 않는다.)"""
+    version = cfg.get("document_registry_version", cfg["corpus"])
+    filename = cfg.get("identity_csv_filename", f"document_identity_{version}.csv")
+    return document_registry_dir(cfg) / filename
+
+
+def chunks_dir(cfg: dict[str, Any]) -> Path:
+    """공식 청크 폴더 — chunks_v3. 청킹 버전으로 폴더가 갈린다."""
+    return resolve_path(
+        cfg, "shared_data", "processed", f"chunks_{cfg['chunking_version']}"
+    )
+
+
+def chunks_path(cfg: dict[str, Any]) -> Path:
+    return chunks_dir(cfg) / "chunks.jsonl"
+
+
+def chunks_version_file(cfg: dict[str, Any]) -> Path:
+    """chunks_vN/VERSION.txt — 청크 파일 안의 값과 교차 확인할 공식 메타데이터."""
+    return chunks_dir(cfg) / "VERSION.txt"
 
 
 def models_home() -> Path:

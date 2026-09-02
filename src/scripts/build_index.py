@@ -35,10 +35,11 @@ from pathlib import Path
 # src/rag/에, 진입점은 src/scripts/에 나뉘어 있는 구조 대응.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "rag"))
 
-from config import load_config, index_dir
+from config import load_config, index_dir, chunks_version_file
 from git_info import get_git_info, warn_if_dirty
 from embedding_client import EmbeddingClient
-from vector_store import VectorStore, ChunkMetadata, IndexTag, config_mismatch_check, ConfigMismatchError
+from vector_store import (VectorStore, ChunkMetadata, IndexTag, config_mismatch_check,
+                          ConfigMismatchError, validate_index_tag, IndexTagError)
 
 
 def load_chunks(chunks_path: Path) -> list[dict]:
@@ -101,8 +102,10 @@ def map_chunk(c: dict) -> dict:
         "chunk_retrieval_eligible": bool(c.get("retrieval_eligible", True)),
         "location_label": c.get("location_label", ""),
         "section_path": section_path,
+        "section_paths": c.get("section_paths") or [],
         "md_line_start": c.get("md_line_start"),
         "md_line_end": c.get("md_line_end"),
+        "preprocess_version": c.get("preprocess_version", ""),
     }
 
 
@@ -128,6 +131,185 @@ def validate_chunk_consistency(chunks: list[dict]) -> None:
                     f"{doc_id}: 청크마다 '{key}' 값이 다릅니다({values}) — "
                     f"같은 문서 안에 서로 다른 버전이 섞여 있습니다. 인덱싱을 중단합니다."
                 )
+
+
+class ChunkContractError(ValueError):
+    pass
+
+
+_VERSION_TXT_KEYS = {
+    "chunking version": "chunking_version",
+    "corpus version": "corpus_version",
+    "preprocess version": "preprocess_version",
+    "table version": "extraction_version",
+    "문서 수": "document_count",
+    "청크 수": "chunk_count",
+}
+
+
+def parse_chunks_version_file(path: Path) -> dict[str, str]:
+    """chunks_vN/VERSION.txt를 읽어 공식 선언 버전을 뽑는다(교차 확인용)."""
+    out: dict[str, str] = {}
+    if not path.exists():
+        return out
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        key = key.strip().lstrip("#").strip()
+        mapped = _VERSION_TXT_KEYS.get(key)
+        if mapped:
+            out[mapped] = value.strip()
+    return out
+
+
+def validate_chunk_versions(
+    chunks: list[dict], cfg: dict, version_file: Path | None = None,
+) -> dict[str, str]:
+    """청크 버전 계약 검사 (4-2 확정).
+
+    - corpus_version / chunking_version이 없으면 실패(빈 값도 실패)
+    - 설정(base.yaml)이 요구하는 버전과 다르면 실패
+    - 청크끼리 값이 같다는 이유만으로 통과시키지 않는다 — 공식 메타데이터
+      (chunks_vN/VERSION.txt)와도 교차 확인한다
+    """
+    required = {
+        "corpus_version": cfg.get("corpus"),
+        "chunking_version": cfg.get("chunking_version"),
+    }
+    optional = {"preprocess_version": cfg.get("preprocess")}
+
+    for key, expected in list(required.items()):
+        missing = [c["chunk_id"] for c in chunks if not c.get(key)]
+        if missing:
+            raise ChunkContractError(
+                f"청크에 필수 버전 필드 '{key}'가 없습니다({len(missing)}개, "
+                f"예: {missing[:3]}). 인덱싱을 중단합니다."
+            )
+        actual = {c[key] for c in chunks}
+        if len(actual) > 1:
+            raise ChunkContractError(
+                f"청크 파일 안에 '{key}' 값이 섞여 있습니다: {sorted(actual)}"
+            )
+        got = next(iter(actual))
+        if expected is not None and got != expected:
+            raise ChunkContractError(
+                f"청크의 {key}={got!r}가 설정 요구값({expected!r})과 다릅니다. "
+                f"폴더 이름이 아니라 파일 안의 값으로 판정합니다 — 인덱싱을 중단합니다."
+            )
+
+    for key, expected in optional.items():
+        actual = {c.get(key) for c in chunks if c.get(key)}
+        if len(actual) > 1:
+            raise ChunkContractError(
+                f"청크 파일 안에 '{key}' 값이 섞여 있습니다: {sorted(actual)}"
+            )
+        if actual and expected is not None and next(iter(actual)) != expected:
+            raise ChunkContractError(
+                f"청크의 {key}={next(iter(actual))!r}가 설정 요구값({expected!r})과 다릅니다."
+            )
+
+    declared: dict[str, str] = {}
+    if version_file is not None:
+        declared = parse_chunks_version_file(version_file)
+        if not declared:
+            raise ChunkContractError(
+                f"공식 청크 메타데이터를 찾지 못했습니다: {version_file}. "
+                f"청크 내부 값끼리 같다는 것만으로는 최신 자료임을 인정하지 않습니다."
+            )
+        for key in ("corpus_version", "chunking_version", "preprocess_version"):
+            expected = cfg.get({"corpus_version": "corpus",
+                                "chunking_version": "chunking_version",
+                                "preprocess_version": "preprocess"}[key])
+            if key in declared and expected is not None and declared[key] != expected:
+                raise ChunkContractError(
+                    f"{version_file}: {key}={declared[key]!r}가 설정 요구값"
+                    f"({expected!r})과 다릅니다."
+                )
+        if "chunk_count" in declared and declared["chunk_count"].isdigit():
+            if int(declared["chunk_count"]) != len(chunks):
+                raise ChunkContractError(
+                    f"{version_file}: 선언 청크 수({declared['chunk_count']})와 실제"
+                    f"({len(chunks)})가 다릅니다."
+                )
+        if "document_count" in declared and declared["document_count"].isdigit():
+            actual_docs = len({c["document_id"] for c in chunks})
+            if int(declared["document_count"]) != actual_docs:
+                raise ChunkContractError(
+                    f"{version_file}: 선언 문서 수({declared['document_count']})와 실제"
+                    f"({actual_docs})가 다릅니다."
+                )
+    return declared
+
+
+def load_registry_documents(registry_path: Path) -> list[dict]:
+    with open(registry_path, "r", encoding="utf-8") as f:
+        doc = json.load(f)
+    if "documents" not in doc:
+        raise ValueError(
+            f"{registry_path}: 최상위 객체에 'documents' 키가 없습니다. "
+            "존재하지 않는 registry.jsonl 형식을 가정하지 마세요."
+        )
+    return doc["documents"]
+
+
+def cross_check_registry(chunks: list[dict], registry_docs: list[dict]) -> dict:
+    """청크 ↔ 공식 등록부 대조 (4-2 확정).
+
+    문서마다 document_id · document_version · processed_sha256 · sidecar_sha256 ·
+    검색 대상 여부 · 중복 제외 관계를 비교한다. 하나라도 누락·추가·불일치하면
+    공식 인덱스 생성을 중단한다.
+    """
+    reg_by_id = {r["document_id"]: r for r in registry_docs}
+    chunk_ids = {c["document_id"] for c in chunks}
+
+    missing = sorted(set(reg_by_id) - chunk_ids)      # 등록부엔 있는데 청크에 없음
+    extra = sorted(chunk_ids - set(reg_by_id))        # 청크엔 있는데 등록부에 없음
+    problems: list[str] = []
+    if missing:
+        problems.append(f"등록부에는 있으나 청크에 없는 문서 {len(missing)}건: {missing[:5]}")
+    if extra:
+        problems.append(f"등록부에 없는 문서가 청크에 있음 {len(extra)}건: {extra[:5]}")
+
+    by_doc: dict[str, dict] = {}
+    for c in chunks:
+        by_doc.setdefault(c["document_id"], c)
+
+    for doc_id, c in sorted(by_doc.items()):
+        reg = reg_by_id.get(doc_id)
+        if reg is None:
+            continue
+        for chunk_key, reg_key in (
+            ("document_version", "document_version"),
+            ("processed_sha256", "processed_sha256"),
+            ("sidecar_sha256", "sidecar_sha256"),
+        ):
+            got, want = str(c.get(chunk_key)), str(reg.get(reg_key))
+            if got != want:
+                problems.append(
+                    f"{doc_id}: {chunk_key} 불일치 — 청크={got!r} / 등록부={want!r}"
+                )
+
+    if problems:
+        raise ChunkContractError(
+            "청크와 공식 등록부가 일치하지 않습니다. 공식 인덱스 생성을 중단합니다.\n"
+            + "\n".join(f"  - {p}" for p in problems[:20])
+        )
+
+    eligible = {r["document_id"] for r in registry_docs if r.get("retrieval_eligible", True)}
+    excluded = [
+        {"document_id": r["document_id"],
+         "duplicate_of_document_id": r.get("duplicate_of_document_id") or None,
+         "relation_status": r.get("relation_status")}
+        for r in registry_docs if not r.get("retrieval_eligible", True)
+    ]
+    return {
+        "registry_document_count": len(registry_docs),
+        "chunk_document_count": len(chunk_ids),
+        "retrieval_eligible_count": len(eligible),
+        "excluded": excluded,
+        "hash_checked_documents": len(by_doc),
+    }
 
 
 def load_retrieval_eligible_ids(registry_path: Path | None) -> set[str] | None:
@@ -182,6 +364,16 @@ def main():
              "교체(문서 단위 증분 갱신). 생략하면 전체 재생성."
     )
     parser.add_argument(
+        "--chunks-version-file", required=False,
+        help="chunks_vN/VERSION.txt 경로. 생략하면 청크 파일 옆 또는 base.yaml 기준으로 찾는다.")
+    parser.add_argument(
+        "--allow-no-chunks-version-file", action="store_true",
+        help="공식 청크 메타데이터 없이 진행(테스트 목적). 기본은 필수.")
+    parser.add_argument(
+        "--index-out", required=False,
+        help="인덱스를 쓸 폴더. 생략하면 base.yaml의 index 버전 경로. "
+             "공식 인덱스를 덮어쓰지 않고 임시 검증용으로 만들 때 쓴다.")
+    parser.add_argument(
         "--allow-no-registry", action="store_true",
         help="문서 등록부 없이 인덱싱을 허용한다(테스트 목적). 기본값은 필수 — "
              "등록부 없이 돌리면 검색 제외 대상(콘텐츠 중복 등)이 그대로 섞여 들어간다."
@@ -211,7 +403,7 @@ def main():
               "--allow-no-registry를 명시하세요.")
         sys.exit(1)
 
-    out_dir = index_dir(cfg)
+    out_dir = Path(args.index_out) if args.index_out else index_dir(cfg)
     try:
         config_mismatch_check(out_dir, cfg)
     except ConfigMismatchError as e:
@@ -228,7 +420,43 @@ def main():
         print(f"❌ {e}")
         sys.exit(1)
 
+    # ⭐ 청크 버전 계약 — 폴더 이름이 아니라 파일 안의 값 + 공식 메타데이터로 판정
+    version_file = Path(args.chunks_version_file) if args.chunks_version_file else None
+    if version_file is None and not args.allow_no_chunks_version_file:
+        candidate = Path(args.chunks).parent / "VERSION.txt"
+        if candidate.exists():
+            version_file = candidate
+        else:
+            try:
+                version_file = chunks_version_file(cfg)
+            except Exception:
+                version_file = None
+        if version_file is None or not version_file.exists():
+            print("❌ 공식 청크 메타데이터(VERSION.txt)를 찾지 못했습니다. "
+                  "--chunks-version-file로 지정하거나, 테스트 목적이면 "
+                  "--allow-no-chunks-version-file을 명시하세요.")
+            sys.exit(1)
+    try:
+        declared_versions = validate_chunk_versions(chunks, cfg, version_file)
+    except ChunkContractError as e:
+        print(f"❌ {e}")
+        sys.exit(1)
+    if declared_versions:
+        print(f"   청크 메타데이터 교차 확인 OK: {declared_versions}")
+
     registry_path = Path(args.registry) if args.registry else None
+    registry_report = None
+    if registry_path is not None:
+        try:
+            registry_docs = load_registry_documents(registry_path)
+            registry_report = cross_check_registry(chunks, registry_docs)
+        except (ChunkContractError, ValueError) as e:
+            print(f"❌ {e}")
+            sys.exit(1)
+        print(f"   등록부 대조 OK: 문서 {registry_report['registry_document_count']}건, "
+              f"해시 대조 {registry_report['hash_checked_documents']}건, "
+              f"검색 제외 {len(registry_report['excluded'])}건")
+
     eligible_ids = load_retrieval_eligible_ids(registry_path)
     all_registry_ids = load_registry_document_ids(registry_path) if registry_path else None
 
@@ -280,6 +508,12 @@ def main():
         vectors = []
         print("임베딩할 청크가 없습니다(모두 --only 대상에서 제외됨).")
 
+    # 실제 사용량·비용 기록 (인덱싱은 문항 단위 비용과 별개로 따로 남긴다)
+    from pricing import compute_cost
+    index_cost, index_cost_detail = compute_cost(cfg, client.usage)
+    print(f"   임베딩 API 요청 {client.usage.embedding_requests}건 / "
+          f"토큰 {client.usage.embedding_tokens:,} / 비용 ${index_cost}")
+
     if is_incremental:
         store = VectorStore.load(out_dir)
         if store.vectors is None:
@@ -324,8 +558,11 @@ def main():
                 oversize=chunks[i]["oversize"],
                 location_label=chunks[i]["location_label"],
                 section_path=chunks[i]["section_path"],
+                section_paths=chunks[i]["section_paths"],
                 md_line_start=chunks[i]["md_line_start"],
                 md_line_end=chunks[i]["md_line_end"],
+                preprocess_version=chunks[i].get("preprocess_version", ""),
+                chunking_version=chunks[i].get("chunking_version", ""),
             )
             for i in idxs
         ]
@@ -349,9 +586,22 @@ def main():
         document_count=active_doc_count,
         chunk_count=active_chunk_count,
         build_timestamp=datetime.now(timezone.utc).isoformat(),
-        extra=git,
+        extra={**git, "embedding_usage": client.usage.as_dict(),
+               "embedding_cost_usd": index_cost,
+               "pricing_unit": cfg.get("pricing_unit"),
+               "registry_cross_check": registry_report},
     )
     store.save(out_dir, tag)
+
+    # ⭐ 만든 인덱스가 실행 경로의 검증(결함 1-1)을 그대로 통과하는지 여기서 확인한다.
+    #    빌드와 실행이 같은 함수를 쓰므로 기준이 둘로 갈리지 않는다.
+    try:
+        validate_index_tag(out_dir, cfg)
+    except IndexTagError as e:
+        print(f"❌ 방금 만든 인덱스가 실행 검증을 통과하지 못했습니다:\n{e}")
+        sys.exit(1)
+    print("   인덱스 꼬리표 검증 통과(실행 경로와 동일 기준)")
+
     mode = f"증분 갱신({sorted(only_ids)})" if is_incremental else "전체 재생성"
     print(f"✅ 인덱스 저장 완료: {out_dir} [{mode}]")
     print(f"   활성 문서 {active_doc_count}건, 활성 청크 {active_chunk_count}개, "
