@@ -62,7 +62,7 @@ python scripts/demo_scoring.py
 | `task_type` | `selection` / `extraction` / `qa` | **점수를 종류별로 나눠 볼 때만** 씀 (채점 자체엔 안 씀) |
 | `answer_type` | `document_set` / `value` / `list` / `summary` / `comparison` / `unanswerable` | **채점기 선택** — 이걸로 `grade_content` 가 분기 |
 | `answer_raw` / `answer_normalized` | 정답 (표기 그대로 / 정규화형) | 채점 기준값 |
-| `location` | 정답 근거 좌표 `{document, section, ref_no}` — 비교형은 **배열** `[{document, field, section, ref_no}, …]` | 검색·출처 좌표 채점 (3-2, 3-4-3) |
+| `location` | 정답 근거 좌표 `{document, section, ref_no, line}` (`ref_no` = `location_label` 그대로) — 비교형은 **배열**, 원소에 `field` | 검색·출처 좌표 채점 (3-2, 3-4-3) |
 | `field_tag` | `critical` / `major` / `minor` (오류 심각도) | 등급 가중·분리 집계·게이트 (3-3-2) |
 | `answer_source` | `table` / `verified` / `metadata` | `metadata`(CSV 답변)면 좌표 채점 제외 |
 | `unspecified_type` · `scenario_type` · `active_document_id` · `reference_time` | 문항 조건 | 파생 플래그·검증 |
