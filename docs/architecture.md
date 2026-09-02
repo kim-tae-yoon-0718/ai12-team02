@@ -19,7 +19,7 @@
 
 | 층 | 검사 | 모드 | 실패 시 |
 | --- | --- | --- | --- |
-| 1 | 데이터 정상성 (`validation.check_data_sanity`) | `--data-manifest` 있을 때만 | exit 1 |
+| 1 | 데이터 정상성 (`validation.assets.check_data_sanity`) | `--data-manifest` 있을 때만 | exit 1 |
 | 2 | 평가셋 계약 검사 (`checks.check_evalset.run_all`, 2-17 · 임현진 단일 출처) | 항상 | exit 1 |
 | 3 | 추출 테이블 감사 (`extraction.grade_extraction_audit`, 3-2-1) | `--extraction-audit` 있을 때 | `enforce_gates` 시 exit 1 |
 | 4 | 소규모 성능 평가 (층화 부분집합) | `ci` / `development` | 게이트 위반 시 exit 1 |
@@ -36,7 +36,7 @@
 - `--force-doc` : 정답 문서 ID 를 `selected_document_ids` 로 주입 (3-2-2)
 
 ★ `report.manifest.forced` 에 표시된다. **일반 실행과 비교 금지** — 상한으로만 읽는다.
-★ 좌표 매칭은 `section` 단위 (박예진 청크에 `block_index` 없어 `ref_no` 매칭 불가).
+★ 좌표 매칭은 `section` 단위 (evalset `line` 도착 전까지 — validation.md 참고).
 
 ## 패키지 지도 (`src/grader/`)
 
@@ -79,8 +79,8 @@ RAG_ROOT=/srv/rfp python -m grader.cli run --mode checks \
 
 - 6-자산 provenance 는 `config/base.yaml §①` > `$RAG_ROOT/.../VERSION.txt` 에서 **자동** 채워진다
   (현재 실측: `corpus=v2 preprocess=v2 table=v2`). `--corpus` 등은 실험 override 용.
-- 이태민 검색 출력이 박예진 청크 스키마(`section_path` + `location_label`)로 오면
-  `Location.from_chunk` 가 `{document, section, ref_no}` 로 변환 — 분할 표 `표 7 (2/3)` 는 `표 7` 과 매칭.
+- 이태민 검색 출력이 박예진 청크 스키마(`section_path` + `block_type`/`block_index` 또는 `location_label`)로
+  오면 `Location.from_chunk` 가 `{document, section, ref_no}` 로 변환한다. 자세히는 [validation.md](validation.md).
 
 ## 실행
 
