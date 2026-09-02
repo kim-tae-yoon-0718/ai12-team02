@@ -239,7 +239,7 @@ cd src/scripts
 
 # 인덱스 만들기 (전체)
 python3 build_index.py \
-  --chunks /srv/rfp/shared_data/processed/chunks_v1/chunks.jsonl \
+  --chunks /srv/rfp/shared_data/processed/chunks_v3/chunks.jsonl \
   --registry /srv/rfp/shared_data/processed/document_registry_v2/document_registry_v2.json
 
 # 문서 단위 증분 갱신 (지정 문서만 재색인, 나머지 벡터는 보존)
