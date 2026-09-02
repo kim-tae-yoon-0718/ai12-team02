@@ -74,6 +74,10 @@ class GenerationClient:
         # 프롬프트 파일이 없으면 실제 생성 시점이 아니라 클라이언트 생성 시점에
         # 바로 에러 — 문제를 최대한 일찍 드러낸다.
         self._system_prompt_template = _load_system_prompt_template()
+        # 2026-09-02 추가 — 하루님 responses.jsonl의 cost_usd 계산 기반.
+        # 여기서는 토큰 수만 남기고 $ 환산은 안 함(모델별 단가는 팀이
+        # 확정해야 할 값이라 코드가 임의로 단가를 지어내지 않는다).
+        self.last_usage: dict[str, int] | None = None
 
     def generate(
         self,
@@ -105,4 +109,10 @@ class GenerationClient:
             kwargs["max_tokens"] = self.max_tokens
 
         resp = self.client.chat.completions.create(**kwargs)
+        if resp.usage:
+            self.last_usage = {
+                "prompt_tokens": resp.usage.prompt_tokens,
+                "completion_tokens": resp.usage.completion_tokens,
+                "total_tokens": resp.usage.total_tokens,
+            }
         return resp.choices[0].message.content or ""

@@ -318,6 +318,38 @@ class TestTaskTypeRoutingGeneralization:
         )
         assert r.task_type == "qa"
         assert called["embed"] >= 1 and called["gen"] >= 1
+        # 2026-09-02 하루님 스키마 — QA는 contexts/retrieved/citations가 채워져야 함
+        assert len(r.contexts) >= 1
+        assert len(r.retrieved) >= 1
+        assert len(r.citations) >= 1
+        assert all(isinstance(c["section"], str) for c in r.citations)  # dict 통째로 새면 안 됨
+
+    def test_select_fills_structured_answer(self, full_env):
+        from answer_pipeline import answer, SessionState
+        r = answer(
+            "1억 이상인 사업 알려줘", full_env["store"],
+            lambda: None, lambda: None,
+            full_env["table"], full_env["cfg"],
+            deadline_map=full_env["deadline_map"], session=SessionState(),
+            org_index=full_env["org_index"],
+        )
+        assert r.task_type == "select"
+        assert isinstance(r.structured_answer, list)  # 선별형은 목록 형태
+        assert r.selected_document_ids == r.structured_answer
+
+    def test_compare_fills_nested_structured_answer(self, full_env):
+        from answer_pipeline import answer, SessionState
+        r = answer(
+            "RFP-000001이랑 RFP-000002 예산 비교해줘", full_env["store"],
+            lambda: None, lambda: None,
+            full_env["table"], full_env["cfg"],
+            deadline_map=full_env["deadline_map"], session=SessionState(),
+            org_index=full_env["org_index"],
+        )
+        assert r.task_type == "compare"
+        assert isinstance(r.structured_answer, dict)  # 비교형은 {문서ID: {필드: 값}}
+        assert "RFP-000001" in r.structured_answer
+        assert "예산" in r.structured_answer["RFP-000001"]
 
     def test_extract_with_explanation_does_call_llm(self, full_env):
         """추출형이라도 '설명해줘'가 있으면 G→I→J→K로 넘어가 LLM을 태워야 한다."""
@@ -612,6 +644,28 @@ class TestExtractRouting:
         assert result.abstained is False
         assert "150,000,000" in result.text or "1억 5천만" in result.text
         assert called["n"] == 0
+
+    def test_citation_handles_representative_location_dict(self):
+        """리뷰가 아니라 실제 데이터로 발견한 버그 — representative_location이
+        문자열이 아니라 {document_id, file, heading, line} 객체였는데 확인
+        없이 그대로 section에 넣어서 dict 전체가 들어가던 문제."""
+        from answer_pipeline import table_row_to_citation
+        row_with_loc = {
+            "field_name": "예산",
+            "representative_location": {
+                "document_id": "RFP-000001", "file": "x.md",
+                "heading": "(소요예산) 352,000,000원", "line": 61,
+            },
+        }
+        citation = table_row_to_citation("RFP-000001", row_with_loc)
+        assert isinstance(citation["section"], str)  # dict 통째로 들어가면 안 됨
+        assert citation["section"] == "(소요예산) 352,000,000원"
+        assert citation["ref_no"] == "line 61"
+
+        row_without_loc = {"field_name": "지역제한", "representative_location": None}
+        citation2 = table_row_to_citation("RFP-000001", row_without_loc)
+        assert citation2["section"] == ""
+        assert citation2["ref_no"] == "지역제한"  # 위치 없으면 필드명으로 대체
 
     def test_field_absent_not_treated_as_no_restriction(self, extraction_table_path):
         from table_query import load_extraction_table

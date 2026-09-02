@@ -100,6 +100,9 @@ def map_chunk(c: dict) -> dict:
         "oversize": bool(c.get("oversize", False)),
         "chunk_retrieval_eligible": bool(c.get("retrieval_eligible", True)),
         "location_label": c.get("location_label", ""),
+        "section_path": section_path,
+        "md_line_start": c.get("md_line_start"),
+        "md_line_end": c.get("md_line_end"),
     }
 
 
@@ -320,6 +323,9 @@ def main():
                 table_degraded=chunks[i]["table_degraded"],
                 oversize=chunks[i]["oversize"],
                 location_label=chunks[i]["location_label"],
+                section_path=chunks[i]["section_path"],
+                md_line_start=chunks[i]["md_line_start"],
+                md_line_end=chunks[i]["md_line_end"],
             )
             for i in idxs
         ]

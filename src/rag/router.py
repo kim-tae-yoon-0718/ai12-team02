@@ -41,8 +41,18 @@ _SELECT_PATTERNS = [
 _FIELD_KEYWORD_ALTERNATION = "|".join(
     re.escape(kw) for kws in FIELD_KEYWORDS.values() for kw in kws
 ) + "|" + "|".join(re.escape(kw) for kw in _DEADLINE_KEYWORDS)
+# ⚠️ 정정: 예전엔 필드 키워드 뒤에 정해진 질문 어미(얼마/언제/어디/뭐/무엇/
+# 알려줘/확인/어떻게/어때/알고싶...)가 붙어야만 extract로 잡았다. 이 방식은
+# "필요해?"/"있나요?"처럼 목록에 없는 어미가 나올 때마다 계속 단어를
+# 추가해야 하는 안 끝나는 목록이었다(실제로 EXT-002/004에서 재현됨).
+# 한국어로 "필요한지/가능한지/되는지"를 묻는 방식은 끝이 없어서, 질문
+# 어미가 아니라 "12필드(+마감일) 키워드가 질문에 있는가"만 본다 — 이
+# 목록은 이미 확정된 닫힌 집합이라 더 늘어날 일이 없다.
+# 트레이드오프: 필드어가 있는 진짜 QA성 질문("예산이 부족해 취소됐다는데
+# 왜 그런거야")도 일단 extract를 거치지만, extract 내부의 needs_explanation
+# 감지가 검색+생성 경로로 넘겨서 최종 결과는 틀리지 않는다(에러도 없음).
 _EXTRACT_PATTERNS = [
-    rf"(?:{_FIELD_KEYWORD_ALTERNATION}).*(?:얼마|언제|어디|뭐|무엇|알려줘|확인|어떻게|어때|알고 ?싶)",
+    rf"(?:{_FIELD_KEYWORD_ALTERNATION})",
 ]
 _COMPARE_PATTERNS = [
     r"(비교|차이|어느 쪽|둘 중)",

@@ -22,7 +22,7 @@ from typing import Any, Callable
 # scripts/answer_pipeline.py 기준 ../rag를 sys.path에 추가
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "rag"))
 
-from config import load_config
+from config import load_config, index_dir, extraction_table_path, document_registry_path, deadline_csv_path
 from vector_store import VectorStore, ChunkMetadata
 from embedding_client import EmbeddingClient
 from generation_client import GenerationClient
@@ -109,6 +109,19 @@ def resolve_document_id(
     return DocumentResolution(None, "none")
 
 
+# 내부 실행 경로 이름(route) — 평가셋 라벨(task_type)과는 별개로, 실제로
+# 어느 처리 경로를 탔는지 기록용으로 남긴다. 하루님 채점기 정책상 route가
+# task_type과 달라도 그 자체로 오답 처리되지 않는다(2026-09-02 확인) — 다만
+# 의도(현진님 평가셋 설계)와 실제 경로가 다르다는 사실은 투명하게 남아야
+# 하므로 기록한다. 라우팅 결정 로직 자체는 이 상수 추가로 전혀 안 바뀐다.
+ROUTE_SELECT = "추출테이블_문서선별"        # 조건으로 추출표에서 문서 목록을 고름
+ROUTE_EXTRACT_VALUE = "추출테이블_값조회"    # 문서 하나 특정 후 필드 값 하나를 그대로 꺼냄
+ROUTE_COMPARE = "추출테이블_비교조립"        # 문서×필드 여러 개를 코드가 표로 조립
+ROUTE_SEARCH_LLM = "chunks검색_LLM답변"      # 벡터 검색 결과를 근거로 LLM이 문장 생성
+ROUTE_CLARIFY = "애매_되묻기"                # 문서·필드 특정 실패, 확인 질문 반환
+ROUTE_GREETING = "검색불필요_인사응답"        # no_search_needed — 위 5개 분류 밖의 부가 경로
+
+
 @dataclass
 class Answer:
     text: str
@@ -124,6 +137,15 @@ class Answer:
     condition_result_doc_ids: list[str] = None  # type: ignore[assignment]
     error_stage: str | None = None
     error_detail: str | None = None
+    # 2026-09-02 추가 — 평가셋 task_type과 분리된 내부 실행 경로 기록(위 ROUTE_* 상수 중 하나)
+    route: str | None = None
+    # 2026-09-02 추가 — 하루님 responses.jsonl 스키마(채점용)
+    structured_answer: list | dict | None = None  # 목록형: [...] / 비교형: {doc_id: {field: value}}
+    contexts: list[dict] = None       # type: ignore[assignment]  # 실제로 LLM에 넣은 청크(예진님 청크 형식)
+    retrieved: list[dict] = None      # type: ignore[assignment]  # 검색된 후보 청크 전체(예진님 청크 형식)
+    citations: list[dict] = None      # type: ignore[assignment]  # [{"document":..,"section":..,"ref_no":..}]
+    selected_document_ids: list[str] = None  # type: ignore[assignment]  # 선별형이 고른 문서 ID
+    failure: str | None = None        # 오류로 못 답했으면 사유(=error_detail과 동일 값)
 
     def __post_init__(self):
         if self.retrieved_chunk_ids is None:
@@ -132,6 +154,14 @@ class Answer:
             self.retrieved_scores = []
         if self.condition_result_doc_ids is None:
             self.condition_result_doc_ids = []
+        if self.contexts is None:
+            self.contexts = []
+        if self.retrieved is None:
+            self.retrieved = []
+        if self.citations is None:
+            self.citations = []
+        if self.selected_document_ids is None:
+            self.selected_document_ids = []
 
 
 def format_source(m: ChunkMetadata) -> str:
@@ -147,6 +177,49 @@ def format_source(m: ChunkMetadata) -> str:
     elif m.location_label:
         parts.append(m.location_label)
     return " > ".join(p for p in parts if p)
+
+
+def chunk_to_record(m: ChunkMetadata) -> dict:
+    """하루님 채점기가 요구하는 청크 형식(contexts/retrieved 필드용) —
+    박예진님 청크 파일 형식 그대로. 하루님 코드가 이걸 {document, section,
+    ref_no} 좌표로 알아서 변환한다고 확인됨(2026-09-02)."""
+    return {
+        "document_id": m.document_id,
+        "section_path": m.section_path,
+        "block_type": m.chunk_type,
+        "block_index": m.table_idx if m.chunk_type == "table" else None,
+        "md_line_start": m.md_line_start,
+        "md_line_end": m.md_line_end,
+        "search_text": m.text,
+    }
+
+
+def chunk_to_citation(m: ChunkMetadata) -> dict:
+    """검색 경로(QA)의 출처를 {document, section, ref_no} 구조로 —
+    citations 필드용. contexts/retrieved(청크 형식)와 달리 이건 하루님이
+    요구한 최종 좌표 형식 그대로 우리가 직접 조립한다."""
+    if m.chunk_type == "table" and m.table_idx is not None:
+        ref_no = f"표 {m.table_idx}" + (f" ({m.part}/{m.of})" if m.part and m.of else "")
+    else:
+        ref_no = m.location_label or ""
+    return {"document": m.document_id, "section": m.chapter, "ref_no": ref_no}
+
+
+def table_row_to_citation(document_id: str, row: dict) -> dict:
+    """추출표(G-2) 경로의 출처.
+    ⚠️ 버그 수정(실제 데이터로 발견): representative_location이 문자열이
+    아니라 {document_id, file, heading, line} 객체였다 — 확인 안 하고
+    그대로 넣어서 section에 dict 전체가 들어가던 버그. heading을 section
+    으로, line 번호를 ref_no로 쓴다. 객체가 없거나 형태가 다르면(공식
+    데이터에 아직 안 채워진 경우 등) 필드명만 fallback으로 넣는다."""
+    loc = row.get("representative_location")
+    if isinstance(loc, dict) and loc.get("heading"):
+        section = loc["heading"]
+        ref_no = f"line {loc['line']}" if loc.get("line") is not None else row.get("field_name", "")
+    else:
+        section = ""
+        ref_no = row.get("field_name", "")
+    return {"document": document_id, "section": section, "ref_no": ref_no}
 
 
 def answer_qa_or_extract_by_search(
@@ -166,7 +239,7 @@ def answer_qa_or_extract_by_search(
         return Answer(
             text="확인할 수 없습니다.", task_type="qa",
             route_matched_rule=None, route_is_fallback=False,
-            sources=[], abstained=True,
+            sources=[], abstained=True, route=ROUTE_SEARCH_LLM,
         )
 
     # ⚠️ 버그 수정(리뷰 반영): 4-7-1 확정 규칙 — "빈 셀 60% 초과 표(degraded)는
@@ -191,6 +264,10 @@ def answer_qa_or_extract_by_search(
             abstained=True,
             retrieved_chunk_ids=[m.chunk_id for m, _ in degraded_results],
             retrieved_scores=[s for _, s in degraded_results],
+            route=ROUTE_SEARCH_LLM,  # 검색은 탔으나 생성은 스킵 — route는 여전히 검색 경로로 기록
+            retrieved=[chunk_to_record(m) for m, _ in results],
+            contexts=[],  # LLM에 실제로 넣은 건 없음(전부 손상돼서 스킵)
+            citations=[chunk_to_citation(m) for m, _ in degraded_results],
         )
 
     context_texts = [f"[출처: {format_source(m)}]\n{m.text}" for m, _ in normal_results]
@@ -210,6 +287,10 @@ def answer_qa_or_extract_by_search(
         route_is_fallback=False, sources=sources, abstained=False,
         retrieved_chunk_ids=[m.chunk_id for m, _ in results],
         retrieved_scores=[s for _, s in results],
+        route=ROUTE_SEARCH_LLM,
+        retrieved=[chunk_to_record(m) for m, _ in results],
+        contexts=[chunk_to_record(m) for m, _ in normal_results],  # 실제 LLM에 넣은 것만
+        citations=[chunk_to_citation(m) for m, _ in normal_results],
     )
 
 
@@ -259,7 +340,7 @@ def answer_select_by_table(
         return Answer(
             text="조건을 이해하지 못했습니다. 더 구체적으로 말씀해주세요.",
             task_type="select", route_matched_rule=None, route_is_fallback=False,
-            sources=[], abstained=True, condition_query=[],
+            sources=[], abstained=True, condition_query=[], route=ROUTE_CLARIFY,
         )
     if not fully_matched:
         # message.txt 7번 확정: 조건 일부만 읽고 나머지를 조용히 무시하지 않는다
@@ -271,7 +352,7 @@ def answer_select_by_table(
             ),
             task_type="select", route_matched_rule=None, route_is_fallback=False,
             sources=[], abstained=True,
-            condition_query=[c.__dict__ for c in conditions],
+            condition_query=[c.__dict__ for c in conditions], route=ROUTE_CLARIFY,
         )
 
     results, total, condition_warnings = run_conditions_query(table, conditions)
@@ -308,6 +389,14 @@ def answer_select_by_table(
         abstained=False,
         condition_query=[c.__dict__ for c in conditions],
         condition_result_doc_ids=[r.document_id for r in results],
+        route=ROUTE_SELECT,
+        # 2026-09-02 하루님 스키마 — 선별형은 문서 ID 목록이 곧 structured_answer
+        structured_answer=[r.document_id for r in results],
+        selected_document_ids=[r.document_id for r in results],
+        citations=[
+            {"document": r.document_id, "section": "", "ref_no": conditions[0].field}
+            for r in results
+        ],
     )
 
 
@@ -348,6 +437,7 @@ def answer_extract_by_table(
                     task_type="extract", route_matched_rule=None, route_is_fallback=False,
                     sources=[], abstained=True,
                     condition_query=[{"field": "마감일", "document_id": None, "candidates": resolution.candidates}],
+                    route=ROUTE_CLARIFY,
                 )
             return Answer(
                 text="마감일을 어느 문서에서 확인할까요? 문서 ID(예: RFP-000001) 또는 "
@@ -355,6 +445,7 @@ def answer_extract_by_table(
                 task_type="extract", route_matched_rule=None, route_is_fallback=False,
                 sources=[], abstained=True,
                 condition_query=[{"field": "마감일", "document_id": None}],
+                route=ROUTE_CLARIFY,
             )
         doc_id = resolution.document_id
         if deadline_map is None:
@@ -364,6 +455,7 @@ def answer_extract_by_table(
                 task_type="extract", route_matched_rule=None, route_is_fallback=False,
                 sources=[], abstained=True,
                 condition_query=[{"field": "마감일", "document_id": doc_id, "route": "G-2(csv)", "resolved_by": resolution.method}],
+                route=ROUTE_CLARIFY,
             )
         text, abstained = format_deadline_answer(doc_id, deadline_map)
         return Answer(
@@ -371,6 +463,7 @@ def answer_extract_by_table(
             sources=[f"{doc_id} (CSV: 입찰 참여 마감일)"], abstained=abstained,
             condition_query=[{"field": "마감일", "document_id": doc_id, "route": "G-2(csv)", "resolved_by": resolution.method}],
             condition_result_doc_ids=[doc_id],
+            route=ROUTE_EXTRACT_VALUE,
         )
 
     field = detect_field(question)
@@ -379,7 +472,7 @@ def answer_extract_by_table(
         return Answer(
             text="어느 항목을 확인하고 싶으신가요? (예: 예산, 지역제한, 사업기간, 참가자격 등)",
             task_type="extract", route_matched_rule=None, route_is_fallback=False,
-            sources=[], abstained=True,
+            sources=[], abstained=True, route=ROUTE_CLARIFY,
         )
 
     resolution = resolve_document_id(question, session=session, org_index=org_index)
@@ -395,6 +488,7 @@ def answer_extract_by_table(
                 task_type="extract", route_matched_rule=None, route_is_fallback=False,
                 sources=[], abstained=True,
                 condition_query=[{"field": field, "document_id": None, "candidates": resolution.candidates}],
+                route=ROUTE_CLARIFY,
             )
         return Answer(
             text=f"'{field}'를 어느 문서에서 확인할까요? 문서 ID(예: RFP-000001) "
@@ -402,6 +496,7 @@ def answer_extract_by_table(
             task_type="extract", route_matched_rule=None, route_is_fallback=False,
             sources=[], abstained=True,
             condition_query=[{"field": field, "document_id": None}],
+            route=ROUTE_CLARIFY,
         )
     doc_id = resolution.document_id
 
@@ -416,6 +511,7 @@ def answer_extract_by_table(
         result.condition_query = [
             {"field": field, "document_id": doc_id, "route": "G→I→J→K", "resolved_by": resolution.method}
         ]
+        result.route = ROUTE_SEARCH_LLM  # 검색+생성을 실제로 태웠으니 route도 그에 맞게
         return result
 
     row = lookup_field(table, doc_id, field)
@@ -425,6 +521,7 @@ def answer_extract_by_table(
             task_type="extract", route_matched_rule=None, route_is_fallback=False,
             sources=[], abstained=True,
             condition_query=[{"field": field, "document_id": doc_id, "resolved_by": resolution.method}],
+            route=ROUTE_EXTRACT_VALUE,
         )
 
     status = row["status"]
@@ -459,6 +556,8 @@ def answer_extract_by_table(
              "route": "G-2", "resolved_by": resolution.method}
         ],
         condition_result_doc_ids=[doc_id],
+        route=ROUTE_EXTRACT_VALUE,
+        citations=[table_row_to_citation(doc_id, row)],
     )
 
 
@@ -489,7 +588,7 @@ def answer_compare_by_table(
         return Answer(
             text="어느 항목을 비교할까요? (예: 예산, 지역제한, 사업기간, 참가자격 등)",
             task_type="compare", route_matched_rule=None, route_is_fallback=False,
-            sources=[], abstained=True,
+            sources=[], abstained=True, route=ROUTE_CLARIFY,
         )
     if len(doc_ids) < 2:
         return Answer(
@@ -497,30 +596,42 @@ def answer_compare_by_table(
                  "발주기관 정식 명칭을 두 개 이상 알려주시겠어요? (예: RFP-000001, RFP-000002)",
             task_type="compare", route_matched_rule=None, route_is_fallback=False,
             sources=[], abstained=True,
-            condition_query=[{"fields": fields, "document_ids": doc_ids}],
+            condition_query=[{"fields": fields, "document_ids": doc_ids}], route=ROUTE_CLARIFY,
         )
 
     body_parts = []
+    structured: dict[str, dict[str, str]] = {doc_id: {} for doc_id in doc_ids}
+    citations: list[dict] = []
     for field in fields:
         lines = []
         for doc_id in doc_ids:
             row = lookup_field(table, doc_id, field)
             if row is None:
                 lines.append(f"- {doc_id}: 항목을 찾을 수 없음")
+                structured[doc_id][field] = None
                 continue
             status = row["status"]
             if status == "value_present":
-                lines.append(f"- {doc_id}: {row.get('answer_normalized') or row.get('answer_raw')}")
+                value = row.get("answer_normalized") or row.get("answer_raw")
+                lines.append(f"- {doc_id}: {value}")
+                structured[doc_id][field] = value
             elif status == "field_absent":
                 lines.append(f"- {doc_id}: 원문에 항목 자체가 없음")
+                structured[doc_id][field] = None
             elif status == "not_disclosed":
                 lines.append(f"- {doc_id}: 비공개로 명시됨")
+                structured[doc_id][field] = None
             elif status == "external_reference":
                 lines.append(f"- {doc_id}: 외부 공고문·붙임 확인 필요(원문에 직접 값 없음)")
+                structured[doc_id][field] = None
             elif status == "conflict":
                 lines.append(f"- {doc_id}: 원문 내 값 상충 — 직접 확인 필요 ({row.get('answer_raw')})")
+                structured[doc_id][field] = row.get("answer_raw")
             else:
                 lines.append(f"- {doc_id}: 상태 미확인({status})")
+                structured[doc_id][field] = None
+            citations.append(table_row_to_citation(doc_id, row) if row else
+                              {"document": doc_id, "section": "", "ref_no": field})
         body_parts.append(f"[{field}] 비교\n" + "\n".join(lines))
 
     body = "\n\n".join(body_parts)
@@ -532,6 +643,11 @@ def answer_compare_by_table(
         abstained=False,
         condition_query=[{"fields": fields, "document_ids": doc_ids, "route": "G-2"}],
         condition_result_doc_ids=doc_ids,
+        route=ROUTE_COMPARE,
+        # 2026-09-02 하루님 스키마 — 비교형은 {문서ID: {필드: 값}} 중첩 dict
+        structured_answer=structured,
+        selected_document_ids=doc_ids,
+        citations=citations,
     )
 
 
@@ -558,6 +674,7 @@ def answer(
                 text="안녕하세요! RFP 관련 질문을 도와드릴게요.",
                 task_type=r.task_type, route_matched_rule=r.matched_rule,
                 route_is_fallback=r.is_fallback, sources=[], abstained=False,
+                route=ROUTE_GREETING,
             )
         elif r.task_type == "select":
             result = answer_select_by_table(question, table, cfg, deadline_map=deadline_map)
@@ -585,6 +702,7 @@ def answer(
                          f"사업명이나 발주기관명을 다시 확인해주세요.",
                     task_type="qa", route_matched_rule=r.matched_rule,
                     route_is_fallback=r.is_fallback, sources=[], abstained=True,
+                    route=ROUTE_CLARIFY,
                 )
             else:
                 # QA는 extract만큼 엄격하지 않음 — 문서가 특정되면(명시/기관명/
@@ -601,14 +719,14 @@ def answer(
             result = Answer(
                 text="확인할 수 없습니다.", task_type=r.task_type,
                 route_matched_rule=r.matched_rule, route_is_fallback=r.is_fallback,
-                sources=[], abstained=True,
+                sources=[], abstained=True, route=ROUTE_CLARIFY,
             )
     except Exception as e:
         result = Answer(
             text="처리 중 오류가 발생했습니다.", task_type=r.task_type,
             route_matched_rule=r.matched_rule, route_is_fallback=r.is_fallback,
             sources=[], abstained=True,
-            error_stage=r.task_type, error_detail=str(e),
+            error_stage=r.task_type, error_detail=str(e), failure=str(e),
         )
 
     result.task_type = r.task_type
@@ -620,12 +738,16 @@ def answer(
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--question", required=True)
-    parser.add_argument("--index", required=True, help="index_vN 폴더 경로")
-    parser.add_argument("--extraction-table", required=False)
+    parser.add_argument("--index", required=False,
+                         help="index_vN 폴더 경로 — 안 주면 base.yaml의 index 버전으로 자동 조립")
+    parser.add_argument("--extraction-table", required=False,
+                         help="extraction_table_vN.json 경로 — 안 주면 base.yaml의 table 버전으로 자동 조립")
     parser.add_argument("--registry", required=False,
-                         help="document_registry_v2.json 경로 — 마감 필터·기관명 매핑에 필요")
+                         help="document_registry_v2.json 경로 — 안 주면 base.yaml에서 자동 조립. "
+                              "마감 필터·기관명 매핑에 필요")
     parser.add_argument("--deadline-csv", required=False,
-                         help="data_list.csv 경로 — 있어야 선별형 마감 필터·org_only 질문이 켜짐")
+                         help="data_list.csv 경로 — 안 주면 base.yaml에서 자동 조립(shared_data/raw/). "
+                              "있어야 선별형 마감 필터·org_only 질문이 켜짐")
     parser.add_argument("--active-document", required=False,
                          help="직전 활성 문서 ID를 수동 지정(4-14 수동 테스트용) — "
                               "예: --active-document RFP-000001. anaphora 질문 단독 테스트에 씀.")
@@ -638,17 +760,47 @@ def main():
     args = parser.parse_args()
 
     cfg = load_config(args.experiment_config)
-    store = VectorStore.load(Path(args.index))
-    table = load_extraction_table(Path(args.extraction_table)) if args.extraction_table else []
+
+    # ⚠️ 개선(사용성): 4개 경로를 매번 CLI로 안 넘겨도 되게 — 안 주면
+    # config.py의 경로 조립 함수(RAG_ROOT 기준)로 자동 채운다. base.yaml에
+    # 버전(index/table/corpus)이 이미 확정돼 있어서 굳이 매번 반복 안 해도 됨.
+    # 명시적으로 --index 등을 주면 그 값이 항상 우선한다(자동 조립을 덮어씀).
+    def _try_derive(explicit: str | None, deriver, label: str) -> Path | None:
+        """명시적 인자가 있으면 그걸 쓰고, 없으면 config.py 헬퍼로 자동
+        조립을 시도한다. RAG_ROOT 미설정 등으로 조립 자체가 실패하면(선택
+        인자라 필수는 아니므로) None을 반환하고 계속 진행 — 마감필터·
+        기관명매핑처럼 선택 기능만 꺼진다."""
+        if explicit:
+            return Path(explicit)
+        try:
+            return deriver(cfg)
+        except Exception as e:
+            print(f"⚠️  {label} 자동 조립 실패({e}) — 이 값 없이 진행합니다.")
+            return None
+
+    index_path = _try_derive(args.index, index_dir, "--index")
+    if index_path is None:
+        raise RuntimeError(
+            "--index를 자동 조립하지 못했고 명시적으로도 안 주셨습니다 — "
+            "인덱스 없이는 실행할 수 없습니다. --index를 직접 주거나 RAG_ROOT를 설정하세요."
+        )
+    extraction_table_arg = _try_derive(args.extraction_table, extraction_table_path, "--extraction-table")
+    registry_arg = _try_derive(args.registry, document_registry_path, "--registry")
+    deadline_csv_arg = _try_derive(args.deadline_csv, deadline_csv_path, "--deadline-csv")
+
+    store = VectorStore.load(index_path)
+    table = load_extraction_table(extraction_table_arg) if extraction_table_arg and extraction_table_arg.exists() else []
+    if not (extraction_table_arg and extraction_table_arg.exists()):
+        print(f"⚠️  추출표를 찾지 못했습니다({extraction_table_arg}) — 선별형·추출형이 동작하지 않습니다.")
 
     deadline_map = None
     org_index = None
     deadline_filter_should_be_on = cfg.get("deadline_filter_default", {}).get("select", False)
-    if args.deadline_csv and args.registry:
+    if deadline_csv_arg and registry_arg and deadline_csv_arg.exists() and registry_arg.exists():
         deadline_map = load_deadline_by_document_id(
-            Path(args.deadline_csv), Path(args.registry), cfg,
+            deadline_csv_arg, registry_arg, cfg,
         )
-        org_index = load_org_index(Path(args.deadline_csv), Path(args.registry))
+        org_index = load_org_index(deadline_csv_arg, registry_arg)
     elif deadline_filter_should_be_on and not args.allow_no_deadline_filter:
         raise RuntimeError(
             "base.yaml의 deadline_filter_default.select=true인데 --deadline-csv/"
@@ -691,6 +843,7 @@ def main():
             "sources": result.sources,
             "abstained": result.abstained,
             "active_document_after": session.active_document_id,
+            "route": result.route,
             "error_stage": result.error_stage,
             "error_detail": error_detail,
         },

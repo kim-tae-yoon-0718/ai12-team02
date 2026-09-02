@@ -50,12 +50,17 @@ class EmbeddingClient:
             )
         self.model = model
         self.max_length = cfg.get("embedding_max_length")
+        # 2026-09-02 추가 — 하루님 responses.jsonl의 cost_usd 계산 기반.
+        # 질문 임베딩(embed_query) 호출분만 여기 남긴다 — 인덱싱 시점의
+        # 대량 배치(embed_batch)는 질문 1건당 비용 추적 대상이 아니다.
+        self.last_query_usage: dict[str, int] | None = None
 
     def embed_batch(
         self, texts: list[str], batch_size: int = 100, max_retries: int = 3
     ) -> list[list[float]]:
         """텍스트 목록을 배치로 임베딩. 실패 시 지수 백오프로 재시도."""
         vectors: list[list[float]] = []
+        last_resp = None
         for i in range(0, len(texts), batch_size):
             batch = texts[i : i + batch_size]
             for attempt in range(max_retries):
@@ -64,6 +69,7 @@ class EmbeddingClient:
                         model=self.model, input=batch
                     )
                     vectors.extend([d.embedding for d in resp.data])
+                    last_resp = resp
                     break
                 except Exception as e:
                     if attempt == max_retries - 1:
@@ -71,6 +77,11 @@ class EmbeddingClient:
                     wait = 2**attempt
                     print(f"⚠️  임베딩 실패({e}), {wait}초 후 재시도...")
                     time.sleep(wait)
+        if last_resp is not None and last_resp.usage:
+            self.last_query_usage = {
+                "prompt_tokens": last_resp.usage.prompt_tokens,
+                "total_tokens": last_resp.usage.total_tokens,
+            }
         return vectors
 
     def embed_query(self, text: str) -> list[float]:

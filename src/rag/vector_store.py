@@ -49,6 +49,16 @@ class ChunkMetadata:
     # "제18조 평가배점 · 문단 1~4")을 예전엔 인덱스에 저장 안 해서, 일반
     # 문단 출처는 문서명+장절까지만 남고 정확한 문단 위치가 사라졌다.
     location_label: str = ""
+    # 2026-09-02 추가 — 하루님 채점기가 요구하는 청크 형식(contexts/retrieved)에
+    # 필요. chapter는 " > "로 이미 합쳐진 문자열이라 원래 리스트 형태를 잃는데,
+    # section_path는 원본 리스트를 그대로 보존한다.
+    section_path: list = None  # type: ignore[assignment]
+    md_line_start: int | None = None
+    md_line_end: int | None = None
+
+    def __post_init__(self):
+        if self.section_path is None:
+            self.section_path = []
 
 
 @dataclass

@@ -124,6 +124,14 @@ def index_dir(cfg: dict[str, Any]) -> Path:
     return resolve_path(cfg, "shared_data", "processed", f"index_{cfg['index']}")
 
 
+def deadline_csv_path(cfg: dict[str, Any]) -> Path:
+    """공식 마감일 원본 CSV — data_list.csv. 다른 자산과 달리 버전 필드가
+    없는 고정 파일(체크리스트 확인). 실제 파일명이 다르면 base.yaml에
+    deadline_csv_filename을 추가해서 여기만 고치면 된다."""
+    filename = cfg.get("deadline_csv_filename", "data_list.csv")
+    return resolve_path(cfg, "shared_data", "raw", filename)
+
+
 def models_home() -> Path:
     root = os.environ.get("HF_HOME")
     if not root:

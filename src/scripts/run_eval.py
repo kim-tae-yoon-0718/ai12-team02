@@ -16,13 +16,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 from datetime import datetime, timezone
 
 # scripts/run_eval.py 기준 ../rag를 sys.path에 추가
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "rag"))
 
-from config import load_config
+from config import load_config, index_dir, extraction_table_path, document_registry_path, deadline_csv_path
 from git_info import get_git_info, warn_if_dirty
 from vector_store import VectorStore
 from embedding_client import EmbeddingClient
@@ -45,12 +46,16 @@ def load_evalset(path: Path) -> list[dict]:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--evalset", required=True)
-    parser.add_argument("--index", required=True)
-    parser.add_argument("--extraction-table", required=False)
+    parser.add_argument("--index", required=False,
+                         help="생략하면 base.yaml의 index 버전으로 자동 조립")
+    parser.add_argument("--extraction-table", required=False,
+                         help="생략하면 base.yaml의 table 버전으로 자동 조립")
     parser.add_argument("--registry", required=False,
-                         help="document_registry_v2.json 경로 — 마감 필터용 CSV 매핑에 필요")
+                         help="document_registry_v2.json 경로 — 마감 필터용 CSV 매핑에 필요. "
+                              "생략하면 base.yaml 기준으로 자동 조립")
     parser.add_argument("--deadline-csv", required=False,
-                         help="data_list.csv 경로 — 있어야 선별형 마감 필터(4-10-2)가 켜짐")
+                         help="data_list.csv 경로 — 있어야 선별형 마감 필터(4-10-2)가 켜짐. "
+                              "생략하면 base.yaml 기준으로 자동 조립")
     parser.add_argument("--out", required=True, help="결과 저장 폴더")
     parser.add_argument("--experiment-config", required=False)
     parser.add_argument(
@@ -75,17 +80,45 @@ def main():
     cfg = load_config(args.experiment_config)
     warn_if_dirty(purpose="평가 실행")
 
-    store = VectorStore.load(Path(args.index))
-    table = load_extraction_table(Path(args.extraction_table)) if args.extraction_table else []
+    # ⚠️ 개선(사용성) — 경로 4개를 매번 CLI로 안 넘겨도 되게, 안 주면
+    # config.py의 경로 조립 함수(RAG_ROOT 기준)로 자동 채운다. 명시적으로
+    # 주면 그 값이 항상 우선한다.
+    def _try_derive(explicit: str | None, deriver, label: str) -> Path | None:
+        """명시적 인자가 있으면 그걸 쓰고, 없으면 config.py 헬퍼로 자동
+        조립을 시도한다. RAG_ROOT 미설정 등으로 조립 자체가 실패하면(선택
+        인자라 필수는 아니므로) None을 반환하고 계속 진행 — 마감필터·
+        기관명매핑처럼 선택 기능만 꺼진다."""
+        if explicit:
+            return Path(explicit)
+        try:
+            return deriver(cfg)
+        except Exception as e:
+            print(f"⚠️  {label} 자동 조립 실패({e}) — 이 값 없이 진행합니다.")
+            return None
+
+    index_path = _try_derive(args.index, index_dir, "--index")
+    if index_path is None:
+        raise RuntimeError(
+            "--index를 자동 조립하지 못했고 명시적으로도 안 주셨습니다 — "
+            "인덱스 없이는 실행할 수 없습니다. --index를 직접 주거나 RAG_ROOT를 설정하세요."
+        )
+    extraction_table_arg = _try_derive(args.extraction_table, extraction_table_path, "--extraction-table")
+    registry_arg = _try_derive(args.registry, document_registry_path, "--registry")
+    deadline_csv_arg = _try_derive(args.deadline_csv, deadline_csv_path, "--deadline-csv")
+
+    store = VectorStore.load(index_path)
+    table = load_extraction_table(extraction_table_arg) if extraction_table_arg and extraction_table_arg.exists() else []
+    if not (extraction_table_arg and extraction_table_arg.exists()):
+        print(f"⚠️  추출표를 찾지 못했습니다({extraction_table_arg}) — 선별형·추출형이 동작하지 않습니다.")
 
     deadline_map = None
     org_index = None
     deadline_filter_should_be_on = cfg.get("deadline_filter_default", {}).get("select", False)
-    if args.deadline_csv and args.registry:
+    if deadline_csv_arg and registry_arg and deadline_csv_arg.exists() and registry_arg.exists():
         deadline_map = load_deadline_by_document_id(
-            Path(args.deadline_csv), Path(args.registry), cfg,
+            deadline_csv_arg, registry_arg, cfg,
         )
-        org_index = load_org_index(Path(args.deadline_csv), Path(args.registry))
+        org_index = load_org_index(deadline_csv_arg, registry_arg)
     elif deadline_filter_should_be_on and not args.allow_no_deadline_filter:
         # ⚠️ 정정(리뷰 반영): 예전엔 경고만 하고 필터 없이 계속 진행했다 —
         # base.yaml이 "필터를 켜라"고 확정해뒀는데 실행이 조용히 그걸 어긴
@@ -144,6 +177,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     details = []
+    responses = []  # 하루님 responses.jsonl용
     task_counts: dict[str, int] = {}
     abstain_count = 0
     fallback_count = 0
@@ -175,8 +209,31 @@ def main():
             session.active_document_id = item["active_document_id"]
 
         try:
+            _t0 = time.perf_counter()
             result = answer(q, store, get_embed_client, get_gen_client, table, cfg,
                              deadline_map=deadline_map, session=session, org_index=org_index)
+            latency_ms = round((time.perf_counter() - _t0) * 1000)
+
+            # 2026-09-02 추가 — 하루님 cost_usd 계산. 이번 문항에서 실제로
+            # API를 호출했으면 클라이언트에 남은 토큰 사용량으로 계산하고,
+            # base.yaml에 단가(pricing.*)가 없으면 None(단가 미확정 — 임의로
+            # 숫자 지어내지 않음).
+            cost_usd = None
+            pricing = cfg.get("pricing", {})
+            gen_price = pricing.get(cfg.get("generation_model", ""), {})
+            embed_price = pricing.get(cfg.get("embedding_model", ""), {})
+            gen_usage = _cache.get("gen").last_usage if "gen" in _cache else None
+            embed_usage = _cache.get("embed").last_query_usage if "embed" in _cache else None
+            if (gen_usage and gen_price.get("input_per_1k") is not None
+                    and gen_price.get("output_per_1k") is not None):
+                cost_usd = (
+                    gen_usage["prompt_tokens"] / 1000 * gen_price["input_per_1k"]
+                    + gen_usage["completion_tokens"] / 1000 * gen_price["output_per_1k"]
+                )
+            if embed_usage and embed_price.get("input_per_1k") is not None:
+                embed_cost = embed_usage["total_tokens"] / 1000 * embed_price["input_per_1k"]
+                cost_usd = (cost_usd or 0) + embed_cost
+
             # ⚠️ 버그 수정(리뷰 반영): answer()는 내부에서 예외를 이미 잡아서
             # error_stage/error_detail로 반환한다 — 그래서 이 try/except는
             # answer() 호출 자체가 실패하는 극히 드문 경우(예: 인자 오류)만
@@ -188,6 +245,7 @@ def main():
                 "question": q,
                 "expected_task_type": item.get("task_type"),
                 "actual_task_type": result.task_type,
+                "route": result.route,
                 "route_matched_rule": result.route_matched_rule,
                 "route_is_fallback": result.route_is_fallback,
                 "answer": result.text,
@@ -204,7 +262,23 @@ def main():
                 ),
                 "session_id": cur_session_id,
                 "active_document_after": session.active_document_id,
+                "latency_ms": latency_ms,
+                "cost_usd": cost_usd,
             }
+            responses.append({
+                "id": item.get("question_id", f"q{i:04d}"),
+                "answer": result.text,
+                "structured_answer": result.structured_answer,
+                "contexts": result.contexts,
+                "retrieved": result.retrieved,
+                "citations": result.citations,
+                "selected_document_ids": result.selected_document_ids,
+                "abstained": result.abstained,
+                "route": result.route,
+                "failure": result.failure,
+                "latency_ms": latency_ms,
+                "cost_usd": cost_usd,
+            })
         except Exception as e:
             record = {
                 "question_id": item.get("question_id", f"q{i:04d}"),
@@ -222,7 +296,16 @@ def main():
                 "condition_result_doc_ids": [],
                 "error_stage": "pipeline_call",
                 "error": str(e),
+                "latency_ms": None,
+                "cost_usd": None,
             }
+            responses.append({
+                "id": item.get("question_id", f"q{i:04d}"),
+                "answer": None, "structured_answer": None, "contexts": [],
+                "retrieved": [], "citations": [], "selected_document_ids": [],
+                "abstained": None, "route": None, "failure": str(e),
+                "latency_ms": None, "cost_usd": None,
+            })
 
         details.append(record)
         task_counts[record["actual_task_type"] or "error"] = (
@@ -239,6 +322,13 @@ def main():
     with open(out_dir / "details.jsonl", "w", encoding="utf-8") as f:
         for d in details:
             f.write(json.dumps(d, ensure_ascii=False) + "\n")
+
+    # 하루님 채점기가 읽는 파일 — id/answer/structured_answer/contexts/
+    # retrieved/citations/selected_document_ids/abstained/route/failure/
+    # latency_ms/cost_usd (2026-09-02 확인된 스키마)
+    with open(out_dir / "responses.jsonl", "w", encoding="utf-8") as f:
+        for r in responses:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
     summary = {
         "config": cfg,
