@@ -67,7 +67,8 @@ python -m checks.check_evalset final.jsonl --doc-ids data/gold/corpus_doc_ids.js
 `ContextChunk` / `RetrievedItem` 은 `location` 이 없고 `block_type`+`block_index`(또는 옛 `location_label`)가
 있으면 자동 합성한다.
 
-> ⚠️ **박예진 청크(chunks_v2)는 아직 `block_index` 를 안 실어 보낸다** (`table_idx`·`location_label "표 1"` 만).
+> ⚠️ **박예진 청크(chunks_v3, 09-01 13:02)는 아직 `block_index` 를 안 실어 보낸다** (`table_idx`·`location_label "표 1"` 만).
+> block_type 도 `text`(≠ v3 `paragraph`).
 > evalset ref_no(`"table 12"`)와 청크 ref_no 가 **번호 체계가 달라** `precision=ref_no` citation 매칭이
 > 성립하지 않는다. 박예진↔이태민 확인 필요 — 그전까지는 `config.retrieval.precision: section` 권장.
 
@@ -78,4 +79,4 @@ RAG_ROOT=/srv/rfp python scripts/build_doc_ids.py --out-dir data/gold
 RAG_ROOT=/srv/rfp python scripts/build_data_manifest.py --out data/gold/data_manifest.json
 ```
 - `corpus_doc_ids.json` (active 100) · `excluded_doc_ids.json` (RFP-000006/17, 검색대상 98)
-- `data_manifest.json` — `corpus_v2/manifest.json` + `registry_metadata.json` + `chunks_v1/stats.json`
+- `data_manifest.json` — `corpus_v2/manifest.json` + `registry_metadata.json` + `chunks_v3/stats.json` (자동 최신 감지)
