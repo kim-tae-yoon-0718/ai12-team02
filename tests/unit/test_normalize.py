@@ -40,3 +40,13 @@ def test_correct_plus_hallucination_is_rejected_by_default():
     pred = "5억원이며 지역제한은 없고 컨소시엄은 필수입니다"
     assert match_short("5억원", pred, allow_partial=False)[0] is False
     assert match_short("5억원", pred, allow_partial=True)[0] is True
+
+
+def test_korean_spacing_is_a_notation_variant():
+    """한국어 띄어쓰기는 표기 변형 — 공백만 다른 답은 정답으로 인정한다(3-7).
+    (현진 PRAC-EXT-004: 정답 '지역 제한 없음')"""
+    assert match_short("지역 제한 없음", "지역제한 없음")[0] is True
+    assert match_short("지역제한 없음", "지역 제한 없음")[0] is True
+    assert match_short("계약 체결일로부터 4개월", "계약체결일로부터 4개월")[0] is True
+    # 공백 무시가 덧붙임까지 통과시키지는 않는다
+    assert match_short("지역 제한 없음", "지역제한없음 가점 있음")[0] is False

@@ -202,10 +202,13 @@ def match_short(gold, pred, accept=None, kind: str = "auto",
 
     # 0) 정확 일치 — 정답 자체가 서술형(날짜/금액을 포함한 문장)이어도 pred 가 정답 그대로면 통과.
     #    (이 검사를 뒤에 두면 "정답 == pred" 인데 verbose 패널티로 0점 나는 버그가 생긴다)
+    #    ★한국어 띄어쓰기는 표기 변형이라 공백을 완전히 제거하고도 대조한다(3-7):
+    #      "지역 제한 없음" == "지역제한 없음".
     np = normalize_text(pred_s)
+    np_nows = np.replace(" ", "")
     for g in golds:
         ng = normalize_text(g)
-        if ng and ng == np:
+        if ng and (ng == np or ng.replace(" ", "") == np_nows):
             return True, "normalized_exact"
 
     # 1) 날짜
