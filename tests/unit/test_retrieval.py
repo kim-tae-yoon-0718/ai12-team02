@@ -155,7 +155,7 @@ def test_chunk_location_adapter_and_split_table_match():
         "location_label": "4. 추진일정 · 표 7 (2/3)",
         "score": 0.9,
     })
-    assert r.location.model_dump() == {"document": "RFP-000091", "section": "4. 추진일정", "ref_no": "표 7"}
+    assert r.location.model_dump(exclude_none=True) == {"document": "RFP-000091", "section": "4. 추진일정", "ref_no": "표 7"}
 
     # 분할 표 (2/3) 는 정답 `표 7` 과 ref_no 단위로 일치해야 한다
     gold = Location(document="RFP-000091", section="4. 추진일정", ref_no="표 7")

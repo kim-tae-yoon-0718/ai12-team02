@@ -111,6 +111,12 @@ class Location(BaseModel):
     document: str
     section: str
     ref_no: str
+    # 비교형(2-8-4): 한 문서에 필드별 근거가 여러 개 → 원소에 field 키 (임현진 09-01)
+    field: str | None = None
+    # block_index 가 source_type 별로 세져 "heading 0" 이 문서에 여러 번 → line 으로 모호성 해소
+    # (임현진 09-01). 청크는 [line, line_end] 범위, 평가셋은 단일 line.
+    line: int | None = None
+    line_end: int | None = None
 
     def key(self, precision: Literal["document", "section", "ref_no"] = "section") -> tuple:
         if precision == "document":
@@ -122,7 +128,8 @@ class Location(BaseModel):
     @classmethod
     def from_chunk(cls, document_id: str, section_path: list[str] | None,
                    location_label: str | None, *,
-                   block_type: str | None = None, block_index: int | None = None) -> "Location":
+                   block_type: str | None = None, block_index: int | None = None,
+                   line: int | None = None, line_end: int | None = None) -> "Location":
         """검색 산출물(박예진 청크 / extraction_v3 블록)을 {document, section, ref_no} 로.
 
         section : section_path 의 리프 요소 (임현진 09-01 확정).
@@ -147,7 +154,8 @@ class Location(BaseModel):
             ref_no = _strip_part(label.rsplit(" · ", 1)[-1]) if " · " in label else ""
         if not section and " · " in label:
             section = label.rsplit(" · ", 1)[0].strip()
-        return cls(document=document_id, section=section, ref_no=ref_no)
+        return cls(document=document_id, section=section, ref_no=ref_no,
+                   line=line, line_end=line_end)
 
 
 class EvaluationItem(BaseModel):
@@ -267,6 +275,8 @@ def _chunk_location_before(data: Any) -> Any:
         data["location"] = Location.from_chunk(
             doc, data.get("section_path"), data.get("location_label"),
             block_type=data.get("block_type"), block_index=data.get("block_index"),
+            line=data.get("md_line_start") if data.get("md_line_start") is not None else data.get("line"),
+            line_end=data.get("md_line_end") if data.get("md_line_end") is not None else data.get("line_end"),
         ).model_dump()
     return data
 

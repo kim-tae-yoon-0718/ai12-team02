@@ -67,10 +67,16 @@ python -m checks.check_evalset final.jsonl --doc-ids data/gold/corpus_doc_ids.js
 `ContextChunk` / `RetrievedItem` 은 `location` 이 없고 `block_type`+`block_index`(또는 옛 `location_label`)가
 있으면 자동 합성한다.
 
-> ⚠️ **박예진 청크(chunks_v3, 09-01 13:02)는 아직 `block_index` 를 안 실어 보낸다** (`table_idx`·`location_label "표 1"` 만).
-> block_type 도 `text`(≠ v3 `paragraph`).
-> evalset ref_no(`"table 12"`)와 청크 ref_no 가 **번호 체계가 달라** `precision=ref_no` citation 매칭이
-> 성립하지 않는다. 박예진↔이태민 확인 필요 — 그전까지는 `config.retrieval.precision: section` 권장.
+### 원문 위치 → 청크 대응 (3-2 — grader 책임)
+
+2-9 는 근거를 구현 독립 단위 `{document, section, ref_no}` 로 둔다. 청크는 원문의 어떤 구간을
+덮으므로, "evalset 이 가리키는 블록이 이 청크 안에 있나" 를 grader 가 판정한다:
+
+- **block_type**: 박예진 청크의 `text` → v3 어휘 `paragraph` 로 정규화 (`Location.from_chunk`)
+- **block_index**: source_type(front_matter/body_sentence)별로 세져 한 문서에 `"heading 0"` 이 여럿 —
+  ref_no 만으로는 모호. → **line 번호로 대조**(임현진 09-01): 청크는 `md_line_start`~`md_line_end`,
+  평가셋 location 에 `line` 이 오면 `Location.line` 이 그 범위에 드는지로 매칭. `line` 없으면 ref_no 로 폴백.
+- 매핑은 grader 몫 — 박예진 청크 출력 변경은 필요 없다.
 
 ## 박예진 산출물 → grader 입력 (`scripts/`)
 

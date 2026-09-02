@@ -233,5 +233,21 @@ def match_short(gold, pred, accept=None, kind: str = "auto",
 
 
 def match_location(gold, pred, precision: str = "section") -> bool:
-    """근거/좌표 일치. precision: document | section | ref_no (세분 정도가 올라가는 순서)."""
-    return gold.key(precision) == pred.key(precision)
+    """근거/좌표 일치. precision: document | section | ref_no (세분 정도가 올라가는 순서).
+
+    ref_no 정밀도에서 (임현진 09-01):
+      - gold 에 field 가 있으면(비교형 원소) 문서+절만 맞아도 인정 — field 그룹핑은 상위(grade_*)에서
+      - 양쪽에 line 정보가 있으면 ref_no 대신 line 범위 포함으로 대조
+        (block_index 가 source_type 별로 세져 "heading 0" 이 문서에 여럿 → line 이 명확)
+    """
+    if precision != "ref_no":
+        return gold.key(precision) == pred.key(precision)
+
+    if gold.key("section") != pred.key("section"):
+        return False
+    g_line = getattr(gold, "line", None)
+    p_line = getattr(pred, "line", None)
+    if g_line is not None and p_line is not None:
+        p_end = getattr(pred, "line_end", None) or p_line
+        return min(p_line, p_end) <= g_line <= max(p_line, p_end)
+    return gold.key("ref_no")[-1] == pred.key("ref_no")[-1]

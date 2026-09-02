@@ -162,13 +162,23 @@ def grade_citation(item: EvaluationItem, response: ModelResponse,
         # score=0으로 반영해 진단(citation_accuracy/no_citation_rate)에 잡히게 한다.
         return {"applicable": True, "matched": False, "score": 0.0, "n_citations": 0,
                 "precision_unit": precision, "reason": "citation 없음(출처 미표기)"}
-    # 비교형: 정답 좌표가 여러 개 — 각 좌표가 citation 하나 이상과 맞으면 그 몫만큼 점수.
-    hit = sum(1 for g in golds
-              if any(match_location(g, c, precision) for c in response.citations))
+    # 비교형: 정답 좌표가 여러 개(문서×필드) — 각 좌표가 citation 하나 이상과 맞으면 그 몫.
+    per_gold = [(g, any(match_location(g, c, precision) for c in response.citations)) for g in golds]
+    hit = sum(1 for _, ok in per_gold if ok)
     score = hit / len(golds)
-    return {"applicable": True, "matched": hit == len(golds), "score": score,
-            "n_citations": len(response.citations), "n_gold_locations": len(golds),
-            "precision_unit": precision}
+    out = {"applicable": True, "matched": hit == len(golds), "score": score,
+           "n_citations": len(response.citations), "n_gold_locations": len(golds),
+           "precision_unit": precision}
+    # field 키가 있으면(비교형) 필드별로도 낸다 — 임현진 09-01 "field 로 그룹핑해서 매칭"
+    if any(g.field for g, _ in per_gold):
+        by_field: dict[str, dict] = {}
+        for g, ok in per_gold:
+            k = g.field or "(no field)"
+            b = by_field.setdefault(k, {"matched": 0, "total": 0})
+            b["total"] += 1
+            b["matched"] += int(ok)
+        out["by_field"] = by_field
+    return out
 
 
 def aggregate_citation(per_item: list[dict]) -> dict:
