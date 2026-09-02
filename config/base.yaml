@@ -131,8 +131,14 @@ active_doc_state: true        # 확정 — 대화 이력 대신 활성 문서 ID
 # ⑤ 생성 (4-12, 4-12-1) — 이태민 담당
 # ─────────────────────────────
 generation_provider: "openai"  # 확정 2026-08-31 — 오픈AI 트랙 우선 진행
-generation_model: "gpt-4o-mini"  # 확정 2026-08-31 — 저비용 시작(예산 $20 충분 판단).
-                              #   필요시 gpt-4o로 승격 검토("측정 먼저, 승격 나중").
+generation_model: "gpt-5-mini"  # 재확정 2026-09-02 — gpt-4o-mini는 팀 API
+                              #   정책상 허용 모델 목록(gpt-5-mini, gpt-5-nano,
+                              #   text-embedding-3-small)에 없어 호출 자체가
+                              #   막힘(rate_limit_exceeded, RPM 0). 실제 서버
+                              #   테스트로 확인 후 gpt-5-mini로 교체.
+                              #   더 낮추려면 gpt-5-nano(저비용, 품질 더 낮음).
+                              #   팀 전체 API 예산 $20 한도 — 초과 시 키 즉시
+                              #   비활성화되니 주의(!usage로 잔여량 확인 가능).
                               #   로컬 후보(참고용, 김태윤 트랙에서 이어감): Qwen/Qwen3-8B,
                               #   LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct(NC 배제 대상),
                               #   naver-hyperclovax/HyperCLOVAX-SEED-Text-Instruct-1.5B,
