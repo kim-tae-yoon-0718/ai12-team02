@@ -95,6 +95,7 @@ def main() -> None:
     rt = build_runtime(args, cfg)
     store, table, identity = rt["store"], rt["table"], rt["identity"]
     locator = rt["locator"]
+    registry_scope = rt["registry_scope"]
     print(f"인덱스 꼬리표 검증 통과: {rt['index_check']['index_dir']} "
           f"(dim={rt['index_check']['vector_dimension']})")
 
@@ -173,7 +174,7 @@ def main() -> None:
             try:
                 result = answer(q, store, get_embed_client, get_gen_client,
                                 table, cfg, identity=identity, session=session,
-                                locator=locator)
+                                locator=locator, registry_scope=registry_scope)
                 last_error = None
             except Exception as e:  # noqa: BLE001
                 last_error = sanitize_error(f"{type(e).__name__}: {e}")

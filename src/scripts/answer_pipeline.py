@@ -44,9 +44,15 @@ from generation_client import GenerationClient  # noqa: E402
 from router import route, RouteResult, NO_SEARCH_SYSTEM_HELP  # noqa: E402
 from table_query import (  # noqa: E402
     load_extraction_table, parse_conditions, run_conditions_query, QueryResult,
-    detect_field, detect_fields, needs_explanation, lookup_field,
+    parse_selection, run_selection_query, is_selection_question,
+    names_specific_document,
+    detect_field, detect_fields, needs_explanation, lookup_field, FIELD_KEYWORDS,
     detect_deadline_question, detect_deadline_eligibility_question, needs_deadline_data,
-    classify_region_restriction, NON_VALUE_STATUS,
+    classify_region_restriction, classify_consortium, NON_VALUE_STATUS,
+    KIND_SEMANTIC,
+)
+from document_registry import (  # noqa: E402
+    RegistryScope, load_registry_scope, DocumentRegistryError,
 )
 from identity_metadata import (  # noqa: E402
     IdentityIndex, load_identity, is_before_deadline, deadline_citation,
@@ -55,7 +61,9 @@ from identity_metadata import (  # noqa: E402
 from doc_resolver import (  # noqa: E402
     DocumentResolution, resolve_document, resolve_documents_for_compare,
     detect_unknown_orgs, has_anaphora, detect_document_id, detect_document_ids,
-    RESOLVE_NONE,
+    looks_like_specific_document,
+    comparison_scope_issue,
+    RESOLVE_NONE, RESOLVE_ACTIVE,
 )
 from pricing import Usage  # noqa: E402
 
@@ -142,7 +150,11 @@ _ENUM_PREFIX_RE = re.compile(
     r"^\s*(?:[가-힣]\s*[.)]|\(?\d{1,2}\s*[.)]|[①-⑳]|[ⅰⅱⅲⅳⅴ]\s*[.)])\s*"
 )
 # "예산소요액 :", "사업금액:" 처럼 값 앞에 붙은 짧은 레이블
-_LABEL_PREFIX_RE = re.compile(r"^\s*[가-힣A-Za-z0-9 ()·]{1,14}\s*[:：]\s*")
+_LABEL_PREFIX_RE = re.compile(r"^\s*(?P<label>[가-힣A-Za-z0-9 ()·]{1,20})\s*[:：]\s*")
+# 필드 자체의 이름표만 제거한다. '기술평가: 90점'의 기술평가는 답의 일부다.
+_REMOVABLE_VALUE_LABELS = {re.sub(r"\s+", "", label) for label in (
+    *FIELD_KEYWORDS, "예산소요액", "사업예산", "예산액", "소요예산",
+)}
 # 금액 앞의 "금"
 _AMOUNT_WORD_RE = re.compile(r"^\s*금\s+(?=[\d￦₩])")
 
@@ -170,7 +182,10 @@ def clean_value_text(raw: Any) -> str:
     for _ in range(3):  # "다. 예산소요액 : 금 " 처럼 겹쳐 있을 수 있다
         before = text
         text = _ENUM_PREFIX_RE.sub("", text)
-        text = _LABEL_PREFIX_RE.sub("", text)
+        label_match = _LABEL_PREFIX_RE.match(text)
+        if (label_match and re.sub(r"\s+", "", label_match.group("label"))
+                in _REMOVABLE_VALUE_LABELS):
+            text = text[label_match.end():]  # 실제로 확인된 바깥 필드 이름표만 떼어낸다.
         text = _AMOUNT_WORD_RE.sub("", text)
         if text == before:
             break
@@ -201,6 +216,26 @@ def as_list_value(row: dict) -> list[str] | None:
         if len(parts) >= 2:
             return parts
     return None
+
+
+def _empty_value(value: Any) -> bool:
+    """빈 칸·빈 배열만 결측으로 본다. 숫자 0과 '없음'은 실제 값으로 남긴다."""
+    if value is None:
+        return True
+    if isinstance(value, (list, dict)):
+        return not value
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    if not text:
+        return True
+    if text.startswith(("[", "{")):
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return False  # 깨진 표기라는 이유만으로 실제 원문을 버리지 않는다.
+        return isinstance(parsed, (list, dict)) and not parsed
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -334,11 +369,14 @@ def chunk_to_citation(m: ChunkMetadata) -> dict:
         ref += (f" · line {m.md_line_start}"
                 if m.md_line_end in (None, m.md_line_start)
                 else f" · line {m.md_line_start}-{m.md_line_end}")
+    # 청크와 평가셋이 이미 쓰는 좌표 이름을 바꾸지 않는다. 없을 때만 옛 형식을 쓴다.
+    ref = m.location_label or ref
     return {
         "document": m.document_id,
         "section": section,
         "ref_no": ref,
         "line": m.md_line_start,
+        "line_end": m.md_line_end,
         "block_type": m.chunk_type,
         "block_index": m.block_index,
         "source": "chunks_v3",
@@ -572,7 +610,17 @@ def build_field_evidence(
             citations=cites, abstained=abstain, structured=structured, used_source=used,
         )
 
-    display = clean_value_text(value_raw if value_raw not in (None, "") else value_norm)
+    # 공백뿐인 원문은 빈 값이다. 숫자 0은 정상 값이므로 truthiness로 고르지 않는다.
+    raw_missing = _empty_value(value_raw)
+    display = clean_value_text(value_norm if raw_missing else value_raw)
+    if not display or (raw_missing and _empty_value(value_norm)):
+        return StructuredEvidence(
+            kind="field", document_id=document_id, field_name=field_name,
+            status="extraction_failed", answer_text="값 있음으로 표시됐지만 실제 값이 비어 있어 확인할 수 없습니다.",
+            short_text="값 누락 — 확인 필요", abstained=True, structured=structured,
+            prompt_text=f"- {document_id} / {field_name}: 값 누락 — 추정하지 마세요.",
+            citations=[], used_source=used,
+        )
     list_value = as_list_value(row)
     if list_value:
         structured["items"] = list_value
@@ -595,6 +643,48 @@ def build_field_evidence(
 def detect_structured_need(question: str, table: list[dict] | None) -> tuple[bool, str | None]:
     """QA형 질문에 확정된 구조화 필드가 들어 있는지. (마감일 필요?, 12필드 이름)"""
     return needs_deadline_data(question), (detect_field(question) if table else None)
+
+
+_DEADLINE_FIELD = "입찰 참여 마감일"
+
+
+def _requested_fields(question: str) -> list[str]:
+    """한 질문에 들어 있는 여러 필드와 마감일을 하나도 버리지 않고 모은다."""
+    fields = detect_fields(question)
+    if detect_deadline_question(question):
+        fields.append(_DEADLINE_FIELD)
+    return fields
+
+
+def _field_evidence(document_id: str, field_name: str, table: list[dict], cfg: dict,
+                    identity: IdentityIndex | None, locator: ChunkLocator | None,
+                    eligibility: bool = False) -> StructuredEvidence:
+    """마감일만 identity에서, 나머지는 추출표에서 읽는 공통 경로다."""
+    if field_name != _DEADLINE_FIELD:
+        return build_field_evidence(table, document_id, field_name, cfg, locator=locator)
+    if identity is not None:
+        return build_deadline_evidence(document_id, identity, cfg, eligibility=eligibility)
+    return StructuredEvidence(
+        kind="deadline", document_id=document_id, field_name=field_name,
+        status="identity_missing", abstained=True,
+        answer_text="마감일 자료(identity_v2)가 연결되지 않아 확인할 수 없습니다.",
+        short_text="마감일 자료 미연결 — 확인 불가",
+        prompt_text=f"- {document_id} 마감일: 자료 미연결 — 추정하지 마세요.",
+        structured={"document_id": document_id, "status": "identity_missing"},
+        used_source=_source_tag(cfg, "identity_v2"),
+    )
+
+
+def _structured_lead(evidence: list[StructuredEvidence]) -> str:
+    """한 값의 기존 표현은 유지하고 여러 값이면 무엇의 값인지 이름을 붙인다."""
+    if len(evidence) == 1:
+        return evidence[0].answer_text
+    return "\n".join(f"{ev.field_name}: {ev.answer_text}" for ev in evidence if ev.answer_text)
+
+
+def _evidence_documents(evidence: list[StructuredEvidence]) -> list[str]:
+    """한 문서의 여러 필드를 답해도 문서 ID는 한 번만 기록한다."""
+    return list(dict.fromkeys(ev.document_id for ev in evidence))
 
 
 # ---------------------------------------------------------------------------
@@ -630,12 +720,13 @@ def answer_qa_or_extract_by_search(
 
     results = _search(question, store, embed_client, cfg, document_id)
 
-    normal = [(m, s) for m, s in results if not m.table_degraded]
+    # 빈 본문에 출처 이름만 붙여 LLM 근거로 전달하지 않는다. 검색 기록은 유지한다.
+    normal = [(m, s) for m, s in results if not m.table_degraded and (m.text or "").strip()]
     degraded = [(m, s) for m, s in results if m.table_degraded]
     if results:
         used_sources.append(_source_tag(cfg, "chunks"))
 
-    lead = "\n".join(ev.answer_text for ev in structured if ev.answer_text)
+    lead = _structured_lead(structured)
     any_structured_abstain = any(ev.abstained for ev in structured)
 
     def _no_llm_route() -> str:
@@ -665,7 +756,7 @@ def answer_qa_or_extract_by_search(
                 citation_diagnostics={"protocol": "no_generation",
                                       "structured_citations": len(structured_citations),
                                       "chunk_citations": 0},
-                selected_document_ids=[ev.document_id for ev in structured],
+                selected_document_ids=_evidence_documents(structured),
                 used_sources=used_sources,
             )
         if degraded:
@@ -705,6 +796,15 @@ def answer_qa_or_extract_by_search(
     generated = gen_client.generate(
         question, context_texts, structured_context=structured_context,
     )
+    if not isinstance(generated, str) or not generated.strip():
+        # 빈 응답은 정답도 정상 기권도 아니다. 상위 오류 처리로 실제 실패를 기록한다.
+        raise RuntimeError("생성 결과가 비어 있어 정상 답변으로 처리할 수 없습니다.")
+    # 답 전체가 명확한 기권 한 문장일 때만 표시한다. 인용·설명 속 문구는 검사하지 않는다.
+    generated_abstain = bool(re.fullmatch(
+        r"\s*(?:(?:제공된\s*)?(?:근거|자료|문서)(?:만으로는?|에서는?)\s*)?"
+        r"(?:확인할\s*수\s*없습니다|알\s*수\s*없습니다|모르겠습니다)[.!。]?\s*",
+        generated,
+    ))
 
     # ⭐ 결함 1-4: 검색된 청크를 전부 citations 로 복사하지 않는다.
     #   모델이 USED_EVIDENCE 줄로 밝힌 근거 번호만 실제 청크 좌표로 바꿔 인용한다.
@@ -712,9 +812,9 @@ def answer_qa_or_extract_by_search(
     used_ids = getattr(gen_client, "last_used_evidence", None)
     chunk_citations: list[dict] = []
     unknown_ids: list[int] = []
-    if used_ids:
-        for eid in used_ids:
-            if 1 <= eid <= len(normal):
+    if used_ids and not generated_abstain:
+        for eid in dict.fromkeys(used_ids):
+            if isinstance(eid, int) and not isinstance(eid, bool) and 1 <= eid <= len(normal):
                 chunk_citations.append(chunk_to_citation(normal[eid - 1][0]))
             else:
                 unknown_ids.append(eid)   # 존재하지 않는 근거 ID는 인용으로 인정하지 않는다
@@ -746,7 +846,7 @@ def answer_qa_or_extract_by_search(
 
     return Answer(
         text=answer_text, task_type=task_type,
-        abstained=any_structured_abstain,
+        abstained=any_structured_abstain or (generated_abstain and not lead),
         sources=sources,
         route=ROUTE_STRUCTURED_LLM if structured else ROUTE_SEARCH_LLM,
         retrieved_chunk_ids=[m.chunk_id for m, _ in results],
@@ -758,7 +858,7 @@ def answer_qa_or_extract_by_search(
         structured_answer=(_merge_structured(structured, degraded,
                                             explanation=explanation)
                            if structured else None),
-        selected_document_ids=[ev.document_id for ev in structured] or (
+        selected_document_ids=_evidence_documents(structured) or (
             [document_id] if document_id else []),
         used_sources=used_sources,
     )
@@ -812,70 +912,234 @@ def apply_deadline_filter(
     return kept, unknown_notes, disclosure
 
 
+# 화면에 한 번에 보여줄 최대 줄 수. **채점용 목록(selected_document_ids /
+# structured_answer)은 절대 자르지 않는다** — 화면 표시 제한과 실제 결과 제한은
+# 서로 다른 값이다. None 이면 전부 표시한다.
+SELECT_DISPLAY_LIMIT_DEFAULT: int | None = None
+UNDETERMINED_DISPLAY_LIMIT = 15
+
+# 선별 결과의 성격 — 진단 기록(condition_query.selection_diagnostics)에 남긴다.
+# 새 최상위 응답 필드를 만들지 않는다(기존 응답 계약 유지).
+SELECT_OUTCOME_MATCHED = "matched"              # 확정 ≥1 · 판단 불가 0
+SELECT_OUTCOME_PARTIAL = "partial_undetermined"  # 확정 ≥1 · 판단 불가 ≥1
+SELECT_OUTCOME_EMPTY = "empty"                   # 확정 0 · 판단 불가 0 (정상 0건)
+SELECT_OUTCOME_UNDETERMINED = "undetermined_only"  # 확정 0 · 판단 불가 ≥1
+
+
+def _short(text: str, limit: int = 90) -> str:
+    text = " ".join(str(text or "").split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _condition_cell(ev: StructuredEvidence, cq) -> str:
+    """문서 한 건 · 조건 한 개의 결과 설명. 상태를 값처럼 적지 않는다.
+
+    'RFP-000123: None' 같은 출력이 나오지 않도록 상태별로 뜻을 적는다."""
+    status = ev.status
+    if status == "value_present":
+        body = _short(ev.answer_text)
+    elif status == "field_absent":
+        body = "원문에 기재 없음"
+    elif status == "external_reference":
+        body = f"외부 문서 참조 안내 — {_short(ev.value_raw, 60)}"
+    elif status == "not_disclosed":
+        body = f"비공개로 명시됨 — {_short(ev.value_raw, 60)}"
+    elif status == "conflict":
+        body = f"원문 내용 충돌 — {_short(ev.value_raw, 60)}"
+    elif status == "row_missing":
+        body = "추출표에 행 없음"
+    else:
+        body = f"상태 {status}"
+
+    if cq.kind == KIND_SEMANTIC:
+        row_view = {"status": status, "answer_raw": ev.value_raw,
+                    "answer_normalized": ev.value_normalized}
+        if cq.field == "지역제한":
+            verdict, _reason = classify_region_restriction(row_view)
+            body += f" [지역제한 판정: {verdict}]"
+        elif cq.field == "컨소시엄 요건":
+            v = classify_consortium(row_view)
+            body += f" [공동수급 판정: 필수={v.required} / 허용={v.allowed}]"
+    return f"{cq.field}: {body}"
+
+
+def _clarify_conditions_text(parse) -> str:
+    read = ", ".join(c.describe() for c in parse.conditions)
+    lines = []
+    if read:
+        lines.append(f"인식한 조건: {read}")
+    if parse.unsupported_or:
+        lines.append("OR(또는)로 이어진 조건은 이번 범위에서 지원하지 않습니다 — "
+                     "AND로 바꿔 처리하지 않습니다.")
+    for u in parse.unresolved:
+        lines.append(f"인식하지 못한 조건: {u}")
+    lines.append("나머지 조건을 더 구체적으로 말씀해주시겠어요?")
+    return "\n".join(lines)
+
+
 def answer_select_by_table(
     question: str, table: list[dict], cfg: dict[str, Any],
     identity: IdentityIndex | None = None,
     locator: ChunkLocator | None = None,
+    registry_scope: RegistryScope | None = None,
+    parse: Any = None,
 ) -> Answer:
-    """선별형 — G-2(조건 질의) → K-2(코드 조립). 생성 단계 안 태움."""
-    conditions, fully_matched = parse_conditions(question)
+    """선별형 — G-2(조건 질의) → K-2(코드 조립). 생성 단계 안 태움.
 
-    if not conditions:
+    처리 순서(확정):
+      전체 후보 문서 → 공식 등록부의 활성·검색 대상 → 질문의 전체 조건
+      → 기존 마감일 정책 → 최종 문서 집합 → 화면 출력·채점용 응답
+    중간에서 개수를 자르지 않는다(예전엔 20건만 남기고 그 뒤에 마감 필터를 걸었다).
+    """
+    parse = parse if parse is not None else parse_selection(question)
+
+    if not parse.conditions and not parse.unresolved and not parse.unsupported_or:
         return Answer(
             text="조건을 이해하지 못했습니다. 더 구체적으로 말씀해주세요.",
             task_type="select", abstained=True, condition_query=[], route=ROUTE_CLARIFY,
         )
-    if not fully_matched:
+    if parse.unresolved or parse.unsupported_or:
         return Answer(
-            text=("조건 일부를 인식하지 못했습니다. 인식한 조건: "
-                  + ", ".join(f"{c.field}{c.operator}{c.value}" for c in conditions)
-                  + " — 나머지 조건을 더 구체적으로 말씀해주시겠어요?"),
+            text=_clarify_conditions_text(parse),
             task_type="select", abstained=True,
-            condition_query=[c.__dict__ for c in conditions], route=ROUTE_CLARIFY,
+            condition_query=[c.__dict__ for c in parse.conditions],
+            structured_answer={"clarification_needed": True,
+                               "recognized_conditions": [c.describe()
+                                                         for c in parse.conditions],
+                               "unrecognized": list(parse.unresolved),
+                               "unsupported_or": parse.unsupported_or},
+            route=ROUTE_CLARIFY,
         )
 
-    results, total, condition_warnings = run_conditions_query(table, conditions)
+    scope_ids = registry_scope.eligible_ids if registry_scope is not None else None
+    sel = run_selection_query(table, parse.conditions, allowed_document_ids=scope_ids)
 
-    doc_ids = [r.document_id for r in results]
-    kept_ids, deadline_notes, disclosure = apply_deadline_filter(doc_ids, identity, cfg)
-    kept_set = set(kept_ids)
-    filtered_out = len(results) - len(kept_set)
-    results = [r for r in results if r.document_id in kept_set]
+    # --- 마감일 정책은 '전체 조건을 적용한 뒤' 걸린다 ---
+    kept_ids, deadline_notes, disclosure = apply_deadline_filter(
+        sel.document_ids, identity, cfg)
+    dropped_by_deadline = len(sel.document_ids) - len(kept_ids)
+    kept_undetermined, _undet_notes, _ = apply_deadline_filter(
+        sel.undetermined, identity, cfg)
 
-    lines = [f"- {r.document_id}: {r.value}" for r in results]
-    body = "\n".join(lines) if lines else "조건에 맞는 문서가 없습니다."
+    doc_ids = sorted(dict.fromkeys(kept_ids))            # 중복 제거 + 재현 가능한 순서
+    undetermined = sorted(dict.fromkeys(kept_undetermined))
+
+    # --- 근거: 실제 선택 조건에 쓴 문서·필드만 (없는 문단을 지어내지 않는다) ---
+    citations: list[dict] = []
+    lines: list[str] = []
+    display_limit = cfg.get("select_display_limit", SELECT_DISPLAY_LIMIT_DEFAULT)
+    for doc_id in doc_ids:
+        cells = []
+        for cq in parse.conditions:
+            ev = build_field_evidence(table, doc_id, cq.field, cfg, locator=locator)
+            citations.extend(ev.citations)
+            cells.append(_condition_cell(ev, cq))
+        lines.append(f"- {doc_id} — " + " / ".join(cells))
+
+    shown = lines if display_limit is None else lines[:display_limit]
+    cond_text = " AND ".join(c.describe() for c in parse.conditions)
+
+    # --- 결과의 성격을 첫 문장에서부터 정확히 구분한다 (2026-09-03 라운드2) ---
+    # 예전에는 확정 0건이면 판단 불가가 몇 건이든 "조건에 맞는 공고가 없습니다"로 시작해
+    # 놓고, 뒤에서 "없다는 뜻이 아닙니다"라고 스스로를 뒤집었다(실제 재현).
+    #   A 확정 0 · 판단 불가 0   → 없다고 답한다            abstained=False
+    #   B 확정 0 · 판단 불가 ≥1  → 확인된 게 없을 뿐이다     abstained=True
+    #   C 확정 ≥1 · 판단 불가 ≥1 → 확정분을 주되 전부는 아님  abstained=False
+    # 판정은 등록부 범위와 마감 정책을 **적용한 뒤**의 최종 집합으로 한다.
+    if doc_ids and undetermined:
+        outcome_class = SELECT_OUTCOME_PARTIAL
+        abstained = False
+        header = (f"조건에 맞는 공고 {len(doc_ids)}건 (조건: {cond_text}). "
+                  f"다만 {len(undetermined)}건은 정보 부족으로 판단할 수 없어, "
+                  f"이 목록이 조건에 맞는 공고 전부라고 확정할 수는 없습니다")
+    elif doc_ids:
+        outcome_class = SELECT_OUTCOME_MATCHED
+        abstained = False
+        header = f"조건에 맞는 공고 {len(doc_ids)}건 (조건: {cond_text})"
+    elif undetermined:
+        outcome_class = SELECT_OUTCOME_UNDETERMINED
+        abstained = True
+        header = (f"현재 자료로 조건 일치가 확인된 공고는 없으며, "
+                  f"{len(undetermined)}건은 정보 부족으로 판단할 수 없습니다 "
+                  f"(조건: {cond_text}). 조건에 맞는 공고가 없다는 뜻은 아닙니다")
+    else:
+        outcome_class = SELECT_OUTCOME_EMPTY
+        abstained = False
+        header = ("현재 검색 범위와 마감 정책에서 조건에 맞는 공고가 없습니다 "
+                  f"(조건: {cond_text})")
+    # 0건의 원인이 '조건 불일치'가 아니라 '마감 경과'일 수 있다 — 첫 문장에서 밝힌다
+    if not doc_ids and dropped_by_deadline:
+        header += (f" — 조건은 통과했지만 마감이 지난 공고가 {dropped_by_deadline}건 "
+                   f"있었습니다(기준일 {cfg.get('reference_datetime')})")
+    body = header + ("\n" + "\n".join(shown) if shown else "")
+    if display_limit is not None and len(lines) > len(shown):
+        body += (f"\n… 화면에는 {len(shown)}건만 표시했습니다. "
+                 f"전체 {len(doc_ids)}건은 selected_document_ids 에 모두 들어 있습니다.")
+
+    if registry_scope is None:
+        body += ("\n\n[알림] 공식 문서 등록부가 이 실행에 연결돼 있지 않습니다 — "
+                 "중복 문서가 결과에 섞여 있을 수 있습니다.")
+    elif registry_scope.excluded:
+        pairs = ", ".join(
+            f"{e['document_id']}→{e['duplicate_of_document_id'] or '대표 미상'}"
+            for e in registry_scope.excluded)
+        body += (f"\n\n(공식 등록부 기준 검색 대상 {len(registry_scope.eligible_ids)}"
+                 f"/{registry_scope.document_count}문서 — 중복 제외 {pairs})")
+
     if identity is None:
         body += "\n\n[알림] 마감 필터가 연결돼 있지 않습니다 — 마감 지난 사업이 섞여 있을 수 있습니다."
-    elif filtered_out:
-        body += f"\n\n(마감 지난 사업 {filtered_out}건 제외됨 — 기준일 {cfg['reference_datetime']})"
+    elif dropped_by_deadline:
+        body += (f"\n\n(마감 지난 사업 {dropped_by_deadline}건 제외됨 — "
+                 f"기준일 {cfg['reference_datetime']})")
     if deadline_notes:
         head = f"[마감일 미상 — {disclosure}]" if disclosure else "[마감일 미상]"
         body += f"\n\n{head}\n" + "\n".join(deadline_notes)
-    if condition_warnings:
-        body += "\n\n[확인 필요]\n" + "\n".join(f"- {w}" for w in condition_warnings)
-    if total > len(results) + filtered_out:
-        body += f"\n\n(조건 매칭 전체 {total}건 중 일부만 표시)"
 
-    # 선별형 근거 — 실제 선택 조건별로, 문서마다 근거를 남긴다(첫 조건만 X)
-    citations: list[dict] = []
-    for r in results:
-        for cq in conditions:
-            ev = build_field_evidence(table, r.document_id, cq.field, cfg, locator=locator)
-            citations.extend(ev.citations)
+    if undetermined:
+        reasons = []
+        for doc_id in undetermined[:UNDETERMINED_DISPLAY_LIMIT]:
+            reasons.append("- " + "; ".join(sel.reasons.get(doc_id, [doc_id])))
+        more = len(undetermined) - len(reasons)
+        body += (f"\n\n[판단 불가 {len(undetermined)}건 — 조건 일부를 확정하지 "
+                 f"못했습니다. 조건에 맞지 않는다고 확인된 문서가 아닙니다]\n"
+                 + "\n".join(reasons)
+                 + (f"\n… 외 {more}건(전체 목록은 실행 로그 condition_query 참조)"
+                    if more > 0 else ""))
 
     return Answer(
         text=body, task_type="select",
-        sources=[f"{r.document_id} (추출표: {'/'.join(c.field for c in conditions)})"
-                 for r in results],
-        abstained=False,
-        condition_query=[c.__dict__ for c in conditions],
-        condition_result_doc_ids=[r.document_id for r in results],
+        sources=[f"{doc_id} (추출표: "
+                 f"{'/'.join(c.field for c in parse.conditions)})"
+                 for doc_id in doc_ids],
+        abstained=abstained,
+        condition_query=[c.__dict__ for c in parse.conditions] + [{
+            "kind": "selection_diagnostics",
+            "outcome_class": outcome_class,
+            "confirmed_count": len(doc_ids),
+            "undetermined_count": len(undetermined),
+            "registry_scope": (registry_scope.summary() if registry_scope else None),
+            "scanned_document_count": len(sel.scanned_document_ids),
+            "matched_before_deadline_filter": list(sel.document_ids),
+            "dropped_by_deadline_filter": dropped_by_deadline,
+            "undetermined_document_ids": undetermined,
+            "undetermined_reasons": {d: sel.reasons.get(d, []) for d in undetermined},
+            "background_segments": list(parse.background),
+            "notes": list(parse.notes),
+            "reference_datetime": cfg.get("reference_datetime"),
+            "deadline_filter_on": bool(
+                cfg.get("deadline_filter_default", {}).get("select", False)),
+        }],
+        condition_result_doc_ids=doc_ids,
         route=ROUTE_SELECT,
-        structured_answer=[r.document_id for r in results],
-        selected_document_ids=[r.document_id for r in results],
+        structured_answer=doc_ids,
+        selected_document_ids=doc_ids,
         citations=citations,
         used_sources=[_source_tag(cfg, "extraction_table")]
-        + ([_source_tag(cfg, "identity_v2")] if identity is not None else []),
+        + ([_source_tag(cfg, "identity_v2")] if identity is not None else [])
+        + ([{"source": "document_registry",
+             "registry_version": cfg.get("document_registry_version", cfg.get("corpus")),
+             "eligible_count": len(registry_scope.eligible_ids)}]
+           if registry_scope is not None else []),
     )
 
 
@@ -925,8 +1189,10 @@ def answer_extract_by_table(
 ) -> Answer:
     """12필드 추출형. 마감일은 12필드 밖이라 identity_v2 전용 분기로 처리."""
     active = session.active_document_id if session else None
+    fields = _requested_fields(question)
 
-    if detect_deadline_question(question):
+    # 마감일 하나만 묻는 기존 출력은 보존한다. 함께 물은 다른 필드를 삼키지 않는다.
+    if fields == [_DEADLINE_FIELD] and not needs_explanation(question):
         resolution = resolve_document(question, identity, active_document_id=active)
         if resolution.document_id is None:
             if resolution.candidates:
@@ -958,8 +1224,8 @@ def answer_extract_by_table(
             resolution={"method": resolution.method, "candidates": resolution.candidates},
         )
 
-    field_name = detect_field(question)
-    if field_name is None:
+    field_name = ", ".join(fields)
+    if not fields:
         return _clarify(
             "어느 항목을 확인하고 싶으신가요? (예: 예산, 지역제한, 사업기간, 참가자격 등)",
             "extract")
@@ -980,33 +1246,34 @@ def answer_extract_by_table(
     if session is not None:
         session.active_document_id = doc_id
 
-    ev = build_field_evidence(table, doc_id, field_name, cfg, locator=locator)
+    evidence = [_field_evidence(doc_id, f, table, cfg, identity, locator) for f in fields]
 
     if needs_explanation(question):
         embed_client = get_embed_client()
         gen_client = get_gen_client()
         result = answer_qa_or_extract_by_search(
             question, store, embed_client, gen_client, cfg,
-            document_id=doc_id, structured=[ev], task_type="extract",
+            document_id=doc_id, structured=evidence, task_type="extract",
         )
-        result.condition_query = [{"field": field_name, "document_id": doc_id,
+        result.condition_query = [{"field": f, "document_id": doc_id,
                                    "route": "G-2 + G→I→J→K",
-                                   "resolved_by": resolution.method}]
+                                   "resolved_by": resolution.method} for f in fields]
         result.condition_result_doc_ids = [doc_id]
         return result
 
     return Answer(
-        text=ev.answer_text, task_type="extract", abstained=ev.abstained,
-        sources=[f"{doc_id} (추출표 {cfg.get('extraction_version')}: {field_name})"],
-        condition_query=[{"field": field_name, "document_id": doc_id,
+        text=_structured_lead(evidence), task_type="extract",
+        abstained=any(ev.abstained for ev in evidence),
+        sources=[f"{doc_id} ({ev.used_source.get('source')}: {ev.field_name})" for ev in evidence],
+        condition_query=[{"field": ev.field_name, "document_id": doc_id,
                           "status": ev.status, "route": "G-2",
-                          "resolved_by": resolution.method}],
+                          "resolved_by": resolution.method} for ev in evidence],
         condition_result_doc_ids=[doc_id],
         route=ROUTE_EXTRACT_VALUE,
-        structured_answer=_merge_structured([ev]),
-        citations=ev.citations,
+        structured_answer=_merge_structured(evidence),
+        citations=[c for ev in evidence for c in ev.citations],
         selected_document_ids=[doc_id],
-        used_sources=[ev.used_source],
+        used_sources=[ev.used_source for ev in evidence],
         resolution={"method": resolution.method, "candidates": resolution.candidates},
     )
 
@@ -1021,8 +1288,13 @@ def answer_compare_by_table(
     locator: ChunkLocator | None = None,
 ) -> Answer:
     """비교형 — 필드×문서 구조로 코드가 조립. LLM이 값을 다시 쓰지 않는다."""
-    fields = detect_fields(question)
+    # 차단 판단이 실제 문서 확정 결과를 보도록 먼저 확정하고 그 결과를 넘긴다.
+    # (확정된 문서의 축약 사업명을 미확인 대상으로 오해해 정상 비교를 막던 회귀)
     doc_ids, unknown_orgs = resolve_documents_for_compare(question, identity)
+    scope_issue = comparison_scope_issue(question, identity, resolved_doc_ids=doc_ids)
+    if scope_issue:
+        return _clarify(scope_issue, "compare")  # 비교 대상을 일부만 찾아 임의로 축소하지 않는다.
+    fields = _requested_fields(question)
 
     if not fields:
         return _clarify(
@@ -1047,8 +1319,11 @@ def answer_compare_by_table(
     for field_name in fields:
         lines = []
         for doc_id in doc_ids:
-            ev = build_field_evidence(table, doc_id, field_name, cfg, locator=locator)
-            lines.append(f"| {doc_id} | {ev.short_text or ev.answer_text} |")
+            ev = _field_evidence(doc_id, field_name, table, cfg, identity, locator)
+            # 값 안의 개행·세로선이 비교표의 행과 열을 깨뜨리지 않게 표시만 이스케이프한다.
+            cell = (ev.short_text or ev.answer_text).replace("\r\n", "\n").replace("\r", "\n")
+            cell = cell.replace("|", "\\|").replace("\n", "<br>")
+            lines.append(f"| {doc_id} | {cell} |")
             structured[doc_id][field_name] = ev.answer_text
             evidence_detail[doc_id][field_name] = ev.structured
             # 실제로 비교한 문서×필드의 근거만 기록(첫 문서·첫 위치만 남기지 않는다)
@@ -1074,7 +1349,8 @@ def answer_compare_by_table(
                               "evidence_detail": evidence_detail},
         selected_document_ids=doc_ids,
         citations=citations,
-        used_sources=[_source_tag(cfg, "extraction_table")],
+        used_sources=([_source_tag(cfg, "extraction_table")] if any(f != _DEADLINE_FIELD for f in fields) else [])
+                     + ([_source_tag(cfg, "identity_v2")] if _DEADLINE_FIELD in fields else []),
     )
 
 
@@ -1098,7 +1374,7 @@ def answer_qa(
     if resolution.unknown_orgs and resolution.document_id is None and not resolution.candidates:
         return Answer(
             text=("'" + ", ".join(resolution.unknown_orgs) + "'에 해당하는 사업을 "
-                  "찾을 수 없습니다. 사업명이나 발주기관명을 다시 확인해주세요."),
+                  "찾을 수 없습니다. 공식 목록에 없는 기관입니다. 사업명이나 발주기관명을 다시 확인해주세요."),
             task_type="qa", abstained=True, route=ROUTE_CLARIFY,
             resolution={"method": resolution.method,
                         "unknown_orgs": resolution.unknown_orgs},
@@ -1109,6 +1385,17 @@ def answer_qa(
     if resolution.document_id is None and len(resolution.candidates) > 1:
         return _clarify(_ambiguous_text("물으신 조건", resolution), "qa", resolution)
 
+    # 특정 문서를 못 찾은 것을 '전체 문서 검색'으로 넓히지 않는다. 일반 QA만 전체 검색한다.
+    if resolution.document_id is None and (
+        resolution.method in {"invalid_explicit", "unknown_explicit", "name_conflict"}
+        or looks_like_specific_document(question) or has_anaphora(question)
+        or detect_document_ids(question)
+    ):
+        return _clarify(
+            "질문에서 지정한 문서를 확정할 수 없습니다. 문서 ID나 정확한 사업명을 확인해주세요.",
+            "qa", resolution,
+        )
+
     doc_id = resolution.document_id
     if doc_id and session is not None:
         session.active_document_id = doc_id
@@ -1116,13 +1403,12 @@ def answer_qa(
     # 확정된 구조화 필드가 질문에 있으면 구조화 자료를 함께 쓴다(3-2 확정)
     structured: list[StructuredEvidence] = []
     if doc_id:
-        if needs_deadline_data(question) and identity is not None:
-            structured.append(build_deadline_evidence(
-                doc_id, identity, cfg,
+        if needs_deadline_data(question):
+            structured.append(_field_evidence(
+                doc_id, _DEADLINE_FIELD, table, cfg, identity, locator,
                 eligibility=detect_deadline_eligibility_question(question),
             ))
-        field_name = detect_field(question)
-        if field_name and table:
+        for field_name in detect_fields(question):
             structured.append(build_field_evidence(table, doc_id, field_name, cfg,
                                                    locator=locator))
 
@@ -1170,8 +1456,42 @@ def answer(
     identity: IdentityIndex | None = None,
     session: SessionState | None = None,
     locator: ChunkLocator | None = None,
+    registry_scope: RegistryScope | None = None,
 ) -> Answer:
     r: RouteResult = route(question, cfg)
+
+    # 라우터는 identity 없이 잠정 판단을 한다. 여기서 identity(기관명·사업명)를 넣어
+    # **같은 함수**로 최종 판단을 한 번 더 한다 — 라우터와 실행부에 서로 다른 규칙을
+    # 만들지 않기 위해서다.
+    #
+    # ⚠️ 2026-09-03 라운드2: 예전에는 "목록" 같은 복수 표현이 있으면 이 검사 자체를
+    #    건너뛰어서, "○○재단 ○○사업의 필수 제출 서류 목록을 알려줘"가 선별형으로
+    #    빠지고 조건을 모르겠다며 되물었다(실제 재현). 이제 복수 표현과 무관하게
+    #    문서 특정을 먼저 보고, 명시적인 전체 범위 표현이 있을 때만 무시한다.
+    select_parse = None
+    if r.task_type == "select":
+        parse = parse_selection(question)
+        if not is_selection_question(question, parse, identity=identity):
+            # ⚠️ 기관·사업명이 **여러 문서**에 걸리는데 조건까지 읽혔다면, 그건
+            #    "그 기관 안에서 조건에 맞는 걸 골라 달라"는 요청이다. 이번 범위에서
+            #    지원하지 않는데, 그냥 "어느 문서냐"고만 되물으면 읽은 조건이 통째로
+            #    사라진다(적대적 점검에서 확인). 조건을 되살려 함께 알린다.
+            res = (resolve_document(question, identity)
+                   if identity is not None else None)
+            # ⚠️ "…조건이 명시돼 있어?" 처럼 여러 건을 원한다는 신호가 없는 질문은
+            #    기관 범위 선별이 아니라 그냥 문서 특정이 덜 된 질문이다. 그 경우는
+            #    기존 후보 확인 절차(어느 문서인지 되묻기)가 맞다.
+            if (parse.conditions and parse.has_plural_marker and res is not None
+                    and res.document_id is None and res.candidates):
+                parse.unresolved.append(
+                    f"기관·사업명으로 범위를 좁힌 선별은 이번 범위에서 지원하지 않습니다"
+                    f"(그 이름에 해당하는 문서 {len(res.candidates)}건). 문서 ID로 한 건을 "
+                    f"지정하시거나, 전체 공고 기준으로 물어봐 주세요")
+                select_parse = parse
+            else:
+                method = names_specific_document(question, identity) or "지시표현"
+                r = RouteResult("extract", f"{r.matched_rule}→문서특정({method})",
+                                is_fallback=r.is_fallback)
 
     try:
         if r.task_type == "no_search_needed":
@@ -1186,7 +1506,9 @@ def answer(
                     task_type=r.task_type, route=ROUTE_GREETING)
         elif r.task_type == "select":
             result = answer_select_by_table(question, table, cfg, identity=identity,
-                                            locator=locator)
+                                            locator=locator,
+                                            registry_scope=registry_scope,
+                                            parse=select_parse)
         elif r.task_type == "extract":
             result = answer_extract_by_table(
                 question, table, store, get_embed_client, get_gen_client, cfg,
@@ -1310,8 +1632,22 @@ def build_runtime(args, cfg) -> dict[str, Any]:
         locator = ChunkLocator.from_vector_store(store)
         locator_source = f"{index_path} (인덱스 메타데이터 — 검색 제외 청크 없음)"
 
+    # 공식 등록부의 검색·선별 대상 범위(활성 + retrieval_eligible).
+    # 문서 ID를 코드에 적어 제외하지 않고 등록부 값 그대로 쓴다.
+    registry_scope = None
+    if registry_arg and Path(registry_arg).exists():
+        registry_scope = load_registry_scope(registry_arg)
+        print(f"문서 등록부 검색 대상 {len(registry_scope.eligible_ids)}"
+              f"/{registry_scope.document_count}문서 "
+              f"(제외 {len(registry_scope.excluded)}건)")
+    else:
+        print(f"⚠️  공식 문서 등록부를 찾지 못했습니다({registry_arg}) — 선별형 결과에 "
+              f"콘텐츠 중복 문서가 섞일 수 있습니다. --registry 로 지정하세요.",
+              file=sys.stderr)
+
     return {
         "store": store, "table": table, "identity": identity, "locator": locator,
+        "registry_scope": registry_scope,
         "index_check": {"index_dir": index_check["index_dir"],
                         "vector_dimension": index_check["vector_dimension"],
                         "tag": index_check["tag"],
@@ -1374,7 +1710,7 @@ def main() -> None:
     t0 = time.perf_counter()
     result = answer(args.question, rt["store"], get_embed_client, get_gen_client,
                     rt["table"], cfg, identity=rt["identity"], session=session,
-                    locator=rt["locator"])
+                    locator=rt["locator"], registry_scope=rt["registry_scope"])
     result.latency_ms = round((time.perf_counter() - t0) * 1000)
 
     usage = Usage()

@@ -27,7 +27,9 @@ from typing import Any
 from text_normalize import (
     normalize_display,
     normalize_org_key,
+    normalize_org_key_unbracketed,
     normalize_project_key,
+    normalize_project_key_unbracketed,
     strip_leading_org_from_project,
 )
 
@@ -75,6 +77,17 @@ class IdentityRecord:
     @property
     def project_key(self) -> str:
         return normalize_project_key(self.project_name)
+
+    @property
+    def org_key_unbracketed(self) -> str:
+        """괄호 주석을 뗀 기관명 키. "한국철도공사 (용역)" → "한국철도공사"."""
+        return normalize_org_key_unbracketed(self.buyer_org)
+
+    @property
+    def project_key_unbracketed(self) -> str:
+        """괄호 주석을 뗀 사업명 키.
+        "봉화군 재난통합관리시스템 고도화 사업(협상)(긴급)" → "봉화군재난통합관리시스템고도화사업"."""
+        return normalize_project_key_unbracketed(self.project_name)
 
     @property
     def project_core_key(self) -> str:
@@ -175,8 +188,18 @@ def load_identity(path: Path | str) -> IdentityIndex:
         if rec.org_key:
             index.by_org_key.setdefault(rec.org_key, []).append(doc_id)
             index.org_display_by_key.setdefault(rec.org_key, rec.buyer_org)
+        # 괄호 주석을 뗀 보조 키도 같은 색인에 넣는다. 사람은 "한국철도공사 (용역)"을
+        # "한국철도공사"라고 부르고, "…고도화 사업(협상)(긴급)"을 "…고도화 사업"이라고
+        # 부른다. 임의 유사도가 아니라 **괄호 제거**라는 결정적 변환만 쓴다.
+        org_unbr = rec.org_key_unbracketed
+        if org_unbr and org_unbr != rec.org_key:
+            index.by_org_key.setdefault(org_unbr, []).append(doc_id)
+            index.org_display_by_key.setdefault(org_unbr, rec.buyer_org)
         if rec.project_key:
             index.by_project_key.setdefault(rec.project_key, []).append(doc_id)
+        proj_unbr = rec.project_key_unbracketed
+        if proj_unbr and proj_unbr != rec.project_key:
+            index.by_project_key.setdefault(proj_unbr, []).append(doc_id)
         core = rec.project_core_key
         if core:
             index.by_project_core_key.setdefault(core, []).append(doc_id)
