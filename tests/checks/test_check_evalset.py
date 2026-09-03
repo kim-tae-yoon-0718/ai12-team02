@@ -78,11 +78,25 @@ def test_location_metadata_line_exempt():
 
 
 def test_location_array_ok():
-    r = _rec(task_type="qa", answer_type="comparison", location=[
-        {"document": "RFP-000038", "section": "A", "ref_no": "A · 문단 3", "line": 51},
-        {"document": "RFP-000043", "section": "B", "ref_no": "B · 문단 5", "line": 62},
-    ])
+    r = _rec(task_type="qa", answer_type="comparison",
+             answer_raw=[{"항목": "예산", "RFP-000038": "1억", "RFP-000043": "2억"}],
+             location=[
+                 {"document": "RFP-000038", "field": "예산", "section": "A", "ref_no": "A · 문단 3", "line": 51},
+                 {"document": "RFP-000043", "field": "예산", "section": "B", "ref_no": "B · 문단 5", "line": 62},
+             ])
     assert check_schema(r, 1) == []
+
+
+def test_comparison_bad_doc_key_flagged():
+    r = _rec(task_type="qa", answer_type="comparison",
+             answer_raw=[{"항목": "예산", "RFP-38": "1억"}])
+    assert any("RFP-38" in e for e in check_schema(r, 1))
+
+
+def test_comparison_missing_항목_flagged():
+    r = _rec(task_type="qa", answer_type="comparison",
+             answer_raw=[{"category": "예산", "RFP-000038": "1억"}])
+    assert any("항목" in e for e in check_schema(r, 1))
 
 
 def test_location_missing_line_flagged():

@@ -144,9 +144,11 @@ class StubJudge(Judge):
     def score(self, prompt_name: str, **vars_) -> dict:
         target = str(vars_.get("item") or vars_.get("checkpoint") or "")
         text = str(vars_.get("answer") or "")
-        ok = bool(target) and normalize_text(target) in normalize_text(text)
+        # 팀장 2-3: 순수 substring 이 아니라 경계 포함 매처를 쓴다 (실제 의미비교 모델은 별개).
+        from .task_scoring import _item_match
+        ok = bool(target) and _item_match(target, text)
         return {"verdict": ok, "score": 1.0 if ok else 0.0,
-                "reason": "stub: 문자열 포함 판정", "_judge": "stub/dev"}
+                "reason": "stub: 경계 포함 판정(의미비교 아님)", "_judge": "stub/dev"}
 
 
 def tier_correlation(dev_scores: list[float], final_scores: list[float]) -> dict:

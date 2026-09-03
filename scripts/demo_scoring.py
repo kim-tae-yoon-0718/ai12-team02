@@ -78,6 +78,7 @@ for iid, triple in RESP.items():
     print(f"정답: {gold[:110]}")
     print("─"*78)
     for label, rd in zip(LABELS, triple):
+        rd.setdefault('abstained', bool(rd.get('abstained', False)))
         resp = ModelResponse(id=iid, **rd)
         out = score_item(it, resp, cfg)
         ts, fs, ab, final = out["task_score"], out["format_status"], out["abstention"], out["final_status"]

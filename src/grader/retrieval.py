@@ -88,10 +88,20 @@ def grade_stage(golds: list[Location], candidates: list[RetrievedItem],
     }
 
 
+def _search_not_used(response: ModelResponse, non_search_routes) -> str | None:
+    """검색을 쓰지 않은 문항이면 이유 문자열, 썼으면 None (팀장).
+    청크 검색 경로로 푼 문항만 검색 점수를 계산한다."""
+    r = (response.route or "").strip().lower()
+    if r and non_search_routes and r in {x.lower() for x in non_search_routes}:
+        return f"route={response.route} — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+    return None
+
+
 def grade_retrieval(item: EvaluationItem, response: ModelResponse,
                     retrieval_k: int, reranker_k: int, context_k: int,
                     precision: str = DEFAULT_PRECISION,
-                    eval_k: tuple[int, ...] = (3, 5)) -> list[dict]:
+                    eval_k: tuple[int, ...] = (3, 5),
+                    non_search_routes=frozenset()) -> list[dict]:
     """문항 하나의 검색 채점 — retrieval_k(후보 풀) / reranker_k(재정렬 후) /
     context_k(실제 LLM 입력) 세 단계를 각각 낸다.
 
@@ -103,6 +113,11 @@ def grade_retrieval(item: EvaluationItem, response: ModelResponse,
       rank_failure   : 후보 풀에는 있는데 context(실제 입력)까지 못 옴 → 재정렬(H)의 자리
       none           : context 안에 정답 근거가 있음
     """
+    skip = _search_not_used(response, non_search_routes)
+    if skip:
+        return [{"applicable": False, "stage": s, "reason": skip}
+                for s in ("retrieval_k", "reranker_k", "context_k")]
+
     golds = _gold_locations(item)
     pool = response.retrieved
     reranked = response.reranked or response.retrieved
@@ -140,7 +155,8 @@ def grade_retrieval(item: EvaluationItem, response: ModelResponse,
 # ------------------------------------------------------------------ 3-4-3 출처 좌표 채점
 
 def grade_citation(item: EvaluationItem, response: ModelResponse,
-                   precision: str = DEFAULT_PRECISION, enabled: bool = True) -> dict:
+                   precision: str = DEFAULT_PRECISION, enabled: bool = True,
+                   non_search_routes=frozenset()) -> dict:
     """3-4-3 출처 좌표 채점 — 정답 location과 응답 citations의 좌표가 실제로
     일치하는지를 채점한다.
 
@@ -152,6 +168,9 @@ def grade_citation(item: EvaluationItem, response: ModelResponse,
     """
     if not enabled:
         return {"applicable": False, "reason": "grading.grade_citations=false"}
+    skip = _search_not_used(response, non_search_routes)
+    if skip:
+        return {"applicable": False, "reason": skip}
     if item.answer_source == "metadata":
         return {"applicable": False, "reason": "answer_source=metadata — CSV 메타데이터 답변, 문서 좌표 채점 대상 아님(임현진 09-01)"}
     golds = _gold_locations(item)

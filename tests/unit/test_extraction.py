@@ -52,14 +52,14 @@ def _item(**over):
 
 def test_doc_selection_same_org_confusion():
     it = _item()
-    resp = ModelResponse(id="T", answer="x", selected_document_ids=["B"])
+    resp = ModelResponse(id="T", answer="x", abstained=False, selected_document_ids=["B"])
     r = grade_doc_selection(it, resp, doc_org={"A": "조달청", "B": "조달청"})
     assert r["error_kind"] == "same_org_confusion"
 
 
 def test_doc_selection_no_selection():
     it = _item()
-    resp = ModelResponse(id="T", answer="x", selected_document_ids=[])
+    resp = ModelResponse(id="T", answer="x", abstained=False, selected_document_ids=[])
     r = grade_doc_selection(it, resp)
     assert r["error_kind"] == "no_selection"
 
@@ -67,6 +67,6 @@ def test_doc_selection_no_selection():
 def test_doc_selection_not_applicable_when_specified():
     # 문서가 특정된 문항 — unspecified_type 없음 → document_unspecified=False
     it = _item(unspecified_type=None, intermediate_answer=None)
-    resp = ModelResponse(id="T", answer="x")
+    resp = ModelResponse(id="T", answer="x", abstained=False)
     r = grade_doc_selection(it, resp)
     assert r["applicable"] is False

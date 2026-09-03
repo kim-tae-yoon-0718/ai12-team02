@@ -46,6 +46,10 @@ class RetrievalConfig:
     precision: str = "ref_no"  # document | section | ref_no (2-9 확정 단위)
     # 이태민 top_k=5 결과를 채점 때 여러 k로 잘라 별도 기록 (base.yaml top_k 주석, 김하루 협의)
     eval_k: tuple[int, ...] = (3, 5)
+    # 팀장: 검색을 쓰지 않고 답한 문항(추출표·identity 경로)은 검색 평가 대상 아님.
+    # response.route 가 이 목록에 있으면 grade_retrieval/grade_citation 이 applicable=False.
+    non_search_routes: frozenset[str] = frozenset(
+        {"extract_table", "extraction_table", "table", "identity", "metadata", "select_table"})
 
 
 @dataclass(frozen=True)
@@ -55,6 +59,10 @@ class GradingConfig:
     miss_weight: float = 0.7
     require_table_format: bool = True
     grade_citations: bool = True
+    residual_limit: int = 20  # 팀장 2-9: config 관리, 실측 전까지 20
+    # 팀장 3: 공식 평가셋이 팀 결정을 아직 반영 못한 문항 id. 모델 오류로 세지 않고
+    # KNOWN_GROUND_TRUTH_MISMATCH 로 분리 보고, 집계에서 제외.
+    known_ground_truth_mismatch: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -198,6 +206,9 @@ def load_config(path: str | Path = "config/grader.yaml",
             context_k=int(retrieval_raw.get("context_k", 5)),
             precision=retrieval_raw.get("precision", "ref_no"),
             eval_k=tuple(int(k) for k in retrieval_raw.get("eval_k", (3, 5))),
+            non_search_routes=frozenset(retrieval_raw.get(
+                "non_search_routes",
+                ["extract_table", "extraction_table", "table", "identity", "metadata", "select_table"])),
         ),
         grading=GradingConfig(
             allow_partial=bool(grading_raw.get("allow_partial", False)),
@@ -205,6 +216,8 @@ def load_config(path: str | Path = "config/grader.yaml",
             miss_weight=float(grading_raw.get("miss_weight", 0.7)),
             require_table_format=bool(grading_raw.get("require_table_format", True)),
             grade_citations=bool(grading_raw.get("grade_citations", True)),
+            residual_limit=int(grading_raw.get("residual_limit", 20)),
+            known_ground_truth_mismatch=tuple(grading_raw.get("known_ground_truth_mismatch", ())),
         ),
         gate=GateConfig(
             severity_gate=gate_raw.get("severity_gate", {"critical": 0.85}),

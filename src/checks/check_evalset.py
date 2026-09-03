@@ -123,6 +123,23 @@ def check_schema(item: dict, line_num: int) -> list[str]:
     if item.get("task_type") == "selection" and "answer_source" not in item:
         errors.append(f"line {line_num}: task type 'selection' needs answer source")
 
+    # 비교형(2-8-4) 정답 구조 — 팀장 2-6: 문서 ID 는 RFP-000000 형식만, 필드 키는 '항목' 확정
+    if item.get("answer_type") == "comparison":
+        rows = item.get("answer_normalized") or item.get("answer_raw")
+        if not isinstance(rows, list):
+            errors.append(f"line {line_num}: comparison answer must be a list of rows")
+        else:
+            for r_i, row in enumerate(rows):
+                if not isinstance(row, dict):
+                    errors.append(f"line {line_num}: comparison row {r_i} is not an object")
+                    continue
+                if not str(row.get("항목", "")).strip():
+                    errors.append(f"line {line_num}: comparison row {r_i} missing '항목'")
+                for k in row:
+                    if k != "항목" and not re.match(r"RFP-\d{6}$", str(k).strip()):
+                        errors.append(
+                            f"line {line_num}: comparison row {r_i} unknown key '{k}' (RFP-000000 형식 아님)")
+
     for k, v in item.items():
         if v is None:
             errors.append(f"line {line_num}: invalid value(null)")
@@ -312,6 +329,11 @@ def _gold_doc_ids(item: dict) -> list[str]:
     out: list[str] = []
     if item.get("answer_type") == "document_set" and isinstance(item.get("answer_raw"), list):
         out += [str(d) for d in item["answer_raw"]]
+    if item.get("answer_type") == "comparison":  # 비교형 행의 RFP-* 키
+        rows = item.get("answer_normalized") or item.get("answer_raw")
+        for row in (rows if isinstance(rows, list) else []):
+            if isinstance(row, dict):
+                out += [k for k in row if k != "항목" and _DOC_ID_RE.match(str(k))]
     for key in ("document_id", "intermediate_answer", "active_document_id"):
         v = item.get(key)
         if isinstance(v, list):

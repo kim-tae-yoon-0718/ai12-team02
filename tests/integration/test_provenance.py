@@ -141,10 +141,11 @@ def test_missing_versions_fall_back_to_unknown_without_dropping_fields(tmp_path:
 
     prov = report["manifest"]["provenance"]
     assert set(prov) == EXPECTED_FIELDS  # 6축 전부 존재
-    for k in ("corpus", "preprocess", "table", "evalset"):
+    for k in ("corpus", "preprocess", "evalset"):
         assert prov[k] == "UNKNOWN"  # 버전 정보 없음 → 축은 남고 값만 UNKNOWN
     assert prov["index"] == "v1"    # config/grader.yaml 기본값 (base.yaml §①)
-    assert prov["scorer"] == "v1"   # config/grader.yaml 기본값
+    assert prov["table"] == "v3"    # config/grader.yaml — 실사용값 rfp_extraction_table_v3 (팀장)
+    assert prov["scorer"] == "v2"   # config/grader.yaml — 채점 오류 수정 버전
 
     for row in per_item:
         assert set(row["provenance"]) == EXPECTED_FIELDS

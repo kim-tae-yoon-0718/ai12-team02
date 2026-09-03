@@ -40,10 +40,10 @@ EVALSET = [
 ]
 
 RESPONSES = [
-    {"id": "Q001", "answer": "2건입니다", "selected_document_ids": ["D1", "D3", "D4"]},
-    {"id": "Q002", "answer": "2026년 9월 16일까지입니다",  # ★critical 필드 오답
+    {"id": "Q001", "answer": "2건입니다", "abstained": False, "selected_document_ids": ["D1", "D3", "D4"]},
+    {"id": "Q002", "answer": "2026년 9월 16일까지입니다", "abstained": False,  # ★critical 필드 오답
      "citations": [{"document": "D1", "section": "개요", "ref_no": "개요 · 문단 1", "line": 12}]},  # 출처는 맞게(3-4-3)
-    {"id": "Q003", "answer": "사업자등록증, 법인등기부등본이 필요합니다",
+    {"id": "Q003", "answer": "사업자등록증, 법인등기부등본이 필요합니다", "abstained": False,
      "structured_answer": ["사업자등록증", "법인등기부등본"]},  # 3개 중 2개 — 오답이어야 함
     {"id": "Q004", "answer": "해당 사업을 코퍼스에서 찾을 수 없습니다", "abstained": True,
      "unanswerable_reason": "not_in_corpus"},

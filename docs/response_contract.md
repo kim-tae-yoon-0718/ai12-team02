@@ -19,9 +19,9 @@
 | `citations` | 좌표[] | 좌표 채점 시 | 답변이 근거로 든 출처 좌표. **배열** — 비교형은 여러 개. 3-4-3: 정답 위치와 대조해 "누락 / 잘못된 근거" 구분 |
 | `selected_document_ids` | str[] | 선별형 | 선별형(document_set) 결과 문서 ID 배열 |
 | `active_document_id` | str \| null | 대화형 | 시나리오형(2-5) 상태 |
-| `abstained` | bool | 기권 시 | 시스템이 답을 거부했는지 (`answer_type=unanswerable` 채점) |
+| `abstained` | bool | ✅ **모든 응답** | 답변함=`false` / 보류·거절=`true`. **키 자체가 없으면 형식 오류** — 본문 표현으로 채점기가 추측하지 않는다(팀장 2-4) |
 | `unanswerable_reason` | str \| null | 선택 | 기권 사유 자유 텍스트 |
-| `route` | str \| null | 권장 | **내부 실행 경로**(예: `qa`, `extract_table`, `select`). ★점수에 안 쓴다 — 결과에 기록만, 경로별 오류 진단용. task_type 과 달라도 감점 없음 |
+| `route` | str \| null | 권장 | **내부 실행 경로**. ★내용 점수엔 안 쓴다. 단 **검색 평가 대상 구분**엔 쓴다 — `config.retrieval.non_search_routes`(추출표·identity 등)에 있으면 검색/citation 채점 = 해당 없음. 청크 검색 경로로 푼 문항만 검색 점수 계산(팀장). task_type≠route 감점 없음 |
 | `failure` | str \| null | 오류 시 | 오류로 인한 0점(`failure` 채워짐) vs 오답 0점 구분 (4-5) |
 | `latency_ms` | float \| null | 선택 | 응답 시간 (보조 지표) |
 | `cost_usd` | float | 선택 | 호출 비용 (보조 지표, 기본 0.0) |
@@ -63,4 +63,6 @@
 - `answer_type`(평가셋) = 실제 채점기 선택 (`grade_content` 디스패치)
 - `route`(모델) = 결과에 기록만. `route` 이름을 평가셋과 맞출 필요 없음 —
   같은 경로를 같은 이름으로 부르기만 하면 grader 가 경로별로 집계함
-- `task_type=qa` 인데 `route=extract_table` 이어도 **감점 없음**
+- `task_type=qa` 인데 `route=extract_table` 이어도 **내용 점수 감점 없음**
+- 다만 `route` 가 `non_search_routes`(기본: extract_table / identity / table / metadata …)에 있으면
+  그 문항의 **검색·출처 좌표 점수는 '해당 없음'** — 검색을 안 쓴 문항을 검색 실패로 세지 않는다

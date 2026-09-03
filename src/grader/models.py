@@ -330,7 +330,9 @@ class ModelResponse(BaseModel):
     citations: list[Location] = Field(default_factory=list)  # 3-4-3 출처 좌표
     selected_document_ids: list[str] = Field(default_factory=list)  # 선별형 결과
     active_document_id: str | None = None  # 대화형 상태 (2-5)
-    abstained: bool = False
+    # ★모든 응답 필수(팀장 2-4). 키 자체가 없으면(None) 형식 오류로 잡는다 —
+    #   본문 표현으로 채점기가 임의로 추측하지 않는다.
+    abstained: bool | None = None
     # 시스템이 기권 사유를 자유 텍스트로 함께 낼 수 있음(v0.2: 평가셋은 answer_raw 문자열).
     unanswerable_reason: str | None = None
     route: str | None = None  # 4-10-1 분기 결과

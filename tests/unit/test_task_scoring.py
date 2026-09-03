@@ -26,7 +26,7 @@ def _item(**over):
 
 
 def _resp(**over):
-    base = dict(id="T", answer="x")
+    base = dict(id="T", answer="x", abstained=False)
     base.update(over)
     return ModelResponse(**base)
 

@@ -124,10 +124,13 @@ class GraderRunner:
 
         self.corpus = _pick(corpus, by.get("corpus"), versions.get("corpus"), config.provenance.corpus)
         self.preprocess = _pick(preprocess, by.get("preprocess"), versions.get("preprocess"), config.provenance.preprocess)
-        self.table = _pick(table, by.get("table"), versions.get("table"), config.provenance.table)
+        # table 은 실제 존재하는 rfp_extraction_table_v* 디렉토리 버전을 우선 — base.yaml 선언이
+        # 뒤처질 수 있다(팀장: 결과에 실사용값 기록). versioning._latest_table_version 이 감지.
+        self.table = _pick(table, versions.get("table"), by.get("table"), config.provenance.table)
         self.index = _pick(index, by.get("index"), config.provenance.index)
         self.evalset = _pick(evalset, by.get("evalset"), versions.get("evalset"), config.provenance.evalset)
-        self.scorer = _pick(scorer, by.get("scorer"), config.provenance.scorer)
+        # scorer 는 채점기가 자기 자신을 기술하는 값 — grader.yaml 이 우선(팀 base.yaml 보다).
+        self.scorer = _pick(scorer, config.provenance.scorer, by.get("scorer"))
         # 심판 프롬프트 세부 버전 — 6칸이 아니라 manifest 부가 정보(오염 방지 4-9 재료).
         self.judge_prompt_versions = {name: prompt_repo.version_of(name) for name in config.judge.names}
         self.cache = FileCache(config.cache.directory) if config.cache.enabled else None
@@ -182,19 +185,21 @@ class GraderRunner:
             "miss_weight": self.config.grading.miss_weight,
             "require_table_format": self.config.grading.require_table_format,
             "grade_citations": self.config.grading.grade_citations,
+            "residual_limit": self.config.grading.residual_limit,
         }, matcher)
 
+        nsr = self.config.retrieval.non_search_routes
         stages = retr.grade_retrieval(
             evaluation, response,
             self.config.retrieval.retrieval_k, self.config.retrieval.reranker_k,
             self.config.retrieval.context_k, self.config.retrieval.precision,
-            self.config.retrieval.eval_k,
+            self.config.retrieval.eval_k, non_search_routes=nsr,
         )
         retrieval_diag = [RetrievalDiagnostic(**s) for s in stages]
 
         citation_diag = CitationDiagnostic(**retr.grade_citation(
             evaluation, response, self.config.retrieval.precision,
-            enabled=self.config.grading.grade_citations,
+            enabled=self.config.grading.grade_citations, non_search_routes=nsr,
         ))
 
         for judge_name in self.config.judge.whole_item_metrics:
@@ -297,17 +302,27 @@ def grade_all(runner: GraderRunner, items: list[EvaluationItem],
     answer_sources: list[str] = []
     missing: list[str] = []
 
+    # 팀장: 공식 평가셋이 팀 결정을 아직 반영 못한 문항은 모델 오류로 세지 않고 따로 보고.
+    ktm = set(getattr(runner.config.grading, "known_ground_truth_mismatch", ()) or ())
+    scored_rows: list[dict] = []
+
     for it in items:
         resp = responses.get(it.id)
         if resp is None:
             missing.append(it.id)
             continue
         result = runner.run_one(it, resp, mode)
+        if it.id in ktm:
+            result.final_status = "KNOWN_GROUND_TRUTH_MISMATCH"
         eval_results.append(result)
         row = _result_row(it, result)
         row["failure"] = resp.failure
         row["route"] = resp.route
+        if it.id in ktm:
+            row["excluded_from_aggregate"] = True
         results_rows.append(row)
+        if it.id not in ktm:
+            scored_rows.append(row)
 
         # run_one 이 이미 계산한 검색 진단을 재사용한다 — 같은 채점을 문항마다 두 번 하지 않는다
         # (citation 과 동일한 방침).
@@ -324,7 +339,9 @@ def grade_all(runner: GraderRunner, items: list[EvaluationItem],
             answer_sources.append(it.answer_source)
 
     return {
-        "results_rows": results_rows,
+        "results_rows": results_rows,          # 전체 (per_item 출력용)
+        "scored_rows": scored_rows,             # 집계 대상 (KNOWN_GROUND_TRUTH_MISMATCH 제외)
+        "known_mismatch_ids": sorted(ktm & {r["id"] for r in results_rows}),
         "eval_results": eval_results,
         "retrieval_agg": retr.aggregate_retrieval(retrieval_stage_rows),
         "citation_agg": retr.aggregate_citation(citation_rows),
@@ -339,7 +356,7 @@ def layer_eval(runner: GraderRunner, items: list[EvaluationItem],
               extraction_report: dict | None) -> dict:
     graded = grade_all(runner, items, responses, mode)
     report = diag.full_report(
-        graded["results_rows"],
+        graded["scored_rows"],   # KNOWN_GROUND_TRUTH_MISMATCH 문항은 집계에서 제외(팀장)
         retrieval_agg=graded["retrieval_agg"],
         citation_agg=graded["citation_agg"],
         extraction_agg=(extraction_report or {}).get("report"),
@@ -353,6 +370,8 @@ def layer_eval(runner: GraderRunner, items: list[EvaluationItem],
     if sel is not None and ext_acc is not None:
         report["circularity"] = extr.circularity_flag(sel, ext_acc, graded["answer_sources"])
     report["missing_predictions"] = graded["missing_predictions"]
+    if graded["known_mismatch_ids"]:
+        report["known_ground_truth_mismatch"] = graded["known_mismatch_ids"]
 
     gate = report["severity"]["gate"]
     failed = [k for k, v in gate.items() if v.get("status") == "FAIL"]

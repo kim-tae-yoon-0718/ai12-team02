@@ -48,7 +48,7 @@ def test_runner_with_mock(tmp_path: Path):
             "answer_raw": "5억원",
         }
     )
-    response = ModelResponse(id="Q0001", answer="5억원", contexts=[])
+    response = ModelResponse(id="Q0001", answer="5억원", contexts=[], abstained=False)
 
     result = runner.run_one(evaluation, response, mode="development")
     assert result.id == "Q0001"

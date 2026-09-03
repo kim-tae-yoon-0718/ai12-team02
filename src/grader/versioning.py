@@ -69,6 +69,15 @@ def _version_files(path: str | Path | None) -> list[Path]:
     return out
 
 
+def _latest_table_version() -> str | None:
+    """rfp_extraction_table_v3 처럼 버전이 올라간다 — 가장 높은 v 를 추출 테이블 실사용값으로."""
+    root = os.environ.get("RAG_ROOT")
+    if not root:
+        return None
+    dirs = sorted(glob.glob(str(Path(root) / "shared_data/processed/rfp_extraction_table_v*")))
+    return ("v" + dirs[-1].rsplit("_v", 1)[-1]) if dirs else None
+
+
 def read_versions(path: str | Path | None = None) -> dict[str, str]:
     """VERSION.txt 여러 개를 읽어 6-자산 이름 기준 {key: value} 로 합친다(먼저 나온 값 우선)."""
     merged: dict[str, str] = {}
@@ -77,6 +86,11 @@ def read_versions(path: str | Path | None = None) -> dict[str, str]:
             continue
         for k, v in _parse(p.read_text(encoding="utf-8-sig").strip()).items():
             merged.setdefault(k, v)
+    # 추출 테이블은 별도 디렉토리 버전이 실사용값 — chunks VERSION.txt 의 'table version' 보다 우선.
+    if path is None:
+        t = _latest_table_version()
+        if t:
+            merged["table"] = t
     return merged
 
 

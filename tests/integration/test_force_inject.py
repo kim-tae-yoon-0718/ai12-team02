@@ -32,7 +32,7 @@ def _chunks_file(tmp_path):
 
 def test_forced_context_injects_gold_chunk(tmp_path):
     items = {"Q1": _item()}
-    responses = {"Q1": ModelResponse(id="Q1", answer="5억원", contexts=[], retrieved=[])}
+    responses = {"Q1": ModelResponse(id="Q1", answer="5억원", abstained=False, contexts=[], retrieved=[])}
     by_doc = load_chunk_index(_chunks_file(tmp_path))
 
     changed = apply_forced_context(items, responses, by_doc, precision="section")
@@ -47,7 +47,7 @@ def test_forced_context_injects_gold_chunk(tmp_path):
 
 def test_forced_doc_sets_selected_ids():
     items = {"Q1": _item()}
-    responses = {"Q1": ModelResponse(id="Q1", answer="x", selected_document_ids=["WRONG"])}
+    responses = {"Q1": ModelResponse(id="Q1", answer="x", abstained=False, selected_document_ids=["WRONG"])}
     apply_forced_doc(items, responses)
     assert responses["Q1"].selected_document_ids == ["RFP-1"]
     assert responses["Q1"].active_document_id == "RFP-1"
@@ -69,7 +69,7 @@ def test_forced_context_comparison_multi_doc(tmp_path):
             {"document": "RFP-B", "section": "예산절", "ref_no": "paragraph 1"},
         ],
     })
-    responses = {"C1": ModelResponse(id="C1", answer="표")}
+    responses = {"C1": ModelResponse(id="C1", answer="표", abstained=False)}
     apply_forced_context({"C1": it}, responses, load_chunk_index(p), precision="section")
     docs = {c.document_id for c in responses["C1"].contexts}
     assert docs == {"RFP-A", "RFP-B"}

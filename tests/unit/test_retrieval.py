@@ -13,7 +13,7 @@ def _item(**over):
 
 
 def _resp(**over):
-    base = dict(id="T", answer="x")
+    base = dict(id="T", answer="x", abstained=False)
     base.update(over)
     return ModelResponse(**base)
 
@@ -206,7 +206,7 @@ def test_multi_k_eval_records_k3_and_k5():
     loc = Location(document="A", section="4장", ref_no="표1")
     it = EvaluationItem(id="T", question="q", task_type="qa", answer_type="value",
                         answer_raw="x", location=loc)
-    resp = ModelResponse(id="T", answer="x", retrieved=[
+    resp = ModelResponse(id="T", answer="x", abstained=False, retrieved=[
         RetrievedItem(document_id="X", location=Location(document="X", section=f"{i}장", ref_no="표9"))
         for i in range(1, 4)
     ] + [RetrievedItem(document_id="A", location=loc)])  # 정답이 4위 → k=3 miss, k=5 hit

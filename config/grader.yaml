@@ -55,6 +55,10 @@ retrieval:
   # 있으면 청크 line 범위 포함으로, 없으면 ref_no 문자열로 대조한다.
   precision: ref_no    # document | section | ref_no — 2-9 확정 단위
   eval_k: [3, 5]        # 다단계 k 분석 (이태민 top_k=5)
+  # 팀장: 검색을 쓰지 않고 답한 문항(추출표·identity 경로)은 검색 평가 대상 아님.
+  # response.route 가 이 목록에 있으면 검색/citation 채점 = 해당 없음(applicable=False).
+  # 이태민이 실제 route 이름을 확정하면 여기만 맞추면 된다.
+  non_search_routes: [extract_table, extraction_table, table, identity, metadata, select_table]
 
 grading:
   allow_partial: false
@@ -62,6 +66,16 @@ grading:
   miss_weight: 0.7
   require_table_format: true
   grade_citations: true
+  # 값 뒤에 남는 군더더기 허용 길이 (팀장 2-9: config 관리, 실측 전까지 20 유지).
+  # 이 기준으로 오답 처리되면 per_item.detail.why 에 남은 문자열이 기록된다.
+  residual_limit: 20
+
+  # 팀장 3: 공식 평가셋이 팀 결정을 아직 반영 못한 문항. 모델 오류로 세지 않고
+  # KNOWN_GROUND_TRUTH_MISMATCH 로 분리 보고, 집계에서 제외.
+  # (재채점 직전 최신 공식 평가셋 확인 후, 반영됐으면 이 목록에서 뺀다)
+  known_ground_truth_mismatch:
+    - PRAC-EXT-002   # 축약 5개 → 원문 전체 제출서류 목록 (현진 수정 대기)
+    - PRAC-EXT-004   # '지역 제한 없음' → '원문에서 지역 제한 여부를 확인할 수 없음' (현진 수정 대기)
 
 gate:
   severity_gate:
@@ -142,14 +156,15 @@ gate:
 provenance:
   corpus: UNKNOWN        # ① 원문 코퍼스
   preprocess: UNKNOWN    # ② 전처리 파이프라인(파싱·정제·청킹)
-  table: UNKNOWN         # ③ 구조화 추출 테이블(1-12-2)
+  table: v3             # ③ 구조화 추출 테이블 — 실사용값 rfp_extraction_table_v3 (팀장)
   index: v1             # ④ 검색 인덱스 — base.yaml §① "index: v1" 확정(폴더 v1로 시작).
                         #    실제 인덱스 생성은 이태민 chunk/embedding 확정 후.
                         #    생성 시각은 manifest.index_build_timestamp 에 별도 자동 기록.
   evalset: UNKNOWN       # ⑤ 평가셋(Ground Truth) — VERSION.txt 자동 조회.
                         #    base.yaml §① "evalset: v1"은 아직 TODO(임현진 평가셋 동결 시 확정).
-  scorer: v1             # ⑥ 채점기 버전 — v1 확정(2026-08-31, 김하루). 채점기 변경 시 올린다.
-                        #    base.yaml §① "scorer: v1" TODO 해소분.
+  scorer: v2             # ⑥ 채점기 버전 — v2 (2026-09-02, 채점 오류 수정: 금액 조건 분리 /
+                        #    빈 정규화형 / 항목 1:1 대응 / abstained 필수 / 검색경로 구분 등).
+                        #    팀 실험 결과는 같은 scorer 버전끼리만 비교한다.
 
 out_dir: artifacts/scores
 use_stub_judge: true   # ★dev/CI 값싼 검사 전용 — StubJudge는 심판이 아니다. tier=final에는 못 쓴다.
