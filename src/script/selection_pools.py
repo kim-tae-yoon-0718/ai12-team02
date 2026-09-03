@@ -2,29 +2,28 @@ import json
 import pandas as pd
 
 RAG_ROOT = "/srv/rfp"
-EXTRACTION_CSV = f"{RAG_ROOT}/shared_data/processed/table_v3/extraction_table_v3.csv"
+EXTRACTION_CSV = f"{RAG_ROOT}/shared_data/processed/rfp_extraction_table_v3/extraction_table_v3.csv"
 OUT_PATH = f"{RAG_ROOT}/evalset/v1/_work/selection_pools.json"
 
-FIELDS = ["참가자격", "지역제한", "컨소시엄요건", "제출방식", "예산", "사업기간",
-          "평가배점", "필수제출서류", "공고일", "과업범위", "사업개요", "사업분야"]
-EXCLUDE_IDS = ["RFP-000006", "RFP-000075", "RFP-000017", "RFP-000098"]    # 중복 수집(exclude_doc_ids.json)
+EXCLUDE_IDS = ["RFP-000006", "RFP-000075", "RFP-000017", "RFP-000098"]
 
 df = pd.read_csv(EXTRACTION_CSV)
-missing = set(FIELDS) - set(df["field_name"].unique())
-assert not missing, f"CSV에 없는 필드: {missing}"
-
 df = df[~df["document_id"].isin(EXCLUDE_IDS)]
-wide = df.pivot(idex="document_id", columns="field_name", values="status")
+wide = df.pivot(index="document_id", columns="field_name", values="status")
+
+def find_field(key):
+    key_norm = key.replace(" ", "")
+    matches = [c for c in wide.columns if c.replace(" ", "") == key_norm]
+    assert len(matches) == 1, f"'{key}' 매칭 실패: {matches}"
+    return matches[0]
 
 pools = {}
 
-# 단일조건(value_present)/부정조건(field_absent) - 필드별 전체 후보
-for f in FIELDS:
+for f in wide.columns:
     pools[f"single_present__{f}"] = sorted(wide.index[wide[f] == "value_present"].tolist())
-    pools[f"negative_absent__{f}"] == sorted(wide.index[wide[f] == "field_absent"].tolist())
+    pools[f"negative_absent__{f}"] = sorted(wide.index[wide[f] == "field_absent"].tolist())
 
-# 복합조건 5개 + 0건 1개
-combos ={
+combos = {
     "compound_1__제출방식absent_필수제출서류absent": {"제출방식": "field_absent", "필수제출서류": "field_absent"},
     "compound_2__참가자격present_컨소시엄absent":   {"참가자격": "value_present", "컨소시엄요건": "field_absent"},
     "compound_3__지역제한present_컨소시엄present":   {"지역제한": "value_present", "컨소시엄요건": "value_present"},
@@ -32,11 +31,10 @@ combos ={
     "compound_5__컨소시엄present_평가배점absent":    {"컨소시엄요건": "value_present", "평가배점": "field_absent"},
     "zero_1__지역제한present_컨소시엄absent":        {"지역제한": "value_present", "컨소시엄요건": "field_absent"},
 }
-
 for name, cond in combos.items():
     mask = pd.Series(True, index=wide.index)
-    for field, status in cond.items():
-        mask &= (wide[field] == status)
+    for key, status in cond.items():
+        mask &= (wide[find_field(key)] == status)
     pools[name] = sorted(wide.index[mask].tolist())
 
 for k, v in pools.items():
