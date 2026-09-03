@@ -5,7 +5,7 @@ RAG_ROOT = "/srv/rfp"
 EXTRACTION_CSV = f"{RAG_ROOT}/shared_data/processed/rfp_extraction_table_v3/extraction_table_v3.csv"
 OUT_PATH = f"{RAG_ROOT}/evalset/v1/_work/selection_pools.json"
 
-EXCLUDE_IDS = ["RFP-000006", "RFP-000075", "RFP-000017", "RFP-000098"]
+EXCLUDE_IDS = ["RFP-000001", "RFP-000006", "RFP-000038", "RFP-000043", "RFP-000075", "RFP-000017", "RFP-000098"]
 
 df = pd.read_csv(EXTRACTION_CSV)
 df = df[~df["document_id"].isin(EXCLUDE_IDS)]
