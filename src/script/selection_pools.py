@@ -1,0 +1,50 @@
+import json
+import pandas as pd
+
+"""
+선별형 문항 배분을 위한, 데이터 밀집도 확인
+"""
+RAG_ROOT = "/srv/rfp"
+EXTRACTION_CSV = f"{RAG_ROOT}/shared_data/processed/rfp_extraction_table_v3/extraction_table_v3.csv"
+OUT_PATH = f"{RAG_ROOT}/evalset/v1/_work/selection_pools.json"
+
+EXCLUDE_IDS = [
+    "RFP-000006", "RFP-000075", "RFP-000017", "RFP-000098",  # 수집중복 4건
+    "RFP-000038", "RFP-000043", "RFP-000001",                 # practice_items 사용 문서 3건
+]
+
+df = pd.read_csv(EXTRACTION_CSV)
+df = df[~df["document_id"].isin(EXCLUDE_IDS)]
+wide = df.pivot(index="document_id", columns="field_name", values="status")
+
+def find_field(key):
+    key_norm = key.replace(" ", "")
+    matches = [c for c in wide.columns if key_norm in c.replace(" ", "")]
+    assert len(matches) == 1, f"'{key}' 매칭 실패: {matches}"
+    return matches[0]
+
+pools = {}
+
+for f in wide.columns:
+    pools[f"single_present__{f}"] = sorted(wide.index[wide[f] == "value_present"].tolist())
+    pools[f"negative_absent__{f}"] = sorted(wide.index[wide[f] == "field_absent"].tolist())
+
+combos = {
+    "compound_1__제출방식absent_필수제출서류absent": {"제출방식": "field_absent", "필수제출서류": "field_absent"},
+    "compound_2__참가자격present_컨소시엄absent":   {"참가자격": "value_present", "컨소시엄요건": "field_absent"},
+    "compound_3__지역제한present_컨소시엄present":   {"지역제한": "value_present", "컨소시엄요건": "value_present"},
+    "compound_4__제출방식extref_컨소시엄present":    {"제출방식": "external_reference", "컨소시엄요건": "value_present"},
+    "compound_5__컨소시엄present_평가배점absent":    {"컨소시엄요건": "value_present", "평가배점": "field_absent"},
+    "zero_1__지역제한present_컨소시엄absent":        {"지역제한": "value_present", "컨소시엄요건": "field_absent"},
+}
+for name, cond in combos.items():
+    mask = pd.Series(True, index=wide.index)
+    for key, status in cond.items():
+        mask &= (wide[find_field(key)] == status)
+    pools[name] = sorted(wide.index[mask].tolist())
+
+for k, v in pools.items():
+    print(k, len(v))
+
+with open(OUT_PATH, "w", encoding="utf-8") as f:
+    json.dump(pools, f, ensure_ascii=False, indent=2)

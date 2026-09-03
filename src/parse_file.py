@@ -1,5 +1,6 @@
 """
 원본 hwp/pdf 파일을 kordoc을 통해 .md로 변환
+실행 코드: python3 parse_file.py
 """
 import subprocess
 import sys
