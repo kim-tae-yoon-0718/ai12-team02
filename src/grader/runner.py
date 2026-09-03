@@ -186,6 +186,7 @@ class GraderRunner:
             "require_table_format": self.config.grading.require_table_format,
             "grade_citations": self.config.grading.grade_citations,
             "residual_limit": self.config.grading.residual_limit,
+            "accept_natural_absence_phrasing": self.config.grading.accept_natural_absence_phrasing,
         }, matcher)
 
         nsr = self.config.retrieval.non_search_routes

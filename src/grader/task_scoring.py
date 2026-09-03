@@ -35,7 +35,7 @@ from .models import (
     TaskScore,
     as_id_list,
 )
-from .normalize import match_short, normalize_text, strip_label_prefix
+from .normalize import classify_response_kind, match_short, normalize_text, strip_label_prefix
 
 ItemMatcher = Callable[[str, str], bool]
 
@@ -135,6 +135,28 @@ def grade_short_answer(item: EvaluationItem, response: ModelResponse, cfg: dict)
         allow_partial=cfg.get("allow_partial", False),
         residual_limit=cfg.get("residual_limit", 20),  # 팀장 2-9: config 관리
     )
+    # ★문항 자체가 모호해서(unspecified_type, 임현진 v0.2 확정 필드 — 예: 국민연금공단
+    #   사업이 여러 건이라 특정 불가) gold 가 "되묻는 문장"인 경우, pred 가 gold 문장
+    #   그대로가 아니어도 "되묻는 것" 자체가 맞으면 정답으로 인정한다(채점기 피드백:
+    #   되묻기는 오답도 거절도 아니다). 새 필드 요구 없이 기존 unspecified_type +
+    #   response.answer 텍스트 패턴만으로 판정 — response.abstained 값은 안 건드린다.
+    if not ok and item.unspecified_type is not None:
+        if classify_response_kind(response.answer) == "CLARIFICATION":
+            ok, why = True, "clarification_accepted(문항이 모호함 — unspecified_type)"
+
+    # ★★ 논쟁 있는 항목 — 기본 OFF. config.grading.accept_natural_absence_phrasing=true 일 때만.
+    #   gold 가 "없음"(추출표 필드값, answer_source=table) 하나뿐인 문항에서 "문서에서
+    #   확인할 수 없습니다" 류를 정답으로 받아줄지는 의미가 갈린다:
+    #     "없음"          = 원문을 읽고 "그런 제한/요건이 없다"고 확인된 값(추출 파이프라인 결과)
+    #     "확인할 수 없다" = 원문에서 알아내지 못했다는 뜻(모른다) — "없다"와 다른 주장이다
+    #   팀장 2-5("field_absent 와 명시적 없음을 절대 하나로 묶지 말라")와 같은 계열의
+    #   구분이라 채점기가 임의로 합치지 않는다. 다만 기능 자체는 만들어 둔다 — 현진·팀장이
+    #   "이 표는 '없음'='추출 실패'로 채운다"고 확정하면 config 한 줄로 켤 수 있다.
+    if not ok and cfg.get("accept_natural_absence_phrasing", False):
+        if isinstance(item.answer_raw, str) and normalize_text(item.answer_raw) == "없음":
+            if classify_response_kind(response.answer) == "ABSTENTION":
+                ok, why = True, "absence_accepted(natural phrasing — config opt-in, 팀 확인 필요)"
+
     return TaskScore(kind="value", score=1.0 if ok else 0.0,
                      detail={"why": why, "gold": item.answer_raw, "pred": response.answer})
 
@@ -345,7 +367,12 @@ def grade_abstention(item: EvaluationItem, response: ModelResponse) -> Abstentio
     elif should_abstain and not did:
         kind = "hallucination"
     elif not should_abstain and did:
-        kind = "critical_abstain" if item.field_tag == "critical" else "over_refusal"
+        # ★문항이 원래 모호해서(unspecified_type) 되묻는 응답이면 "불필요한 거절"이 아니다
+        #   (채점기 피드백) — abstained bool 자체는 그대로 두고(팀장 2-4), 분류만 구분한다.
+        if item.unspecified_type is not None and classify_response_kind(response.answer) == "CLARIFICATION":
+            kind = "clarification_ok"
+        else:
+            kind = "critical_abstain" if item.field_tag == "critical" else "over_refusal"
 
     return AbstentionResult(should_abstain=should_abstain, abstained=did,
                             abstention_kind=kind, **extra)

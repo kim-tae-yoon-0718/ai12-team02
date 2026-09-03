@@ -103,7 +103,9 @@ def abstention_report(results: list[dict]) -> dict:
         "hallucination_rate": round(kinds["hallucination"] / n, 4),
         "over_refusal_rate": round(kinds["over_refusal"] / n, 4),
         "critical_abstain_count": kinds["critical_abstain"],
-        "note": "critical_abstain 은 1-5 기준 정상 동작일 수 있음 — 과잉 거절과 합산 금지",
+        "clarification_count": kinds["clarification_ok"],
+        "note": "critical_abstain 은 1-5 기준 정상 동작일 수 있음 — 과잉 거절과 합산 금지. "
+                "clarification_ok(모호한 문항에 대한 정당한 되묻기)도 과잉 거절과 별도 집계",
     }
 
 

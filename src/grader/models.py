@@ -75,6 +75,9 @@ AbstentionKind = Literal[
     "hallucination",  # 기권해야 하는데 답을 지어냄
     "over_refusal",  # 답이 있는데 기권함
     "critical_abstain",  # field_tag=critical 문항의 기권 — 정상 동작 후보 (1-5)
+    # 문항이 원래 모호해서(unspecified_type) 되묻는 응답 — over_refusal 이 아니다
+    # (채점기 피드백 2026-09-03). abstained bool 자체는 안 바꾼다(팀장 2-4) — 분류만 구분.
+    "clarification_ok",
 ]
 
 

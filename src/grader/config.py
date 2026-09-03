@@ -63,6 +63,9 @@ class GradingConfig:
     # 팀장 3: 공식 평가셋이 팀 결정을 아직 반영 못한 문항 id. 모델 오류로 세지 않고
     # KNOWN_GROUND_TRUTH_MISMATCH 로 분리 보고, 집계에서 제외.
     known_ground_truth_mismatch: tuple[str, ...] = ()
+    # ★기본 false — "없음"(추출표 필드값) 을 "문서에서 확인할 수 없습니다" 류와 같은
+    # 뜻으로 볼지는 팀 결정 필요(팀장 2-5 계열 쟁점). 현진·팀장이 확정하면 true 로.
+    accept_natural_absence_phrasing: bool = False
 
 
 @dataclass(frozen=True)
@@ -218,6 +221,8 @@ def load_config(path: str | Path = "config/grader.yaml",
             grade_citations=bool(grading_raw.get("grade_citations", True)),
             residual_limit=int(grading_raw.get("residual_limit", 20)),
             known_ground_truth_mismatch=tuple(grading_raw.get("known_ground_truth_mismatch", ())),
+            accept_natural_absence_phrasing=bool(
+                grading_raw.get("accept_natural_absence_phrasing", False)),
         ),
         gate=GateConfig(
             severity_gate=gate_raw.get("severity_gate", {"critical": 0.85}),

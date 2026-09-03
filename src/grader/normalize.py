@@ -38,6 +38,55 @@ _UNIT_ALIAS = [(re.compile(r"\s*퍼센트|\s*프로|\s*percent", re.I), "%")]
 # 짧은 정답 뒤에 붙는 한국어 종결 조사/서술 어미 (문장 끝에서만 뗀다).
 _JOSA_TAIL = re.compile(r"(은|는|이|가|을|를|과|와|의|에|에서|으로|로|입니다|이다|임|다|요)$")
 
+# ══════════════════════════════════ 응답 유형 분류 (채점기 피드백 2026-09-03) ═══════
+# ★규칙 기반 패턴 매칭이다 — 진짜 의미 이해(LLM)가 아니다. "이 문장이 되묻기/거절/
+#   부재응답처럼 보이는가"를 판정하는 보조 신호일 뿐, response.abstained(bool, 팀장
+#   2-4 확정)를 대체하거나 텍스트로 abstained 값을 추론하는 데 쓰지 않는다.
+#   용도: (a) 문항이 원래 모호해서(unspecified_type) 되묻기가 정답인 경우를
+#         '불필요한 거절'로 잘못 세지 않게 grade_abstention 에서 참고,
+#         (b) grade_short_answer 에서 gold 자체가 되묻는 문장일 때 표현이 달라도
+#         인정하는 데 참고. 새 필드를 요구하지 않는다 — 기존 response.answer 텍스트만 본다.
+_CLARIFICATION_MARKERS = re.compile(
+    r"(어떤\s*[가-힣]{0,6}(사업|공고|문서|건)|말씀하시는|말씀하신|알려주시겠|알려주세요|"
+    r"알려주시면|알려주실|특정할\s*수\s*없|여러\s*(건|개)[의]?\s*(사업|공고)?|"
+    r"어느\s*(사업|공고|문서)|사업명을|무엇을\s*찾으시는|정확히\s*어떤)")
+_NOT_FOUND_MARKERS = re.compile(
+    r"(확인(할|이|되지)\s*(수\s*없|어렵|않)|찾을\s*수\s*없|(존재하지|나와\s*있지)\s*않|"
+    r"자료(가|만으로는)\s*(없|부족)|정보가\s*없|명시(되어|돼)?\s*있지\s*않|기재(되어|돼)?\s*있지\s*않)")
+_REFUSAL_MARKERS = re.compile(
+    r"(답변\s*(을)?\s*(드리기|하기)?\s*(가)?\s*(곤란|어렵|불가)|말씀드리기\s*(곤란|어렵)|"
+    r"제공(해\s*드릴|할)\s*수\s*없|알려\s*드릴\s*수\s*없|권한이\s*없)")
+
+
+def classify_response_kind(text) -> str:
+    """response.answer 텍스트가 어떤 성격인지 규칙 기반으로 분류한다.
+
+    반환값: "CLARIFICATION" | "ABSTENTION" | "REFUSAL" | "ANSWER"
+    ★"IRRELEVANT"(질문과 무관한 답)는 여기서 판정하지 않는다 — 이 함수는 답변
+      텍스트만 보고, 질문과의 관련성 판정은 질문 의미 이해가 필요해 규칙 매칭으로
+      안전하게 못 만든다(의미비교 모델 영역, 팀장 2-3 "분리해도 됨"과 동일 이유).
+      필요하면 이 함수 반환값에 IRRELEVANT 를 별도로 얹을 수 있게 문자열 리터럴로
+      열어둔다(호출부에서 우선순위만 조정하면 됨).
+    ★순서 중요: CLARIFICATION → ABSTENTION(부재) → REFUSAL. "확인할 수 없다"류가
+      "말씀하시는"류보다 뒤에 오면 되묻기 문장 속 부정 표현에 잘못 걸릴 수 있어
+      되묻기를 먼저 본다.
+    """
+    t = normalize_text(str(text or ""), drop_punct=False)
+    if not t:
+        return "ABSTENTION"
+    if _CLARIFICATION_MARKERS.search(t):
+        return "CLARIFICATION"
+    if _NOT_FOUND_MARKERS.search(t):
+        return "ABSTENTION"
+    if _REFUSAL_MARKERS.search(t):
+        return "REFUSAL"
+    return "ANSWER"
+
+
+def is_document_not_found_response(text) -> bool:
+    """'문서에서 확인할 수 없습니다' 류의 자연어 부재 응답인지."""
+    return classify_response_kind(text) == "ABSTENTION"
+
 
 def to_halfwidth(s: str) -> str:
     # 로마숫자는 NFKC 가 "Ⅳ"→"IV" 로 분해하기 전에 아라비아로 바꾼다.
@@ -344,7 +393,29 @@ def match_short(gold, pred, accept=None, kind: str = "auto",
         if p_amts:
             return False, f"amount_mismatch(정답 {g_amt} vs 답변 {p_amts})"
 
-    # 3) 문자열
+    # 3) 표현 차이 허용(채점기 피드백: 항목번호/제목 생략·조사·존댓말·어순·군더더기 삭제는
+    #    의미가 같으면 정답) — gold 의 핵심 어절이 pred 에 빠짐없이 들어있는지만 본다.
+    #    ★진짜 의미 이해(LLM)가 아니라 정규화된 어절 포함 관계다 — gold 에 있는 어절이
+    #      pred 에서 하나라도 빠지면 오답으로 남는다(정보 누락 = 오답, 팀장 §6-3단계와 동일 원칙).
+    #      날짜·금액은 전용 규칙(1·2단계)이 이미 최종 판정을 냈으므로 여기서 되살리지 않는다.
+    #      너무 긴 gold(문단급, 60자 초과)는 체크포인트/요약형 채점 영역이라 여기서 안 다룬다.
+    if g_date is None and g_amt is None:
+        for g in golds:
+            core = strip_label_prefix(g) or g
+            if len(str(core)) > 60:
+                continue
+            gtoks = [w for w in normalize_text(core).split() if w]
+            if not gtoks:
+                continue
+            # ★한국어 조사/서술어미는 앞 단어에 공백 없이 붙는다("6개월입니다") — 어절
+            #   전체를 그대로 비교하면 어미 하나 때문에 놓친다. 어절마다 어미를 뗀 형태도
+            #   같이 넣어서 비교한다.
+            raw_ptoks = np.split()
+            ptoks = set(raw_ptoks) | {_strip_josa(w) for w in raw_ptoks}
+            if all(w in ptoks for w in gtoks):
+                return True, "content_equivalent(핵심 어절 전부 포함, 표현만 다름)"
+
+    # 4) 문자열 부분일치 (allow_partial 켰을 때만 — 환각 덧붙임도 통과시키는 걸 알고 쓰는 모드)
     if allow_partial:
         for g in golds:
             ng = normalize_text(g)

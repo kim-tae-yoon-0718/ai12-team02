@@ -276,3 +276,66 @@ def test_summary_checkpoint_no_double_count():
     assert r.score == 0.5
     assert r.detail["covered"] == ["제안서 요약본"]
     assert r.detail["missing"] == ["제안서"]
+
+
+# ── L. 채점기 피드백 2차 (2026-09-03) — 표현 차이·되묻기·부재응답 ─────
+
+def test_semantic_equivalence_label_and_honorific_omission():
+    """정답: '나. 사업기간 : 계약일로부터 6개월' / 응답: '계약일로부터 6개월' → PASS.
+    라벨 생략은 accept 후보, 조사/존댓말 차이는 어절 포함 관계로 흡수한다."""
+    it = _it(answer_type="value", answer_raw="나. 사업기간 : 계약일로부터 6개월")
+    ok, why = match_short(it.answer_raw, "계약일로부터 6개월")
+    assert ok is True
+    ok2, _ = match_short(it.answer_raw, "계약일로부터 6개월입니다")  # 존댓말 어미
+    assert ok2 is True
+
+
+def test_semantic_equivalence_does_not_accept_missing_or_wrong_info():
+    it = _it(answer_type="value", answer_raw="나. 사업기간 : 계약일로부터 6개월")
+    assert match_short(it.answer_raw, "6개월")[0] is False              # 정보 누락(계약일로부터)
+    assert match_short(it.answer_raw, "계약일로부터 12개월")[0] is False  # 값 자체가 다름
+    assert match_short(it.answer_raw, "계약체결일로부터 6개월")[0] is False  # 핵심 어절 다름
+
+
+def test_clarification_accepted_for_ambiguous_question():
+    """질문: 국민연금공단 사업이 여러 건이라 특정 불가(unspecified_type=ambiguous_match).
+    응답: '어떤 사업을 말씀하시는지 사업명을 알려주세요.' → PASS, 오답도 불필요한 거절도 아님."""
+    it = _it(task_type="extraction", answer_type="value",
+             answer_raw="국민연금공단이 발주한 사업이 여러 건이라 어떤 사업인지 특정할 수 없습니다. "
+                        "사업명을 알려주시겠어요?",
+             unspecified_type="ambiguous_match")
+    out = score_item(it, _r(answer="어떤 사업을 말씀하시는지 사업명을 알려주세요.", abstained=False), CFG)
+    assert out["task_score"].score == 1.0
+    assert out["abstention"].abstention_kind == "ok"
+
+    # abstained=True 로 답해도(기권으로 표시) '불필요한 거절'로 잘못 세지 않는다
+    out2 = score_item(it, _r(answer="여러 사업이 있어 사업명을 알려주세요.", abstained=True), CFG)
+    assert out2["abstention"].abstention_kind == "clarification_ok"
+    assert out2["abstention"].abstention_kind != "over_refusal"
+
+    # 모호하지 않은 문항에서는 여전히 오답(엉뚱한 되묻기는 정답 처리 안 함)
+    plain = _it(task_type="extraction", answer_type="value", answer_raw="500,000,000원")
+    out3 = score_item(plain, _r(answer="어떤 사업을 말씀하시는지 알려주세요.", abstained=False), CFG)
+    assert out3["task_score"].score == 0.0
+
+
+def test_document_not_found_toggle_off_by_default():
+    it = _it(answer_type="value", answer_raw="없음", answer_source="table")
+    resp = _r(answer="문서에서 확인할 수 없습니다.", abstained=True)
+    assert grade_short_answer(it, resp, {"accept_natural_absence_phrasing": False}).score == 0.0
+    assert grade_short_answer(it, resp, {"accept_natural_absence_phrasing": True}).score == 1.0
+
+
+def test_ampm_time_fail_case_from_feedback():
+    assert match_short("2024-06-24 오전 4시", "2024-06-24 오후 4시")[0] is False
+
+
+def test_money_won_cheonwon_pass_case_from_feedback():
+    assert match_short("10,000원", "10천원")[0] is True
+
+
+def test_list_counting_one_item_not_counted_as_two():
+    it = _it(task_type="extraction", answer_type="list", answer_raw=["서류A", "서류B"])
+    r = grade_list(it, _r(answer="서류A", structured_answer=["서류A"]))
+    assert r.score == 0.0
+    assert r.detail["hit"] == ["서류A"] and r.detail["missing"] == ["서류B"]
