@@ -63,7 +63,7 @@ def _load_system_prompt_template(name: str | None = None) -> str:
 
 
 # 근거 인용 규약 (결함 1-4) — 모델이 "실제로 쓴" 근거만 돌려주게 한다.
-EVIDENCE_ID_RE = re.compile(r"\bE\s*(\d{1,3})\b", re.IGNORECASE)
+EVIDENCE_ID_RE = re.compile(r"\bE\s*(\d+)\b", re.IGNORECASE)
 # ⚠️ 2026-09-02 수정: 예전엔 줄 **처음**에 오는 표식만 인식했다(`^...` + MULTILINE).
 #    실제 gpt-5-mini 는 "(근거: …) USED_EVIDENCE: E5" 처럼 문장 **중간**에, 그것도
 #    여러 번 내보냈다 — 그 결과 표식을 못 찾아 인용이 0건이 되고 표식 문자열이
@@ -71,7 +71,7 @@ EVIDENCE_ID_RE = re.compile(r"\bE\s*(\d{1,3})\b", re.IGNORECASE)
 # 표식 + 번호 목록(또는 NONE)까지만 소비한다 — 뒤에 이어지는 문장을 삼키지 않는다.
 USED_EVIDENCE_RE = re.compile(
     r"[ \t>*\-]*\(?USED[ _]?EVIDENCE\s*[:：]\s*"
-    r"(?:NONE|없음|E\s*\d{1,3}(?:\s*[,、·/]\s*(?:E\s*)?\d{1,3})*)?\)?[ \t]*",
+    r"(?P<ids>NONE|없음|E\s*\d+(?:\s*[,、·/]\s*(?:E\s*)?\d+)*)?\)?[ \t]*",
     re.IGNORECASE,
 )
 
@@ -92,13 +92,19 @@ def split_used_evidence(text: str) -> tuple[str, list[int] | None]:
 
     ids: set[int] = set()
     for m in matches:
-        ids.update(int(g.group(1)) for g in EVIDENCE_ID_RE.finditer(m.group(0)))
+        # 이미 목록으로 읽은 'E1, 2'의 2도 보존한다. 번호 길이를 잘라 E1000을
+        # E100으로 바꾸지 않는다. 존재 여부는 실제 컨텍스트 개수로 호출측이 확인한다.
+        ids.update(int(number) for number in re.findall(r"\d+", m.group("ids") or ""))
 
     body = USED_EVIDENCE_RE.sub(" ", raw)   # 앞뒤 단어가 붙지 않게 한 칸 남긴다
     body = re.sub(r"[ \t]+\n", "\n", body)      # 표식 제거로 생긴 줄 끝 공백
     body = re.sub(r"\n{3,}", "\n\n", body)       # 빈 줄 과다 정리
     body = re.sub(r"[ \t]{2,}", " ", body)
     return body.strip(), sorted(ids)
+
+
+class GenerationResponseError(RuntimeError):
+    """생성이 정상 완료되지 않았거나 실제 답변 본문이 없는 경우."""
 
 
 def build_request_kwargs(
@@ -197,6 +203,8 @@ class GenerationClient:
         format_instruction: str = "간결하고 명확하게 답하세요.",
         structured_context: str | None = None,
     ) -> str:
+        # 이전 요청의 근거 번호를 다음 요청 실패 시 재사용하지 않도록 먼저 비운다.
+        self.last_used_evidence = None
         messages = self.build_messages(
             question, context_chunks,
             structured_context=structured_context,
@@ -216,7 +224,23 @@ class GenerationClient:
                 completion_tokens=resp.usage.completion_tokens,
                 cached_tokens=cached,
             )
-        raw = resp.choices[0].message.content or ""
+        if not resp.choices:
+            raise GenerationResponseError("생성 응답에 답변 후보가 없습니다.")
+        choice = resp.choices[0]
+        # 실제 SDK는 종료 사유를 제공한다. 옛 시험 대역에만 필드가 없을 수 있다.
+        finish_reason = getattr(choice, "finish_reason", "stop")
+        if finish_reason != "stop":
+            raise GenerationResponseError(
+                f"생성이 정상 종료되지 않았습니다(finish_reason={finish_reason}). "
+                "중간에 잘린 답을 완성된 답변으로 사용하지 않습니다."
+            )
+        if getattr(choice.message, "refusal", None):
+            raise GenerationResponseError("생성 API가 요청을 거부하여 답변을 완료하지 못했습니다.")
+        raw = choice.message.content or ""
+        if not isinstance(raw, str):
+            raise GenerationResponseError("생성 응답의 본문이 텍스트가 아닙니다.")
         body, used = split_used_evidence(raw)
+        if not body:
+            raise GenerationResponseError("생성 응답에 답변 본문이 없습니다(빈 출력 또는 근거 표식만 있음).")
         self.last_used_evidence = used
         return body

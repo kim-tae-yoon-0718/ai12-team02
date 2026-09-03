@@ -8,7 +8,10 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-from table_query import FIELD_KEYWORDS, _DEADLINE_KEYWORDS
+from table_query import (
+    FIELD_KEYWORDS, _DEADLINE_KEYWORDS, is_selection_question, parse_selection, needs_explanation,
+)
+from doc_resolver import detect_document_ids, looks_like_specific_document
 
 TaskType = Literal["select", "extract", "qa", "compare", "no_search_needed"]
 
@@ -40,29 +43,21 @@ _SYSTEM_HELP_PATTERNS = [
     r"(?:사용|이용)\s*방법(?:을|이|은)?\s*(?:알려|설명|안내)",
 ]
 _GREETING_PATTERNS = [
-    r"^(안녕|반가워|고마워|감사|하이|헬로)",
+    # 인사 뒤에 실제 질문이 이어지면 인사 전용 답으로 질문을 지우지 않는다.
+    r"^\s*(?:안녕(?:하세요|하십니까)?|반가워(?:요)?|고마워(?:요)?|감사(?:합니다|해요)?|하이|헬로)[\s,.!?~^^]*$",
 ]
 _NO_SEARCH_PATTERNS = _SYSTEM_HELP_PATTERNS + _GREETING_PATTERNS
-_SELECT_PATTERNS = [
-    r"(이상|이하|초과|미만|없는|있는).*(사업|공고)",
-    r"(추천|리스트|목록|다 보여|전부 보여)",
-]
-# ⚠️ 2026-09-02 보완: 조건만 나열한 문장("예산 49,500만원 이상, 지역제한 없음")은
-# 뒤에 "사업/공고"가 없어서 위 패턴에 안 걸리고 extract로 새어나갔다.
-# 금액 비교 표현·지역제한 관형형은 그 자체로 선별 조건이다. 다만 질문이
-# 특정 문서를 가리키고 있으면(문서 ID·지시 표현) 선별형이 아니라 그 문서의
-# 값을 묻는 것이므로 제외한다.
-_SELECT_CONDITION_PATTERNS = [
-    r"\d[\d,]*(?:\.\d+)?\s*(?:조|억|천만|백만|십만|만|천)?\s*원?\s*"
-    r"(?:이상|이하|초과|미만|넘는|넘은|넘어가는)",
-    # 관형형/명사형만 — "지역 제한이 있어?"(특정 문서 질문)는 제외한다
-    r"지역\s*제한\s*(?:이|은|가)?\s*(?:없는|있는|없음|있음)",
-]
-_SELECT_EXCLUDE_PATTERNS = [
-    r"RFP-\d{6}",
-    r"(?:그|이|해당|위)\s*(?:사업|문서|공고|건)",
-    r"(?:거기|그거|이거|그곳)",
-]
+# ⚠️ 2026-09-03 개정 — 선별형 판단을 table_query.is_selection_question 하나로 모았다.
+# 예전엔 라우터가 자체 정규식("목록|추천|리스트"·금액 표현·지시 표현 제외 목록)으로
+# 판단하고, 조건 파서는 또 다른 규칙으로 조건을 읽어서 둘이 어긋났다. 그래서
+# "사업분야가 명시된 공고 알려줘"처럼 목록을 원하는 질문이 뒤의 넓은 필드 키워드
+# 검사에 걸려 extract(특정 문서 값 조회)로 새어나갔다.
+#
+# 지금은 라우터와 조건 파서가 **같은 파싱 결과**를 본다.
+#   - 질문이 특정 문서를 가리키면(문서 ID·지시 표현) 선별형이 아니다
+#   - 조건을 하나라도 읽었으면 선별형
+#   - 조건을 못 읽었어도 "여러 문서를 원한다"는 신호가 분명하면 선별형으로 보내
+#     무엇을 못 읽었는지 되묻는다(문서 특정 질문으로 잘못 보내지 않는다)
 # ⚠️ 2026-08-31 정정: 예전엔 "마감일"·"발주기관"이 여기 섞여 있었는데, 4-9-8 v3
 # 확정으로 이 둘은 최종 12필드에서 빠졌다. table_query.FIELD_KEYWORDS(실제 공식
 # 12필드 키워드)를 그대로 재사용해서 필드명이 어긋나지 않게 한다 — 목록이 둘로
@@ -86,6 +81,9 @@ _EXTRACT_PATTERNS = [
 _COMPARE_PATTERNS = [
     r"(비교|차이|어느 쪽|둘 중)",
 ]
+_DOCUMENT_CONTENT_SIGNAL_RE = re.compile(
+    r"RFP-|사업|문서|공고|입찰|제안요청서|참가\s*자격"
+)
 
 
 def _match_any(patterns: list[str], text: str) -> str | None:
@@ -100,17 +98,38 @@ def route(question: str, cfg: dict) -> RouteResult:
     if cfg.get("routing_method") != "rule_based":
         raise NotImplementedError("LLM 기반 분기는 아직 구현 안 됨(baseline은 rule_based)")
 
-    if (m := _match_any(_SYSTEM_HELP_PATTERNS, question)):
+    # 문서 속 시스템의 사용 방법과 이 챗봇의 사용법은 다른 질문이다.
+    # 문서 번호·사업 문맥·특정 제목이 있으면 사용법 키워드만으로 검색을 생략하지 않는다.
+    document_content = (bool(_DOCUMENT_CONTENT_SIGNAL_RE.search(question))
+                        or looks_like_specific_document(question))
+    if (m := _match_any(_SYSTEM_HELP_PATTERNS, question)) and not document_content:
         return RouteResult("no_search_needed", m, no_search_kind=NO_SEARCH_SYSTEM_HELP)
     if (m := _match_any(_GREETING_PATTERNS, question)):
         return RouteResult("no_search_needed", m, no_search_kind=NO_SEARCH_GREETING)
     if (m := _match_any(_COMPARE_PATTERNS, question)):
+        # 한 문서 안의 개념 차이 설명은 여러 문서의 고정 필드 비교표가 아니다.
+        # 두 문서 이상을 명시하거나 복수 사업을 부른 질문의 기존 비교 경로는 유지한다.
+        document_ids = detect_document_ids(question)
+        single_reference = (len(document_ids) == 1 or (
+            not document_ids and bool(re.search(
+                r"(?:이|그|해당|위)\s*(?:문서|사업|공고)(?:의|에서|에|는|은|\s)", question))))
+        multiple_reference = bool(re.search(
+            r"(?:두|둘|여러|다른|양쪽)\s*(?:문서|사업|공고)|문서\s*간|사업\s*간", question))
+        if single_reference and not multiple_reference and needs_explanation(question):
+            return RouteResult("qa", "single_document_concept_explanation")
         return RouteResult("compare", m)
-    if (m := _match_any(_SELECT_PATTERNS, question)):
-        return RouteResult("select", m)
-    if not _match_any(_SELECT_EXCLUDE_PATTERNS, question):
-        if (m := _match_any(_SELECT_CONDITION_PATTERNS, question)):
-            return RouteResult("select", m)
+
+    # 선별형 — 조건 파서와 같은 판단을 쓴다(규칙이 두 벌로 갈라지지 않게).
+    # 지시 표현("이 사업의 …")이 있으면 활성 문서 후속 질문이므로 선별형이 아니다.
+    parse = parse_selection(question)
+    if is_selection_question(question, parse):
+        if parse.conditions:
+            rule = "selection:" + ",".join(
+                f"{c.field}/{c.operator}" for c in parse.conditions)
+        else:
+            rule = "selection:미해석조건+복수요청"
+        return RouteResult("select", rule)
+
     if (m := _match_any(_EXTRACT_PATTERNS, question)):
         return RouteResult("extract", m)
 
