@@ -45,7 +45,11 @@ for f in wide.columns:
     pools[f"single_present__{f}"] = sorted(wide.index[wide[f] == "value_present"].tolist())
     pools[f"negative_absent__{f}"] = sorted(wide.index[wide[f] == "field_absent"].tolist())
 
-pools["single_required__컨소시엄요건"] = sorted(wide.index[wide["__컨소시엄요구__"]].tolist())
+# "명시"(조항 존재)와 "요구"(실제 허용/요구)를 구분해서 둘 다 별도 풀로 남긴다.
+pools["consortium_required__컨소시엄요건"] = sorted(wide.index[wide["__컨소시엄요구__"]].tolist())
+pools["consortium_mentioned_but_not_required__컨소시엄요건"] = sorted(
+    wide.index[(wide[consortium_col] == "value_present") & (~wide["__컨소시엄요구__"])].tolist()
+)
 
 combos = {
     "compound_1__제출방식absent_필수제출서류absent": {"제출방식": "field_absent", "필수제출서류": "field_absent"},
