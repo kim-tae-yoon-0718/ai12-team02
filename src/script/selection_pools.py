@@ -1,6 +1,9 @@
 import json
 import pandas as pd
 
+"""
+선별형 문항 배분을 위한, 데이터 밀집도 확인
+"""
 RAG_ROOT = "/srv/rfp"
 EXTRACTION_CSV = f"{RAG_ROOT}/shared_data/processed/rfp_extraction_table_v3/extraction_table_v3.csv"
 OUT_PATH = f"{RAG_ROOT}/evalset/v1/_work/selection_pools.json"
