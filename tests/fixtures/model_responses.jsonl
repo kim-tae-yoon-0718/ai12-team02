@@ -1,0 +1,1 @@
+{"id":"Q0001","answer":"5억원","contexts":[{"document_id":"DOC-EXAMPLE","search_text":"사업예산은 5억원이다.","section_path":["3장 2절"],"location_label":"3장 2절 · 표 3","md_line_start":40,"md_line_end":50}],"citations":[{"document":"DOC-EXAMPLE","section":"3장 2절","ref_no":"3장 2절 · 표 3","line":42}]}

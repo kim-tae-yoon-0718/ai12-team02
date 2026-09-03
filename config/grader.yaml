@@ -1,0 +1,173 @@
+schema_version: "v0.2"
+
+judge:
+  # prompts/*.v1.md 는 팀 확정 프롬프트 원문을 수정 없이 그대로 연결한 것.
+  judges:
+    - name: judge_faithfulness
+      prompt_file: prompts/judge_faithfulness.v1.md
+    - name: judge_checkpoint
+      prompt_file: prompts/judge_checkpoint.v1.md
+    - name: judge_list_item
+      prompt_file: prompts/judge_list_item.v1.md
+
+  # judge_faithfulness는 문항 전체를 한 번 채점하는 metric judge.
+  # judge_checkpoint / judge_list_item 은 task_scoring 안에서 항목 단위로 여러 번
+  # 호출되는 매처이므로 여기(whole_item_metrics)에는 넣지 않는다.
+  whole_item_metrics:
+    - judge_faithfulness
+
+  # 평가 축 이름. correctness/completeness/citation/abstention 은 judge가 아니라
+  # task_scoring.py + retrieval.py + extraction.py 의 규칙 기반 채점으로 낸다 —
+  # 심판은 faithfulness(충실성)만 담당한다(【22】: 채점 프롬프트는 생성 프롬프트보다
+  # 엄격히 관리 — LLM 판정은 필요한 곳에만 최소로 쓴다).
+  metrics:
+    - correctness      # task_scoring.py (규칙 기반)
+    - faithfulness      # judge_faithfulness (LLM)
+    - completeness      # task_scoring.grade_summary_checkpoint + judge_checkpoint (LLM 매처)
+    - citation          # retrieval.py / location 좌표 매칭 (규칙 기반)
+    - abstention        # task_scoring.grade_abstention (규칙 기반)
+
+  model: stub
+  family: none
+  tier: dev            # dev | independent | final — final 은 assert_ready 3종 가드를 통과해야 함
+  verification_path: null   # [대기 ← 3-9] 사람 채점 대조 기록. 없으면 tier=final 실행 거부.
+  min_agreement: 0.80        # [대기] 3-9 실측 후 조정
+
+runtime:
+  concurrency: 1
+  timeout_seconds: 120
+  temperature: 0
+
+cache:
+  enabled: true
+  directory: .cache/grader
+
+retrieval:
+  # retrieval_k(1차 후보군) / reranker_k(재정렬 후) / context_k(최종 LLM 입력) 는 서로
+  # 다른 단계 — 하나로 합치지 않는다(4-9-3). 이태민 실제 검색 구조가 오면 재확인.
+  # 이태민 base.yaml top_k=5 확정 — "채점(3-2)은 이 결과를 k=3/5 등으로 잘라 별도 분석
+  # (김하루 협의)". → eval_k 로 retrieval_k 단계에 by_k(recall/precision/mrr @3,@5) 를 붙인다.
+  retrieval_k: 20
+  reranker_k: 10
+  context_k: 5
+  # 2-9 확정 단위. 2026-09-02 박예진·임현진 최종: 평가셋 location 과 청크가 같은 규약을 쓴다
+  # (ref_no = location_label 그대로, line = md_line_start). match_location 이 양쪽 line 이
+  # 있으면 청크 line 범위 포함으로, 없으면 ref_no 문자열로 대조한다.
+  precision: ref_no    # document | section | ref_no — 2-9 확정 단위
+  eval_k: [3, 5]        # 다단계 k 분석 (이태민 top_k=5)
+  # 팀장: 검색을 쓰지 않고 답한 문항(추출표·identity 경로)은 검색 평가 대상 아님.
+  # response.route 가 이 목록에 있으면 검색/citation 채점 = 해당 없음(applicable=False).
+  # 이태민이 실제 route 이름을 확정하면 여기만 맞추면 된다.
+  non_search_routes: [extract_table, extraction_table, table, identity, metadata, select_table]
+
+grading:
+  allow_partial: false
+  docset_partial_credit: true
+  miss_weight: 0.7
+  require_table_format: true
+  grade_citations: true
+  # 값 뒤에 남는 군더더기 허용 길이 (팀장 2-9: config 관리, 실측 전까지 20 유지).
+  # 이 기준으로 오답 처리되면 per_item.detail.why 에 남은 문자열이 기록된다.
+  residual_limit: 20
+
+  # 팀장 3: 공식 평가셋이 팀 결정을 아직 반영 못한 문항. 모델 오류로 세지 않고
+  # KNOWN_GROUND_TRUTH_MISMATCH 로 분리 보고, 집계에서 제외.
+  # (재채점 직전 최신 공식 평가셋 확인 후, 반영됐으면 이 목록에서 뺀다)
+  known_ground_truth_mismatch:
+    - PRAC-EXT-002   # 축약 5개 → 원문 전체 제출서류 목록 (현진 수정 대기)
+    - PRAC-EXT-004   # '지역 제한 없음' → '원문에서 지역 제한 여부를 확인할 수 없음' (현진 수정 대기)
+
+gate:
+  severity_gate:
+    critical: 0.85     # [대기] baseline 실측 전 임시값
+
+  # [2026-08-31 반영] 추출 테이블 12필드의 critical/major/minor 등급.
+  # 키 = rfp_extraction_table_v2 의 `field_name` 실제 값(박예진, /srv/rfp 확인).
+  # 등급 근거 = 체크리스트 1-12-1 최종본(업무 빈도·위험). critical 4 / major 5 / minor 3.
+  # ※ "마감일"은 추출 12필드가 아니라 data_list.csv 메타 필드 → deadline_filter 로 별도 처리.
+  # grade_extraction_audit / grade_doc_selection 이 이 등급으로 게이트 임계값을 고른다.
+  column_severity:
+    "참가 자격(면허·실적)": critical
+    "지역제한": critical
+    "컨소시엄 요건": critical
+    "제출 방식": critical
+    "예산": major
+    "사업기간": major
+    "평가 배점": major
+    "필수 제출 서류": major
+    "공고일": major
+    "과업 범위": minor
+    "사업 개요": minor
+    "사업분야": minor
+
+  # [2026-08-27 갱신 — 값은 확정, 적용은 보류] 임현진 2-12 확정: v1 총 50문항 =
+  # selection 25 / extraction 15 / qa 10. 다만 이 저장소의
+  # tests/fixtures/evaluation_set.jsonl은 아직 실제 50문항이 아니라 배관 점검용
+  # 샘플(1문항)이다 — 여기서 task_quota를 채우면 validation.check_evalset_integrity의
+  # 할당량 검사가 그 샘플/스모크 테스트 픽스처를 즉시 "할당량 위반"으로 잡아버려
+  # CI 스모크 테스트가 깨진다. 그래서 기본값은 비워 두고, 실제 50문항 평가셋을
+  # 연결하는 시점에 아래 값으로 채운다:
+  #   task_quota: {selection: 25, extraction: 15, qa: 10}
+  task_quota: {}
+  data_thresholds:
+    # [2026-08-27 확정 — 박예진 1-11, "논쟁 없음"] CI 1층 데이터 정상성 게이트 4종.
+    # 이 값들은 manifest(--data-manifest)에 해당 키가 있을 때만 비교되므로,
+    # manifest가 아직 없는 실행(테스트 포함)에는 영향이 없다(1층 SKIP).
+    min_load_rate: 1.0              # md 정상 로드율 100%
+    max_raw_md_count_diff: 0        # raw 문서 수 = md 문서 수
+    max_filename_mismatches: 0      # 파일명 정규화 불일치 0건
+    max_csv_decode_failures: 0      # CSV 디코딩 실패 행 0건
+    # [2026-08-27 박예진 파싱 품질 실측 공유] 표 보존율·인코딩 실측값.
+    # 표 개수는 [정정 4차] 바깥 표 7,916개/태그 전부 8,550개/중첩 634개(구 "8,051개"는
+    # 근거 불명확으로 폐기, 김태윤 확인) — README "2026-08-27 팀 공유분 재확인" 참고.
+    # ★원본 대비 손실률은 팀 결정으로 여기 넣지 않는다(CI/평가 지표 대상 아님).
+    min_table_preservation_rate: 1.0  # 표 보존율 100%
+    max_encoding_corruption: 0        # 인코딩 깨짐 0건
+
+  # [2026-08-27 박예진 확정] 게이트가 아니라 경고 — 실행을 막지 않고 사람이 보고
+  # 넘긴다. data_thresholds와 절대 합치지 않는다.
+  data_warn_thresholds:
+    max_zero_table_docs: 0  # 표 0개 문서 — 실측 100건 전부 표 최소 3개. 스캔 한글
+                             # 파일(OCR 미실행) 가능성 신호. 한계: 부분 스캔은 못 잡음(1-19-1)
+
+  doc_org: {}            # [대기 ← 박예진 1-9-1] document_id → 발주기관
+
+  # [2026-08-27 임현진 2-16 확정] 통합 점수 "산출 방식"은 확정 — 가중치는 1-2(업무
+  # 빈도·위험) 기준, 태스크별 3개 점수와 항상 나란히 표시. 다만 1-2의 실제 가중치
+  # 숫자가 아직 전달되지 않아 비워 둔다. 예: {selection: 0.4, extraction: 0.35, qa: 0.25}
+  # 처럼 채우면 diagnostics.main_metrics().integrated_score가 즉시 계산된다.
+  task_weight: {}
+
+  # [2026-08-28 팀 확정] field_tag severity 가중치 — critical : major : minor = 5 : 3 : 2.
+  # diagnostics.severity_weighted_score 가 문항별 점수를 이 가중치로 가중 평균한다.
+  # ★critical_abstain(치명 문항의 정상 기권) 축과는 **별개**로 동작한다 — 하나가
+  #   다른 하나를 대체하지 않는다(task_scoring.grade_abstention / diagnostics.severity_report).
+  field_tag_weight:
+    critical: 5
+    major: 3
+    minor: 2
+
+# 팀 확정 6-자산 provenance 기본값. 필드명·값 규약은 팀 실험 인프라 base.yaml §① "재료
+# 버전 6칸"과 동일(`v1`/`v2` …, 필드명 절대 개명 금지). CLI 인자(--corpus / --preprocess
+# / --table / --index / --evalset / --scorer)가 있으면 그쪽이 우선. evalset 은 여기·인자가
+# 없으면 $RAG_ROOT/evalset/v1/VERSION.txt 의 `evalset:` 을 자동으로 읽는다.
+# 채우지 않은 축은 "UNKNOWN"(필드 자체는 항상 report.json·per_item 에 존재).
+# 심판 프롬프트 세부 버전은 6칸 밖 — manifest.judge_prompt_versions 에 별도 기록.
+provenance:
+  corpus: UNKNOWN        # ① 원문 코퍼스
+  preprocess: UNKNOWN    # ② 전처리 파이프라인(파싱·정제·청킹)
+  table: v3             # ③ 구조화 추출 테이블 — 실사용값 rfp_extraction_table_v3 (팀장)
+  index: v1             # ④ 검색 인덱스 — base.yaml §① "index: v1" 확정(폴더 v1로 시작).
+                        #    실제 인덱스 생성은 이태민 chunk/embedding 확정 후.
+                        #    생성 시각은 manifest.index_build_timestamp 에 별도 자동 기록.
+  evalset: UNKNOWN       # ⑤ 평가셋(Ground Truth) — VERSION.txt 자동 조회.
+                        #    base.yaml §① "evalset: v1"은 아직 TODO(임현진 평가셋 동결 시 확정).
+  scorer: v2             # ⑥ 채점기 버전 — v2 (2026-09-02, 채점 오류 수정: 금액 조건 분리 /
+                        #    빈 정규화형 / 항목 1:1 대응 / abstained 필수 / 검색경로 구분 등).
+                        #    팀 실험 결과는 같은 scorer 버전끼리만 비교한다.
+
+out_dir: artifacts/scores
+use_stub_judge: true   # ★dev/CI 값싼 검사 전용 — StubJudge는 심판이 아니다. tier=final에는 못 쓴다.
+ci_subset_size: 20
+dev_subset_size: 60
+enforce_gates: true
