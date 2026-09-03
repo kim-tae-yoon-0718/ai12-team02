@@ -1,4 +1,5 @@
 import json
+import re
 import pandas as pd
 
 """
@@ -21,24 +22,44 @@ def find_field(key):
     assert len(matches) == 1, f"'{key}' 매칭 실패: {matches}"
     return matches[0]
 
+# 수정: "컨소시엄요건 = value_present"는 "조항이 있다"는 뜻일 뿐, "컨소시엄을 허용/요구한다"는
+# 뜻이 아님(불허 조항도 value_present로 잡힘). 조항 본문에서 불허 표현을 찾아
+# 실제로 공동수급을 허용/요구하는 문서만 별도로 구분한다.
+consortium_col = find_field("컨소시엄요건")
+consortium_raw = df[df["field_name"] == consortium_col].set_index("document_id")["answer_raw"]
+DISALLOW_PAT = re.compile(r"불허|불가|금지|허용하지\s*않|허용되지\s*않|제외한\s*단독|단독입찰로\s*진행")
+
+def consortium_required(doc_id):
+    if wide.loc[doc_id, consortium_col] != "value_present":
+        return False
+    text = consortium_raw.get(doc_id, "") or ""
+    return not DISALLOW_PAT.search(text)
+
+wide["__컨소시엄요구__"] = [consortium_required(d) for d in wide.index]
+
 pools = {}
 
 for f in wide.columns:
+    if f == "__컨소시엄요구__":
+        continue
     pools[f"single_present__{f}"] = sorted(wide.index[wide[f] == "value_present"].tolist())
     pools[f"negative_absent__{f}"] = sorted(wide.index[wide[f] == "field_absent"].tolist())
+
+pools["single_required__컨소시엄요건"] = sorted(wide.index[wide["__컨소시엄요구__"]].tolist())
 
 combos = {
     "compound_1__제출방식absent_필수제출서류absent": {"제출방식": "field_absent", "필수제출서류": "field_absent"},
     "compound_2__참가자격present_컨소시엄absent":   {"참가자격": "value_present", "컨소시엄요건": "field_absent"},
-    "compound_3__지역제한present_컨소시엄present":   {"지역제한": "value_present", "컨소시엄요건": "value_present"},
-    "compound_4__제출방식extref_컨소시엄present":    {"제출방식": "external_reference", "컨소시엄요건": "value_present"},
+    "compound_3__지역제한present_컨소시엄요구":      {"지역제한": "value_present", "__컨소시엄요구__": True},
+    "compound_4__제출방식extref_컨소시엄요구":       {"제출방식": "external_reference", "__컨소시엄요구__": True},
     "compound_5__컨소시엄present_평가배점absent":    {"컨소시엄요건": "value_present", "평가배점": "field_absent"},
     "zero_1__지역제한present_컨소시엄absent":        {"지역제한": "value_present", "컨소시엄요건": "field_absent"},
 }
 for name, cond in combos.items():
     mask = pd.Series(True, index=wide.index)
     for key, status in cond.items():
-        mask &= (wide[find_field(key)] == status)
+        col = key if key == "__컨소시엄요구__" else find_field(key)
+        mask &= (wide[col] == status)
     pools[name] = sorted(wide.index[mask].tolist())
 
 for k, v in pools.items():
