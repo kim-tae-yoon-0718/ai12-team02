@@ -36,13 +36,13 @@ assignments = {
     "EXT-13 목록값 과업범위(minor)":         "single_present__과업 범위",
 }
 
-used = set()
-for label, key in assignments.items():
-    candidates = [d for d in extrat[key] if d not in used]
+used_docs = set()
+for label, pool_key in assignments.items():
+    candidates = [d for d in pools[pool_key] if d not in used_docs]
     pick = candidates[0] if candidates else None
     if pick:
-        used.add(pick)
-    print(f"{label:45s} -> {pick} (후보 {len(candidates)}건)")
+        used_docs.add(pick)
+    print(f"{label:40s} -> {pick} (후보 {len(candidates)}건)")
 
 
 # --- 2. 확정된 (document_id, line)으로 정확한 location 조회 ---
