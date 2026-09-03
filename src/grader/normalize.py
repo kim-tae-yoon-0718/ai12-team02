@@ -175,7 +175,8 @@ _DATE_PATTERNS = [
 ]
 
 
-_TIME_RE = re.compile(r"(?P<h>\d{1,2})\s*[:시]\s*(?P<mi>\d{2})?")
+_TIME_RE = re.compile(
+    r"(?P<ampm>오전|오후|am|pm)?\s*(?P<h>\d{1,2})\s*[:시]\s*(?P<mi>\d{2})?", re.I)
 
 
 def parse_date(s) -> str | None:
@@ -193,8 +194,12 @@ def parse_date(s) -> str | None:
 
 
 def parse_time(s) -> str | None:
-    """'16:00' / '16시' / '16시 30분' → 'HH:MM'. 날짜 문자열에 시각이 섞여 있어도 뽑는다.
-    ★정답에 시각이 있으면 시각까지 비교한다(팀장 2-7). 없으면 날짜만."""
+    """'16:00' / '16시' / '오후 4시' / '오전 4시 30분' → 'HH:MM'(24시간제). 날짜 문자열에
+    시각이 섞여 있어도 뽑는다.
+    ★정답에 시각이 있으면 시각까지 비교한다(팀장 2-7). 없으면 날짜만.
+    ★'오전 4시'와 '오후 4시'는 12시간 차이 나는 다른 시각이다 — 오전/오후 표기를 무시하고
+      시(時)만 뽑으면 둘을 같다고 오판한다(채점기 피드백 회귀). 12시간제 규칙(오전 12시=00:00,
+      오후 12시=12:00)으로 24시간제로 환산한다."""
     if s is None:
         return None
     t = to_halfwidth(str(s))
@@ -204,7 +209,15 @@ def parse_time(s) -> str | None:
     m = _TIME_RE.search(t)
     if not m:
         return None
-    return f"{int(m.group('h')):02d}:{int(m.group('mi') or 0):02d}"
+    h = int(m.group("h"))
+    ampm = (m.group("ampm") or "").lower()
+    if ampm in ("오후", "pm"):
+        if h != 12:
+            h += 12
+    elif ampm in ("오전", "am"):
+        if h == 12:
+            h = 0
+    return f"{h % 24:02d}:{int(m.group('mi') or 0):02d}"
 
 
 def _date_span(text: str) -> tuple[str, str] | None:
@@ -239,6 +252,24 @@ def _strip_josa(s: str) -> str:
         prev = s
         s = _JOSA_TAIL.sub("", s).strip()
     return s
+
+
+# 추출 테이블 원문에 흔한 "번호/기호 + 항목명 + 콜론" 라벨 접두. 뒤에 오는 콜론까지 최대
+# 20자 이내인, 좁게 잡은 패턴만 인정한다 — 아무 콜론이나 라벨로 오인해 값의 일부를
+# 잘라내면 안 된다(채점기 피드백: "나. 사업기간 : 계약일로부터 6개월" vs "계약일로부터 6개월").
+_LABEL_PREFIX = re.compile(r"^\s*(?:[가-힣]{1,3}|[0-9]{1,2}|[①-⑮ⅰ-ⅹ])[.\)]\s*[^:：\n]{1,20}[:：]\s*")
+
+
+def strip_label_prefix(s: str) -> str | None:
+    """'나. 사업기간 : 계약일로부터 6개월' → '계약일로부터 6개월'.
+    라벨(번호+항목명+콜론)이 없으면 None — 원문을 훼손하지 않는다. 이 함수는 정답 쪽에서
+    "라벨 생략도 정답으로 인정" 하기 위한 추가 후보를 만드는 용도로만 쓴다(치환이 아니라
+    accept 후보 추가) — 답변 쪽 문자열은 건드리지 않는다."""
+    m = _LABEL_PREFIX.match(str(s or ""))
+    if m and m.end() < len(s):
+        core = s[m.end():].strip()
+        return core or None
+    return None
 
 
 def canonical(value, kind: str = "auto") -> str:

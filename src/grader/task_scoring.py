@@ -35,7 +35,7 @@ from .models import (
     TaskScore,
     as_id_list,
 )
-from .normalize import match_short, normalize_text
+from .normalize import match_short, normalize_text, strip_label_prefix
 
 ItemMatcher = Callable[[str, str], bool]
 
@@ -124,6 +124,12 @@ def grade_short_answer(item: EvaluationItem, response: ModelResponse, cfg: dict)
     accept = []
     if isinstance(item.answer_normalized, str) and item.answer_normalized != item.answer_raw:
         accept.append(item.answer_normalized)
+    if isinstance(item.answer_raw, str):
+        # ★추출 원문 라벨("나. 사업기간 : ")을 생략하고 핵심 값만 답해도 정답으로 인정한다
+        # (채점기 피드백) — 원문은 그대로 두고 대안 후보만 추가(치환 아님).
+        core = strip_label_prefix(item.answer_raw)
+        if core:
+            accept.append(core)
     ok, why = match_short(
         item.answer_raw, response.answer, accept=accept,
         allow_partial=cfg.get("allow_partial", False),
@@ -167,6 +173,14 @@ def grade_list(item: EvaluationItem, response: ModelResponse,
             if i not in used_got and match(gs, str(x)):
                 used_got.add(i)
                 assigned = True
+                # ★structured_answer 로 이미 소진된 항목의 원문은 자유텍스트(text_norm) 폴백에서
+                #   다시 못 쓰게 지운다 — 안 그러면 "제안서 요약본" 하나가 structured_answer로
+                #   '제안서 요약본'을 만족시키고, response.answer 원문에 그 글자가 그대로 남아
+                #   '제안서'까지 또 만족시켜 한 답을 두 개로 이중 계산한다(채점기 피드백 회귀).
+                nx = normalize_text(str(x))
+                idx = text_norm.find(nx)
+                if idx != -1:
+                    text_norm = text_norm[:idx] + " " * len(nx) + text_norm[idx + len(nx):]
                 break
         if not assigned:
             ng = normalize_text(gs)
@@ -209,8 +223,23 @@ def grade_summary_checkpoint(item: EvaluationItem, response: ModelResponse,
             "applicable": False,
             "reason": "answer_raw 에 체크포인트 배열 없음 — judge_checkpoint 항목 단위 채점 불가",
         })
-    hit = [c for c in cps if match(c, response.answer)]
-    miss = [c for c in cps if c not in hit]
+    # ★체크포인트끼리도 1:1 소진 대응(grade_list 와 동일 원칙, 팀장 2-3) — 응답 한 구절이
+    #   여러 체크포인트를 동시에 만족한 것으로 이중 계산되지 않게 한다. 예: 체크포인트
+    #   ["제안서","제안서 요약본"] 인데 응답이 "제안서 요약본"뿐이면, 예전엔 각 체크포인트를
+    #   응답 원문 전체와 독립적으로 재대조해서 둘 다 hit 로 잡았다(채점기 피드백 회귀).
+    #   긴 체크포인트부터 매칭해 소진하면 짧은 것이 남는 글자를 가로채 오탐하는 것도 막는다.
+    text_norm = normalize_text(response.answer)
+    satisfied = [False] * len(cps)
+    for i in sorted(range(len(cps)), key=lambda i: -len(str(cps[i]))):
+        cs = str(cps[i])
+        if match(cs, text_norm):
+            satisfied[i] = True
+            nc = normalize_text(cs)
+            idx = text_norm.find(nc)
+            if idx != -1:
+                text_norm = text_norm[:idx] + " " * len(nc) + text_norm[idx + len(nc):]
+    hit = [c for c, ok in zip(cps, satisfied) if ok]
+    miss = [c for c, ok in zip(cps, satisfied) if not ok]
     score = len(hit) / len(cps)
     return TaskScore(kind="summary", score=score,
                      detail={"applicable": True, "covered": hit, "missing": miss})

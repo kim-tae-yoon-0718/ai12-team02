@@ -4,9 +4,12 @@
 ★기존 테스트를 느슨하게 만들지 않고, 각 상황을 독립 케이스로 못박는다.
 """
 from grader.models import EvaluationItem, ModelResponse
-from grader.normalize import amount_conditions, match_short, parse_amount, parse_time, normalize_text
+from grader.normalize import (
+    amount_conditions, match_short, parse_amount, parse_time, normalize_text, strip_label_prefix,
+)
 from grader.task_scoring import (
-    _item_match, check_format, grade_comparison, grade_list, grade_short_answer, score_item,
+    _item_match, check_format, grade_comparison, grade_list, grade_short_answer,
+    grade_summary_checkpoint, score_item,
 )
 
 CFG = {"residual_limit": 20}
@@ -218,3 +221,58 @@ def test_known_ground_truth_mismatch_excluded_from_aggregate():
     assert {r["id"] for r in g["scored_rows"]} == {"Q_OK"}
     bad = next(r for r in g["results_rows"] if r["id"] == "Q_BAD")
     assert bad["final_status"] == "KNOWN_GROUND_TRUTH_MISMATCH"
+
+
+# ── K. 채점기 피드백 회귀 (2026-09-03) ────────────────────────────────
+# 라벨(번호+항목명) 생략 / AM·PM 시각 구분 / 목록·요약형 이중 계산.
+# 의도적으로 다루지 않는 것(별도 기록, 여기서 구현 안 함):
+#  - 완전한 의미 기반(semantic) 자유문장 비교 — LLM judge 영역, 팀장 2-3 "분리해도 됨"
+#  - abstained 를 CLARIFICATION/REFUSAL/IRRELEVANT 로 세분 — 팀장 2-4(bool 확정) 재논의 필요
+#  - '없음'(field extracted as 없음) vs '문서에서 확인할 수 없음' 동일시 — 팀장 2-5 위반 소지,
+#    현진·하루 협의 필요(코드로 선반영하지 않음)
+
+def test_label_prefix_omission_accepted():
+    it = _it(answer_raw="나. 사업기간 : 계약일로부터 6개월")
+    ok, why = match_short(it.answer_raw, "계약일로부터 6개월",
+                          accept=[strip_label_prefix(it.answer_raw)])
+    assert ok is True and why == "normalized_exact"
+
+
+def test_label_prefix_omission_does_not_loosen_wrong_value():
+    it = _it(answer_raw="나. 사업기간 : 계약일로부터 6개월")
+    r = grade_short_answer(it, _r(answer="계약일로부터 12개월"), CFG)
+    assert r.score == 0.0
+
+
+def test_label_prefix_no_false_positive_on_plain_value():
+    # 콜론 없는 평범한 값은 그대로 — strip_label_prefix 가 아무것도 잘라내면 안 됨
+    assert strip_label_prefix("지역 제한 없음") is None
+    assert strip_label_prefix("248,796천원") is None
+
+
+def test_ampm_time_distinguished():
+    assert parse_time("오전 4시") == "04:00"
+    assert parse_time("오후 4시") == "16:00"
+    assert parse_time("오전 12시") == "00:00"   # 자정
+    assert parse_time("오후 12시") == "12:00"   # 정오
+    ok, why = match_short("2024-06-24 오전 4시", "2024-06-24 오후 4시")
+    assert ok is False and "time_mismatch" in why
+
+
+def test_list_structured_answer_does_not_double_count_via_free_text():
+    """구조화 답변(structured_answer)으로 이미 만족시킨 항목의 원문이 response.answer 에
+    그대로 남아있어도, 다른 정답 항목이 거기서 또 만족된 것으로 이중 계산되면 안 된다."""
+    it = _it(task_type="extraction", answer_type="list", answer_raw=["제안서", "제안서 요약본"])
+    r = grade_list(it, _r(answer="제안서 요약본", structured_answer=["제안서 요약본"]))
+    assert r.score == 0.0
+    assert r.detail["hit"] == ["제안서 요약본"]
+    assert r.detail["missing"] == ["제안서"]
+
+
+def test_summary_checkpoint_no_double_count():
+    """요약형(체크포인트)도 목록형과 동일한 1:1 소진 원칙을 따른다."""
+    it = _it(task_type="qa", answer_type="summary", answer_raw=["제안서", "제안서 요약본"])
+    r = grade_summary_checkpoint(it, _r(answer="제안서 요약본"))
+    assert r.score == 0.5
+    assert r.detail["covered"] == ["제안서 요약본"]
+    assert r.detail["missing"] == ["제안서"]
