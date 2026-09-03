@@ -6,11 +6,13 @@ import collections
 from collections import namedtuple, Counter
 
 
+
 # status: "PASS" | "FAIL" | "SKIP"
 CheckResult = namedtuple("CheckResult", ["name", "status", "message"])
 
-# reference_time은 정해진 상수값
-REFERENCE_TIME = "2024-06-01"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_DOC_IDS = REPO_ROOT / "data" / "gold" / "corpus_doc_ids.json"
+REFERENCE_TIME = "2024-06-01"    # reference_time은 정해진 상수값
 TYPE_MAP = {"string": str, "array": list}
 FIELD_SPEC = {
     "id": "string",
@@ -356,7 +358,7 @@ def main():
     parser.add_argument("items_path", help="검사 할 items.jsonl 경로")
     parser.add_argument("--strict", action="store_true", help="freeze용: 총량·비율 하드검사")
     parser.add_argument("--practice", default="/srv/rfp/evalset/practice_items.jsonl")
-    parser.add_argument("--doc-ids", default="data/gold/corpus_doc_ids.json")
+    parser.add_argument("--doc-ids", default=str(DEFAULT_DOC_IDS))
     parser.add_argument("--evalset-version", default="/srv/rfp/evalset/v1/VERSION.txt")
     parser.add_argument("--corpus-version", default="/srv/rfp/shared_data/processed/corpus_v2/VERSION.txt")
     parser.add_argument("--chunking-version", default="/srv/rfp/shared_data/processed/chunks_v3/VERSION.txt")
