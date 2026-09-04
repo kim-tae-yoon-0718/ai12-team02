@@ -187,6 +187,7 @@ class GraderRunner:
             "grade_citations": self.config.grading.grade_citations,
             "residual_limit": self.config.grading.residual_limit,
             "accept_natural_absence_phrasing": self.config.grading.accept_natural_absence_phrasing,
+            "clarify_routes": self.config.retrieval.clarify_routes,
         }, matcher)
 
         nsr = self.config.retrieval.non_search_routes

@@ -339,3 +339,47 @@ def test_list_counting_one_item_not_counted_as_two():
     r = grade_list(it, _r(answer="서류A", structured_answer=["서류A"]))
     assert r.score == 0.0
     assert r.detail["hit"] == ["서류A"] and r.detail["missing"] == ["서류B"]
+
+
+# ── M. 실제 모델 계약 확인 (2026-09-04, answer_pipeline.py 팀원 브랜치 fetch) ──
+# non_search_routes/clarify_routes 기본값을 이태민 실제 ROUTE_* 상수로 교체.
+# 전엔 추측값이라 실제 응답 route 와 하나도 안 맞았다(조용한 오류) — 코드 추적으로 확인.
+
+def test_non_search_routes_match_real_router_constants():
+    from grader.config import load_config
+    C = load_config("config/grader.yaml")
+    real_non_search = {
+        "추출테이블_문서선별", "추출테이블_값조회", "추출테이블_비교조립",
+        "identity_v2_값조회", "애매_되묻기", "검색불필요_인사응답", "검색불필요_사용법안내",
+    }
+    assert C.retrieval.non_search_routes == frozenset(real_non_search)
+    # 실제 검색을 쓰는 라우트는 제외 목록에 없어야 한다
+    assert "chunks검색_LLM답변" not in C.retrieval.non_search_routes
+    assert "구조화자료_결합_LLM답변" not in C.retrieval.non_search_routes
+
+
+def test_clarification_detected_via_real_route_and_structured_answer():
+    """실제 모델(_clarify())이 채우는 신호 — route='애매_되묻기' +
+    structured_answer.clarification_needed=True. 텍스트 패턴이 안 맞아도 이걸로 판정돼야 한다."""
+    it = _it(task_type="extraction", answer_type="value",
+             answer_raw="여러 사업이 있어 특정할 수 없습니다.", unspecified_type="ambiguous_match")
+    # 텍스트만 봐서는 CLARIFICATION 패턴이 아닌 문구인데(신원 노출 없이 실제 모델처럼 후보만 나열)
+    weird_text = "- 이러닝시스템 운영 용역\n- 사회보험료 지원 정보시스템 보완"
+    resp = ModelResponse(id="X", answer=weird_text, abstained=True, route="애매_되묻기",
+                         structured_answer={"clarification_needed": True,
+                                            "candidates": ["RFP-000021", "RFP-000022"]})
+    from grader.config import load_config
+    C = load_config("config/grader.yaml")
+    cfg = {"residual_limit": 20, "clarify_routes": C.retrieval.clarify_routes}
+    out = score_item(it, resp, cfg)
+    assert out["task_score"].score == 1.0
+    assert out["abstention"].abstention_kind == "clarification_ok"
+
+
+def test_route_signal_overrides_when_text_pattern_absent_but_not_when_route_is_search():
+    """route가 검색 라우트('chunks검색_LLM답변')면 되묻기로 오판하면 안 된다."""
+    it = _it(task_type="extraction", answer_type="value", answer_raw="5억원",
+             unspecified_type="ambiguous_match")
+    resp = ModelResponse(id="X", answer="엉뚱한 답", abstained=False, route="chunks검색_LLM답변")
+    r = grade_short_answer(it, resp, {"residual_limit": 20})
+    assert r.score == 0.0  # 검색 라우트인데 되묻기 취급되면 안 됨

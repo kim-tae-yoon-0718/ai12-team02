@@ -46,10 +46,26 @@ class RetrievalConfig:
     precision: str = "ref_no"  # document | section | ref_no (2-9 확정 단위)
     # 이태민 top_k=5 결과를 채점 때 여러 k로 잘라 별도 기록 (base.yaml top_k 주석, 김하루 협의)
     eval_k: tuple[int, ...] = (3, 5)
-    # 팀장: 검색을 쓰지 않고 답한 문항(추출표·identity 경로)은 검색 평가 대상 아님.
+    # 팀장: 검색을 쓰지 않고 답한 문항(추출표·identity·되묻기·인사 경로)은 검색 평가 대상 아님.
     # response.route 가 이 목록에 있으면 grade_retrieval/grade_citation 이 applicable=False.
-    non_search_routes: frozenset[str] = frozenset(
-        {"extract_table", "extraction_table", "table", "identity", "metadata", "select_table"})
+    # ★2026-09-04: 이태민 실제 라우터(src/scripts/answer_pipeline.py) 확정본으로 교체.
+    #   전엔 추측값(extract_table 등)이었는데 실제 route 문자열과 하나도 안 맞아서
+    #   route 구분 로직이 실제 응답에 전혀 작동하지 않고 있었다(조용한 오류) — 코드에서
+    #   각 라우트가 retrieved/contexts 를 채우는지 하나씩 추적해 확인 후 교체.
+    #   검색을 실제로 쓰는 라우트(제외 대상 아님): chunks검색_LLM답변, 구조화자료_결합_LLM답변.
+    non_search_routes: frozenset[str] = frozenset({
+        "추출테이블_문서선별",      # ROUTE_SELECT
+        "추출테이블_값조회",        # ROUTE_EXTRACT_VALUE
+        "추출테이블_비교조립",      # ROUTE_COMPARE
+        "identity_v2_값조회",       # ROUTE_IDENTITY_VALUE
+        "애매_되묻기",              # ROUTE_CLARIFY — 검색 전 단계에서 되물음
+        "검색불필요_인사응답",      # ROUTE_GREETING
+        "검색불필요_사용법안내",    # ROUTE_SYSTEM_HELP
+    })
+    # ★clarification 판정 1차 신호(2026-09-04). response.route 가 여기 있으면
+    # classify_response_kind() 텍스트 패턴보다 이걸 우선한다 — 모델이 실제로 이 값을
+    # 채워서 보내므로 정규식 추측보다 정확하다.
+    clarify_routes: frozenset[str] = frozenset({"애매_되묻기"})
 
 
 @dataclass(frozen=True)
@@ -211,7 +227,9 @@ def load_config(path: str | Path = "config/grader.yaml",
             eval_k=tuple(int(k) for k in retrieval_raw.get("eval_k", (3, 5))),
             non_search_routes=frozenset(retrieval_raw.get(
                 "non_search_routes",
-                ["extract_table", "extraction_table", "table", "identity", "metadata", "select_table"])),
+                ["추출테이블_문서선별", "추출테이블_값조회", "추출테이블_비교조립",
+                 "identity_v2_값조회", "애매_되묻기", "검색불필요_인사응답", "검색불필요_사용법안내"])),
+            clarify_routes=frozenset(retrieval_raw.get("clarify_routes", ["애매_되묻기"])),
         ),
         grading=GradingConfig(
             allow_partial=bool(grading_raw.get("allow_partial", False)),

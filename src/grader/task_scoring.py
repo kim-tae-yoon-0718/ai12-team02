@@ -118,6 +118,25 @@ def grade_selection(item: EvaluationItem, response: ModelResponse, cfg: dict) ->
 
 # ------------------------------------------------------------------ answer_type=value (단일 값)
 
+_DEFAULT_CLARIFY_ROUTES = frozenset({"애매_되묻기"})  # ROUTE_CLARIFY, 이태민 answer_pipeline.py 확정
+
+
+def _is_clarification(response: ModelResponse, cfg: dict | None = None) -> bool:
+    """되묻기 응답인지 판정 — route/structured_answer(실제 모델이 채워 보내는 구조화 신호)를
+    1차로 보고, 없을 때만 텍스트 패턴(classify_response_kind)으로 보조 판정한다.
+    ★2026-09-04: 실제 모델 코드(answer_pipeline._clarify)를 확인해보니 되묻기 응답은
+    route="애매_되묻기" 와 structured_answer.clarification_needed=True 를 항상 채워 보낸다 —
+    정규식 추측보다 이게 훨씬 정확하므로 이걸 우선한다."""
+    routes = (cfg or {}).get("clarify_routes") or _DEFAULT_CLARIFY_ROUTES
+    route = (response.route or "").strip()
+    if route and route in routes:
+        return True
+    sa = response.structured_answer
+    if isinstance(sa, dict) and sa.get("clarification_needed") is True:
+        return True
+    return classify_response_kind(response.answer) == "CLARIFICATION"
+
+
 def grade_short_answer(item: EvaluationItem, response: ModelResponse, cfg: dict) -> TaskScore:
     """단일 값 채점(answer_type=value) — 이진(정확 일치/불일치). 태스크가 qa 든
     extraction 이든 답 형태가 value 면 이 함수로 채점한다."""
@@ -141,7 +160,7 @@ def grade_short_answer(item: EvaluationItem, response: ModelResponse, cfg: dict)
     #   되묻기는 오답도 거절도 아니다). 새 필드 요구 없이 기존 unspecified_type +
     #   response.answer 텍스트 패턴만으로 판정 — response.abstained 값은 안 건드린다.
     if not ok and item.unspecified_type is not None:
-        if classify_response_kind(response.answer) == "CLARIFICATION":
+        if _is_clarification(response, cfg):
             ok, why = True, "clarification_accepted(문항이 모호함 — unspecified_type)"
 
     # ★★ 논쟁 있는 항목 — 기본 OFF. config.grading.accept_natural_absence_phrasing=true 일 때만.
@@ -343,7 +362,7 @@ def grade_comparison(item: EvaluationItem, response: ModelResponse) -> TaskScore
 
 # ------------------------------------------------------------------ 3-3 기권
 
-def grade_abstention(item: EvaluationItem, response: ModelResponse) -> AbstentionResult:
+def grade_abstention(item: EvaluationItem, response: ModelResponse, cfg: dict | None = None) -> AbstentionResult:
     """기권율을 별도 지표로 분리(2-3 → 3-3).
 
     v0.2: 기권 대상 문항은 answer_type=unanswerable 로 표시된다(구 v0.1은
@@ -369,7 +388,7 @@ def grade_abstention(item: EvaluationItem, response: ModelResponse) -> Abstentio
     elif not should_abstain and did:
         # ★문항이 원래 모호해서(unspecified_type) 되묻는 응답이면 "불필요한 거절"이 아니다
         #   (채점기 피드백) — abstained bool 자체는 그대로 두고(팀장 2-4), 분류만 구분한다.
-        if item.unspecified_type is not None and classify_response_kind(response.answer) == "CLARIFICATION":
+        if item.unspecified_type is not None and _is_clarification(response, cfg):
             kind = "clarification_ok"
         else:
             kind = "critical_abstain" if item.field_tag == "critical" else "over_refusal"
@@ -453,7 +472,7 @@ def combine_status(format_status: FormatStatus, task_score: TaskScore) -> str:
 
 def score_item(item: EvaluationItem, response: ModelResponse, cfg: dict,
               matcher: ItemMatcher | None = None) -> dict:
-    abstention = grade_abstention(item, response)
+    abstention = grade_abstention(item, response, cfg)
 
     if abstention.should_abstain:
         # ★기권율은 일반 지표와 별도로 추적한다(2-3→3-3). answer_raw/answer_normalized가

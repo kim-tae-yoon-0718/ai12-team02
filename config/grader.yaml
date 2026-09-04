@@ -55,10 +55,22 @@ retrieval:
   # 있으면 청크 line 범위 포함으로, 없으면 ref_no 문자열로 대조한다.
   precision: ref_no    # document | section | ref_no — 2-9 확정 단위
   eval_k: [3, 5]        # 다단계 k 분석 (이태민 top_k=5)
-  # 팀장: 검색을 쓰지 않고 답한 문항(추출표·identity 경로)은 검색 평가 대상 아님.
+  # 팀장: 검색을 쓰지 않고 답한 문항(추출표·identity·되묻기·인사 경로)은 검색 평가 대상 아님.
   # response.route 가 이 목록에 있으면 검색/citation 채점 = 해당 없음(applicable=False).
-  # 이태민이 실제 route 이름을 확정하면 여기만 맞추면 된다.
-  non_search_routes: [extract_table, extraction_table, table, identity, metadata, select_table]
+  # ★2026-09-04: 이태민 실제 라우터(src/scripts/answer_pipeline.py, ROUTE_* 상수) 확정본으로
+  #   교체 — 전엔 추측값이라 실제 응답과 하나도 안 맞았음(각 라우트가 retrieved/contexts 를
+  #   채우는지 코드로 직접 추적해 확인). "chunks검색_LLM답변"·"구조화자료_결합_LLM답변"은
+  #   실제 청크 검색을 쓰므로 제외 목록에 넣지 않는다.
+  non_search_routes:
+    - 추출테이블_문서선별      # ROUTE_SELECT
+    - 추출테이블_값조회        # ROUTE_EXTRACT_VALUE
+    - 추출테이블_비교조립      # ROUTE_COMPARE
+    - identity_v2_값조회       # ROUTE_IDENTITY_VALUE
+    - 애매_되묻기              # ROUTE_CLARIFY
+    - 검색불필요_인사응답      # ROUTE_GREETING
+    - 검색불필요_사용법안내    # ROUTE_SYSTEM_HELP
+  # clarification 판정 1차 신호 — response.route 가 여기 있으면 텍스트 패턴보다 우선.
+  clarify_routes: [애매_되묻기]
 
 grading:
   allow_partial: false
