@@ -383,3 +383,22 @@ def test_route_signal_overrides_when_text_pattern_absent_but_not_when_route_is_s
     resp = ModelResponse(id="X", answer="엉뚱한 답", abstained=False, route="chunks검색_LLM답변")
     r = grade_short_answer(it, resp, {"residual_limit": 20})
     assert r.score == 0.0  # 검색 라우트인데 되묻기 취급되면 안 됨
+
+
+# ── N. 실제 데이터 실행에서 발견 (2026-09-04, 실제 모델 응답으로 채점 돌려봄) ──
+
+def test_list_item_enum_prefix_dropped_by_model_still_matches():
+    """실제 모델 응답 재현 — PRAC-EXT-002: 정답 목록 항목엔 전부 ①~⑮ 번호가 있는데,
+    모델이 그 중 1개만 번호 없이 냈다. 순번 표시는 값의 일부가 아니므로(이태민
+    answer_pipeline._ENUM_PREFIX_RE 와 동일 판단) 정답 처리돼야 한다."""
+    assert _item_match("① 입찰참가신청서(서금원 소정양식) 1부",
+                       "입찰참가신청서(서금원 소정양식) 1부") is True
+    it = _it(task_type="extraction", answer_type="list",
+             answer_raw=["① 서류A 1부", "② 서류B 1부"])
+    r = grade_list(it, _r(structured_answer=["서류A 1부", "② 서류B 1부"]))
+    assert r.detail["missing"] == []  # 번호 빠졌다고 누락 처리되면 안 됨
+
+
+def test_enum_prefix_strip_does_not_break_wrong_content():
+    # 번호를 떼도 내용 자체가 다르면 여전히 오답
+    assert _item_match("① 서류A 1부", "서류C 1부") is False

@@ -321,6 +321,21 @@ def strip_label_prefix(s: str) -> str | None:
     return None
 
 
+# 목록 항목 앞의 순번 표시(①, 1., 가. 등) — 콜론 없이 그냥 항목 앞에 붙는다. strip_label_prefix
+# 와 다른 패턴(라벨+콜론이 아니라 순서 번호만). 실제 모델(이태민 answer_pipeline.py
+# _ENUM_PREFIX_RE, 2026-09-04)이 "원문에서 딸려온 문서 서식 흔적 — 값의 일부가 아니다"라고
+# 이미 확정한 것과 동일 패턴을 채점기 쪽에도 반영 — 모델이 항목 1개는 번호를 지우고
+# 다른 항목은 안 지운 채 낼 때(실 데이터에서 확인됨) 목록 항목 매칭이 깨지는 걸 막는다.
+_ENUM_PREFIX = re.compile(r"^\s*(?:[가-힣]\s*[.)]|\(?\d{1,2}\s*[.)]|[①-⑳]|[ⅰ-ⅹ]\s*[.)])\s*")
+
+
+def strip_enum_prefix(s: str) -> str:
+    """'① 입찰참가신청서 1부' → '입찰참가신청서 1부'. 순번 표시가 없으면 원문 그대로."""
+    t = str(s or "")
+    m = _ENUM_PREFIX.match(t)
+    return t[m.end():].strip() if m else t
+
+
 def canonical(value, kind: str = "auto") -> str:
     """비교용 정규형. kind: auto|amount|date|text"""
     if value is None:

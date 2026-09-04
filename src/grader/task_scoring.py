@@ -35,7 +35,9 @@ from .models import (
     TaskScore,
     as_id_list,
 )
-from .normalize import classify_response_kind, match_short, normalize_text, strip_label_prefix
+from .normalize import (
+    classify_response_kind, match_short, normalize_text, strip_enum_prefix, strip_label_prefix,
+)
 
 ItemMatcher = Callable[[str, str], bool]
 
@@ -53,13 +55,7 @@ def _gold_value(item: EvaluationItem):
 _JOSA_AFTER = re.compile(r"^(은|는|이|가|을|를|과|와|의|에|에서|으로|로|도|만|까지|부터|및|와의|,|\.|:|\))?(\s|$)")
 
 
-def _item_match(gold_item: str, answer_text: str) -> bool:
-    """항목 하나가 '언급됐다' 판정 — 규칙 기반 기본 매처.
-    ★순수 substring 은 짧은 항목에서 오탐이 크다(팀장 2-3). 정규화 후 완전 일치이거나,
-      토큰 경계(앞은 공백/시작, 뒤는 공백/끝/한국어 조사)로 포함될 때만 인정한다.
-      prefix 매치는 하지 않는다 — 'A' 가 'A등급' 에 매치되지 않는다."""
-    g = normalize_text(gold_item)
-    a = normalize_text(answer_text)
+def _item_match_once(g: str, a: str) -> bool:
     if not g:
         return False
     if g == a:
@@ -70,6 +66,25 @@ def _item_match(gold_item: str, answer_text: str) -> bool:
         if before == " " and _JOSA_AFTER.match(a[idx + len(g):]):
             return True
         idx = a.find(g, idx + 1)
+    return False
+
+
+def _item_match(gold_item: str, answer_text: str) -> bool:
+    """항목 하나가 '언급됐다' 판정 — 규칙 기반 기본 매처.
+    ★순수 substring 은 짧은 항목에서 오탐이 크다(팀장 2-3). 정규화 후 완전 일치이거나,
+      토큰 경계(앞은 공백/시작, 뒤는 공백/끝/한국어 조사)로 포함될 때만 인정한다.
+      prefix 매치는 하지 않는다 — 'A' 가 'A등급' 에 매치되지 않는다.
+    ★목록 항목 앞의 순번 표시(①, 1. 등)는 값의 일부가 아니다(2026-09-04, 실 데이터 확인 —
+      모델이 항목 1개는 번호를 지우고 나머지는 안 지운 채 냈는데, 정답 쪽엔 전부 번호가
+      있어서 그 항목만 안 맞았다). 원문/순번-제거본 둘 다로 대조한다."""
+    g = normalize_text(gold_item)
+    a = normalize_text(answer_text)
+    if _item_match_once(g, a):
+        return True
+    g2 = normalize_text(strip_enum_prefix(gold_item))
+    a2 = normalize_text(strip_enum_prefix(answer_text))
+    if (g2, a2) != (g, a) and _item_match_once(g2, a2):
+        return True
     return False
 
 
