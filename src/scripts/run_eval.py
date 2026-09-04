@@ -306,6 +306,9 @@ def main() -> None:
         "git": get_git_info(),
         "run_timestamp": datetime.now(timezone.utc).isoformat(),
         "reference_datetime": cfg.get("reference_datetime"),
+        # 실제로 실린 생성 프롬프트 파일 — 설정과 실행이 어긋나면 여기서 드러난다
+        "prompt_generate_configured": cfg.get("prompt_generate"),
+        "prompt_generate_loaded": getattr(cache.get("gen"), "prompt_file", None),
         "total_questions": len(items),
         "task_type_distribution": task_counts,
         "route_distribution": {

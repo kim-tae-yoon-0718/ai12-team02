@@ -691,6 +691,53 @@ def _evidence_documents(evidence: list[StructuredEvidence]) -> list[str]:
 # 검색 경로
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# 생성 형식 지시 — 체크리스트 요청에도 "근거 밖 추가 금지"를 함께 싣는다
+# ---------------------------------------------------------------------------
+# 실제 API 실행에서 "사업범위 체크포인트로 뽑아줘"에 대해 원문에 없는 우선순위·
+# 영향분석·모듈/버전·교육 일정·달성지표가 항목으로 붙었다. 시스템 프롬프트
+# (generate_v3.txt)의 형식 변환 규칙과 **같은 취지의 제한**을 형식 지시에도 한 번 더
+# 실어서, 프롬프트 파일을 바꾸지 않는 실험 설정에서도 제한이 빠지지 않게 한다.
+#
+# ⚠️ 적용 범위가 서로 다르다는 점을 분명히 한다.
+#   - generate_v3.txt : 모든 생성 호출에 걸리고 요약·목록·표·체크리스트를 모두 다룬다.
+#   - 아래 형식 지시  : 체크리스트 계열 낱말을 부른 질문에만 추가로 붙는다.
+#     "요약해줘"·"표로 정리해줘"는 시스템 프롬프트 쪽 규칙만 받는다(기존 형식 지시 유지).
+#
+# ⚠️ 평가 문항 ID·정답·문항별 예시는 넣지 않는다(4-12 부정행위 금지).
+DEFAULT_FORMAT_INSTRUCTION = "간결하고 명확하게 답하세요."
+
+_CHECKLIST_REQUEST_KEYWORDS = (
+    "체크포인트", "체크 포인트", "체크리스트", "체크 리스트",
+    "점검 항목", "점검항목", "점검 사항", "점검사항",
+    "확인 목록", "확인목록", "확인 항목", "확인항목",
+)
+
+# ⚠️ 기존 지시("간결하고 명확하게")를 **대체하지 않고 앞에 그대로 둔다** —
+#    적대적 점검에서 확인한 대로, 형식 지시를 통째로 갈아치우면 유일한 길이
+#    제약이 사라져 오히려 답이 길어진다.
+CHECKLIST_FORMAT_INSTRUCTION = (
+    DEFAULT_FORMAT_INSTRUCTION
+    + " 요청한 체크리스트 형식으로 정리하되, 이것은 내용을 더하는 일이 아니라 "
+    "형식을 바꾸는 일입니다. 근거에 명시된 사실만 항목으로 옮기고 그 뜻과 범위를 "
+    "그대로 보존하세요. 한 사실을 여러 추측성 세부 항목으로 늘리지 말고, "
+    "근거에 없는 새로운 사실·조건·절차·판단 기준을 항목으로 추가하지 마세요. "
+    "항목 수가 적어도 그대로 두세요."
+)
+
+
+def is_checklist_request(question: str) -> bool:
+    """요약·목록·표·체크리스트 형태를 요구한 질문인지(형식 변환 요청)."""
+    return any(kw in question for kw in _CHECKLIST_REQUEST_KEYWORDS)
+
+
+def format_instruction_for(question: str) -> str:
+    """질문에 맞는 생성 형식 지시. 일반 QA는 기존 문구를 그대로 유지한다."""
+    if is_checklist_request(question):
+        return CHECKLIST_FORMAT_INSTRUCTION
+    return DEFAULT_FORMAT_INSTRUCTION
+
+
 def _search(
     question: str, store: VectorStore, embed_client: EmbeddingClient,
     cfg: dict[str, Any], document_id: str | None,
@@ -795,6 +842,7 @@ def answer_qa_or_extract_by_search(
     structured_context = "\n".join(ev.prompt_text for ev in structured if ev.prompt_text) or None
     generated = gen_client.generate(
         question, context_texts, structured_context=structured_context,
+        format_instruction=format_instruction_for(question),
     )
     if not isinstance(generated, str) or not generated.strip():
         # 빈 응답은 정답도 정상 기권도 아니다. 상위 오류 처리로 실제 실패를 기록한다.

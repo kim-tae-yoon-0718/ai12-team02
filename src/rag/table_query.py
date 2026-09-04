@@ -145,16 +145,114 @@ _DEADLINE_KEYWORDS = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# "제출 방식"의 자연스러운 바꿔 말하기 (2026-09-03)
+# ---------------------------------------------------------------------------
+# 문제: "제안서를 어떤 방식으로 제출해야 하는지"처럼 필드명을 풀어 쓰면 글자
+#       그대로의 "제출 방식"이 없어 추출형으로 분기하지 못했다(실제 재현).
+#
+# ⚠️ 일반적인 "어떤 방식"을 전부 제출 방식으로 잡으면 "제안서 평가 방식",
+#    "사업을 어떤 방식으로 수행"까지 끌려온다. 그래서 아래 **세 가지가 모두**
+#    있을 때만 인정하는 좁은 규칙을 쓴다.
+#      ① 제출 대상  — 제안서·입찰서류·신청서 …
+#      ② 방법을 묻는 말 — 어떤 방식/방법/절차·어떻게
+#      ③ 제출 동작  — 제출·접수·내다
+#
+# ⚠️ 2026-09-03 적대적 점검에서 확인한 결함으로 규칙을 좁혔다. 예전엔 ②와 ③
+#    사이에 "아무 글자나 20자"를 허용해서 **절 경계를 넘어** 붙었다.
+#      "제안서 평가 방식이 어떻게 되고 제출 기한은 언제인가요?" → 제출 방식(오탐)
+#      "제안서 발표 자료는 어떻게 만들어 내나요?"               → 제출 방식(오탐)
+#    지금은 ②와 ③ 사이에 **목적어 한 덩이(…을/를/은/는/이/가)만** 허용한다.
+#    다른 서술어("되고", "진행되고", "평가해서", "만들어")가 끼면 인정하지 않는다.
+#    트레이드오프: "어떻게 제안서와 관련 서류를 제출하나요?"처럼 목적어가 두 덩이인
+#    문장은 못 잡는다. 이건 수정 전과 같은 동작(QA 경로)이라 나빠지지 않는다.
+_SUBMISSION_TARGET_RE = re.compile(
+    r"제안서|제안\s*서류|입찰\s*서류|입찰서|신청서|응찰서|견적서|제출\s*서류|서류|제안요청서"
+)
+# 제출 동작. ⚠️ "내다"는 어미를 붙여서만 인정한다.
+_SUBMIT_VERB = r"제출|접수|내야|내면|내나|내는|낼\s|낼지|냅니"
+# 방법을 뜻하는 명사. ⚠️ "식"은 "식당·식자재·식별번호"의 첫 글자로도 걸리므로
+#    바로 뒤에 "으로/로"가 올 때만 인정한다("어떤 식으로 제출하나요?").
+_METHOD_NOUN = r"방식|방법|절차|경로|형태|수단|식(?=\s*으로)"
+_METHOD_ASK = (rf"어떻게|(?:어떤|어떠한|무슨|어느)\s*(?:{_METHOD_NOUN})"
+               rf"(?:으로|으론|로|은|는|이|가|을|를)?")
+# ②와 ③ 사이에 끼워도 되는 것 — 목적어 한 덩이뿐이다(다른 서술어는 불가).
+_OBJECT_NP = r"(?:\s*\S{1,14}(?:을|를|은|는|이|가))?"
+_SUBMISSION_METHOD_PATTERNS = (
+    # ① "어떤 방식으로 (제안서를) 제출" / "어떻게 (제안서를) 내야"
+    rf"(?:{_METHOD_ASK}){_OBJECT_NP}\s*(?:{_SUBMIT_VERB})",
+    # ② 어순이 뒤집힌 형태 — "제출은 어떻게", "접수는 어떤 절차로"
+    rf"(?:제출|접수)(?:은|는|을|를|이|가)?\s*(?:{_METHOD_ASK})",
+)
+# 필드명을 그대로 바꿔 부른 표현 — 제출 대상 없이도 이 필드를 가리킨다
+_SUBMISSION_METHOD_NAME_RE = re.compile(r"제출\s*방법")
+
+
+def detect_submission_method_question(question: str) -> bool:
+    """질문이 최종 12필드의 "제출 방식"을 묻는지(필드명이 없어도 인정)."""
+    if _SUBMISSION_METHOD_NAME_RE.search(question):
+        return True
+    if not _SUBMISSION_TARGET_RE.search(question):
+        return False
+    return any(re.search(p, question) for p in _SUBMISSION_METHOD_PATTERNS)
+
+
+# "서류"라는 낱말이 제출 **대상**으로만 쓰였는지 가른다.
+# "입찰서류를 어떻게 제출하나요?"의 서류는 제출 동사의 목적어이고,
+# "어떤 서류가 필요하고 어떻게 제출하나요?"·"필요한 서류와 제출 방법을 알려주세요"의
+# 서류는 따로 묻는 항목이다(두 항목을 함께 물으면 둘 다 남긴다).
+#
+# ⚠️ 2026-09-03 적대적 점검 반영: 예전엔 "서류 뒤에 필요/알려/무엇이 오는가"라는
+#    어순 목록으로 판정해서 "필요한 서류와 …"처럼 수식어가 앞에 오는 흔한 어순에서
+#    사용자가 물은 '필수 제출 서류'를 통째로 지웠다. 이제는 반대로,
+#    **질문에 나온 모든 "서류"가 제출 동사의 목적어일 때만** 지운다.
+_SUBMIT_OBJECT_DOCUMENT_RE = re.compile(
+    rf"서류(?:를|을)\s*(?:{_METHOD_ASK})?\s*(?:{_SUBMIT_VERB})")
+# 사용자가 서류 목록을 명시적으로 부른 표현 — 있으면 절대 지우지 않는다
+_DOCUMENT_LIST_KEYWORDS = ("제출서류", "제출 서류", "필수서류", "필수 서류")
+
+
+def _document_word_is_only_submit_object(question: str) -> bool:
+    """질문 속 "서류"가 전부 제출 동사의 목적어로만 쓰였는가."""
+    if any(kw in question for kw in _DOCUMENT_LIST_KEYWORDS):
+        return False
+    total = len(re.findall("서류", question))
+    if not total:
+        return False
+    as_object = len(_SUBMIT_OBJECT_DOCUMENT_RE.findall(question))
+    return as_object >= total
+
+
+def _apply_submission_method(question: str, fields: list[str]) -> list[str]:
+    """제출 방식 바꿔 말하기를 반영하고, 제출 대상뿐인 '서류'를 걷어낸다.
+
+    필드 순서는 FIELD_KEYWORDS(공식 12필드) 순서를 그대로 지킨다.
+    """
+    if not detect_submission_method_question(question):
+        return fields
+    result = list(fields)
+    if "제출 방식" not in result:
+        result.append("제출 방식")
+    if ("필수 제출 서류" in result
+            and _document_word_is_only_submit_object(question)):
+        result.remove("필수 제출 서류")
+    order = list(FIELD_KEYWORDS)
+    return sorted(result, key=order.index)
+
+
+def _fields_from_keywords(question: str) -> list[str]:
+    return [field for field, keywords in FIELD_KEYWORDS.items()
+            if any(kw in question for kw in keywords)]
+
+
 def detect_field(question: str) -> str | None:
-    for field, keywords in FIELD_KEYWORDS.items():
-        if any(kw in question for kw in keywords):
-            return field
-    return None
+    fields = detect_fields(question)
+    return fields[0] if fields else None
 
 
 def detect_fields(question: str) -> list[str]:
-    return [field for field, keywords in FIELD_KEYWORDS.items()
-            if any(kw in question for kw in keywords)]
+    """질문에 들어 있는 최종 12필드 이름. 라우터와 실행부가 함께 쓰는 유일한 규칙."""
+    return _apply_submission_method(question, _fields_from_keywords(question))
 
 
 # 마감일 값을 직접 묻지는 않지만 마감일 자료가 있어야 답할 수 있는 질문

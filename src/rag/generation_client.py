@@ -37,7 +37,7 @@ def model_rejects_sampling_params(model: str) -> bool:
     return any(model.startswith(p) for p in _RESTRICTED_PARAM_MODEL_PREFIXES)
 
 
-def _find_prompt_file(name: str = "generate_v2.txt") -> Path:
+def _find_prompt_file(name: str) -> Path:
     override = os.environ.get("RAG_PROMPT_DIR")
     if override:
         p = Path(override) / name
@@ -58,8 +58,21 @@ def _find_prompt_file(name: str = "generate_v2.txt") -> Path:
 
 def _load_system_prompt_template(name: str | None = None) -> str:
     """프롬프트 파일 이름은 base.yaml의 prompt_generate 에서 온다(코드에 고정하지 않음).
-    ⚠️ 팀 규약: 프롬프트를 고칠 땐 같은 파일을 수정하지 말고 _v2 를 새로 만든다."""
-    return _find_prompt_file(name or "generate_v2.txt").read_text(encoding="utf-8")
+    ⚠️ 팀 규약: 프롬프트를 고칠 땐 같은 파일을 수정하지 말고 _v2 를 새로 만든다.
+
+    ⚠️ 2026-09-03: 예전에는 이름이 비면 조용히 "generate_v2.txt"로 되돌아갔다.
+       그러면 실험 config가 `prompt_generate: null`로 덮어쓰거나 cfg를 손으로 만들었을 때
+       **아무 신호 없이 옛 프롬프트로 실행**되고, 산출물만 봐서는 알 수 없다.
+       (실제로 generate_v3.txt로 막으려던 '근거 밖 항목 추가'가 그 실행에서만 되살아난다.)
+       코드가 조용히 기본값을 고르지 않는다는 팀 원칙대로, 이제는 즉시 중단한다.
+    """
+    if not name:
+        raise RuntimeError(
+            "생성 프롬프트 파일 이름(prompt_generate)이 비어 있습니다. "
+            "base.yaml 또는 실험 config에서 값을 채운 뒤 다시 실행하세요 — "
+            "코드가 조용히 옛 프롬프트로 되돌아가지 않습니다."
+        )
+    return _find_prompt_file(name).read_text(encoding="utf-8")
 
 
 # 근거 인용 규약 (결함 1-4) — 모델이 "실제로 쓴" 근거만 돌려주게 한다.
@@ -156,8 +169,9 @@ class GenerationClient:
         self.cfg = cfg
         self.model = model
         self.max_completion_tokens = cfg.get("max_completion_tokens")
-        self._system_prompt_template = _load_system_prompt_template(
-            cfg.get("prompt_generate"))
+        # 실제로 어떤 프롬프트 파일이 실렸는지 기록해 둔다(산출물에 남겨 관측 가능하게).
+        self.prompt_file = cfg.get("prompt_generate")
+        self._system_prompt_template = _load_system_prompt_template(self.prompt_file)
         # 문항 단위 사용량 — run_eval이 문항 시작 때마다 reset_usage()로 초기화한다
         self.usage = Usage()
         self.last_request_kwargs: dict[str, Any] | None = None

@@ -29,7 +29,8 @@ from dataclasses import dataclass, field
 
 from identity_metadata import IdentityIndex
 from text_normalize import (
-    normalize_org_key, normalize_project_key, strip_leading_org_from_project,
+    fold_possessive_particles, normalize_org_key, normalize_project_key,
+    project_rounds, question_project_rounds, strip_leading_org_from_project,
 )
 
 # 여섯 자리 뒤에 숫자·영문 꼬리가 붙은 잘못된 번호를 기존 문서로 잘라 읽지 않는다.
@@ -237,6 +238,25 @@ def _matched_org_spans(question: str, org_keys: list[str]) -> list[tuple[int, in
     return spans
 
 
+def _matched_project_spans(question: str, index: IdentityIndex) -> list[tuple[int, int]]:
+    """질문 원문에서 **공식 사업명**이 실제로 적힌 구간.
+
+    ⚠️ 공식 사업명 안에 기관처럼 생긴 낱말이 들어 있는 경우가 있다
+    ("IP-NAVI 해외지식재산센터 사업관리 시스템 기능개선"의 '해외지식재산센터').
+    이건 사용자가 따로 부른 기관이 아니라 **사업 제목의 일부**다. 그런데도
+    미등록 기관으로 세면 정확한 공식 사업명을 그대로 적은 질문까지 차단된다(실제 재현).
+    여기서 얻은 구간 안에 들어 있는 표현은 미등록 기관 후보에서 뺀다.
+    구간 밖에서 따로 부른 미등록 기관은 그대로 걸러낸다.
+    """
+    spans: list[tuple[int, int]] = []
+    for key in match_project_keys(question, index):
+        if not key:
+            continue
+        for match in re.finditer(_key_pattern(key), question, flags=re.IGNORECASE):
+            spans.append((match.start(), match.end()))
+    return spans
+
+
 def match_org_keys(question: str, index: IdentityIndex) -> list[str]:
     """질문 안에 정규화 기준으로 등장하는 기관명 키(최장 매칭만)."""
     qkey = normalize_org_key(question)
@@ -246,28 +266,129 @@ def match_org_keys(question: str, index: IdentityIndex) -> list[str]:
     return _drop_subsumed(matched)
 
 
+def _project_key_tables(index: IdentityIndex) -> list[dict[str, list[str]]]:
+    """사업명 비교에 쓰는 색인 네 벌. 원래 키 색인이 항상 먼저다."""
+    return [
+        index.by_project_key,                     # ① 공식 사업명 그대로
+        index.by_project_core_key,                # ② 기관 접두부만 뗀 형태
+        getattr(index, "by_project_alias_key", {}),   # ③ 공식 파일명의 짧은 사업명
+        getattr(index, "by_project_folded_key", {}),  # ④ 조사 "의"만 접은 보조 키
+    ]
+
+
 def match_project_keys(question: str, index: IdentityIndex) -> list[str]:
     """질문 안에 등장하는 사업명 키(최장 매칭만).
 
-    두 형태를 본다 — ① 사업명 전체 ② 사업명에서 발주기관 접두부만 뗀 형태.
-    ②는 임의 단어 삭제가 아니라 같은 행 buyer_org와 글자 그대로 겹치는
-    접두부만 제거한 결정적 변환이다(text_normalize.strip_leading_org_from_project).
+    네 형태를 본다 — ① 사업명 전체 ② 사업명에서 발주기관 접두부만 뗀 형태
+    ③ 공식 파일명(`발주기관명_짧은 사업명.md`)의 짧은 사업명
+    ④ 낱말 사이의 조사 "의" 하나만 접은 보조 키.
+
+    ②③④는 전부 **결정적 문자열 변환**이다 — 임베딩·편집거리·유사도는 쓰지
+    않는다. ③은 파일명 앞 기관명이 같은 행 buyer_org와 정확히 일치할 때만
+    만들어지고, ④는 질문과 등록명 **양쪽에 같은 규칙**을 적용해 비교한다.
+    ①의 원래 키는 그대로 남아 있어 기존 매칭 결과가 나빠지지 않는다.
     """
     qkey = normalize_project_key(question)
     if not qkey:
         return []
     matched = [k for k in index.by_project_key if k and k in qkey]
     matched += [k for k in index.by_project_core_key if k and k in qkey]
+    matched += [k for k in getattr(index, "by_project_alias_key", {}) if k and k in qkey]
+    # 보조 키는 질문 쪽도 같은 규칙으로 접은 뒤에만 대조한다.
+    qkey_folded = normalize_project_key(fold_possessive_particles(question))
+    matched += [k for k in getattr(index, "by_project_folded_key", {})
+                if k and k in qkey_folded]
     return _drop_subsumed(sorted(set(matched)))
 
 
 def _docs_for_project_keys(keys: list[str], index: IdentityIndex) -> list[str]:
     docs: list[str] = []
     for k in keys:
-        for d in index.by_project_key.get(k, []) + index.by_project_core_key.get(k, []):
-            if d not in docs:
-                docs.append(d)
+        for table in _project_key_tables(index):
+            for d in table.get(k, []):
+                if d not in docs:
+                    docs.append(d)
     return docs
+
+
+def _docs_for_primary_project_keys(keys: list[str], index: IdentityIndex) -> list[str]:
+    """원래(공식 사업명) 키로 매칭된 문서만. 보조 키로만 걸린 문서는 뺀다."""
+    docs: list[str] = []
+    for k in keys:
+        for table in (index.by_project_key, index.by_project_core_key):
+            for d in table.get(k, []):
+                if d not in docs:
+                    docs.append(d)
+    return docs
+
+
+def _all_title_terms_beyond_org(question: str, org_keys: list[str]) -> list[str]:
+    """질문이 부른 제목 조각 **전부**의 중요 낱말을 모은다.
+
+    `_project_terms_beyond_org`는 가장 긴 제목 조각 하나만 본다. 사업명에 쉼표가
+    들어가면("… 전산 및 시스템, 홈페이지 유지·보수") 제목이 쉼표에서 잘려,
+    뒤쪽 조각에 있는 다른 핵심어("유지관리")를 놓친다. 별칭 전용 매칭을 검사할
+    때는 조각을 하나도 버리지 않는다.
+    """
+    remainder = unicodedata.normalize("NFKC", question)
+    for key in sorted(org_keys, key=len, reverse=True):
+        pattern = r"[\W_]*".join(re.escape(char) for char in key)
+        remainder = re.sub(pattern, " ", remainder, flags=re.IGNORECASE)
+    terms: list[str] = []
+    for prefix in _specific_title_prefixes(remainder):
+        for word in re.findall(r"[가-힣A-Za-z0-9]+", prefix):
+            word = re.sub(r"(?:의|에서)$", "", word)
+            if len(word) >= 2 and word not in _TITLE_GENERIC_WORDS:
+                key = normalize_project_key(word)
+                if key and key not in terms:
+                    terms.append(key)
+    return terms
+
+
+def _round_matches(question_rounds: set[int], doc_id: str,
+                   index: IdentityIndex) -> bool:
+    """질문이 말한 사업 회차가 그 문서의 **공식 사업명 회차**와 같은가.
+
+    질문에 회차가 있는데 문서 이름에 회차가 없으면 **일치로 보지 않는다** —
+    "(7차)"를 물었는데 회차가 없는 사업으로 답하면 안 되기 때문이다.
+    """
+    rec = index.get(doc_id)
+    if rec is None:
+        return False
+    return bool(question_rounds & project_rounds(rec.project_name))
+
+
+def _filter_by_round(docs: list[str], question_rounds: set[int],
+                     index: IdentityIndex) -> list[str]:
+    """질문에 회차가 명시됐을 때만 회차가 같은 후보를 남긴다."""
+    if not question_rounds:
+        return docs
+    return [d for d in docs if _round_matches(question_rounds, d, index)]
+
+
+def _title_terms_match_official(question: str, doc_id: str,
+                                index: IdentityIndex) -> bool:
+    """질문이 부른 제목의 낱말이 그 문서의 공식 사업명 안에 전부 있는가.
+
+    ⚠️ 파일명 별칭은 사업명 **앞부분**만 담고 있어서, 뒤쪽 낱말이 전혀 다른
+    이름도 별칭 부분만 겹치면 매칭된다("… 회원 통합운영 관리 **장비** 구축").
+    보조 키로만 걸린 문서에는 기존 기관 경로에서 쓰던 것과 같은 대조를 적용해,
+    질문이 부른 제목의 낱말이 공식 사업명에 실제로 있는지 확인한다.
+    (유사도가 아니라 글자 그대로의 포함 검사다.)
+    """
+    terms = _all_title_terms_beyond_org(question, match_org_keys(question, index))
+    if not terms:
+        return True
+    rec = index.get(doc_id)
+    if rec is None:
+        return True
+    official = {normalize_project_key(rec.project_name),
+                normalize_project_key(fold_possessive_particles(rec.project_name))}
+    alias = rec.filename_project_alias
+    if alias:
+        official.add(normalize_project_key(alias))
+        official.add(normalize_project_key(fold_possessive_particles(alias)))
+    return any(all(term in name for term in terms) for name in official if name)
 
 
 def _docs_for_org_keys(keys: list[str], index: IdentityIndex) -> list[str]:
@@ -302,6 +423,8 @@ def detect_unknown_orgs(question: str, index: IdentityIndex) -> list[str]:
     # 미등록으로 남는다. 이름 경계를 보므로 "서울특별시 여성가족재단이랑 부산
     # 여성가족재단"의 두 번째는 여전히 미등록으로 잡힌다.
     known_spans = _matched_org_spans(question, match_org_keys(question, index))
+    # 공식 사업명 구간도 '이미 확인된 이름'이다 — 그 안의 낱말은 새 기관이 아니다.
+    known_spans += _matched_project_spans(question, index)
     unknown: list[str] = []
     for match in matches:
         cand = match.group(0)
@@ -378,6 +501,29 @@ def resolve_document(
     project_keys = match_project_keys(question, index)
     org_docs = _docs_for_org_keys(org_keys, index)
     project_docs = _docs_for_project_keys(project_keys, index)
+    # 사업 회차가 질문에 명시됐으면 회차가 같은 문서만 남긴다. 회차는 사업을
+    # 구분하는 정보이므로 다른 회차·회차 없는 문서로 대신 답하지 않는다.
+    # 질문 쪽은 **사업을 가리키는 문맥**의 회차만 읽는다(공고 차수·대화 순서 제외).
+    question_rounds = question_project_rounds(question)
+    if question_rounds:
+        org_docs = _filter_by_round(org_docs, question_rounds, index)
+        project_docs = _filter_by_round(project_docs, question_rounds, index)
+    # 보조 키(파일명 별칭·조사 접기)로만 걸린 문서는 제목 낱말까지 대조한다.
+    # 원래 공식 사업명 키로 걸린 문서는 기존 그대로 둔다(동작 변화 없음).
+    primary_docs = _docs_for_primary_project_keys(project_keys, index)
+    if len(project_docs) != len(primary_docs):
+        kept = [d for d in project_docs
+                if d in primary_docs
+                or _title_terms_match_official(question, d, index)]
+        # ⚠️ 이 대조는 후보를 **줄이기만** 한다. 줄인 결과로 여러 후보가 한 건이 되면
+        #    "확신 있는 답"이 만들어지는데, 그건 근거가 늘어서가 아니라 근거를 뺐기
+        #    때문이다. 실제로 그 한 건이 아주 짧은 꼬리말 키로 걸린 엉뚱한 문서일 수
+        #    있다(적대적 점검에서 재현). 그런 경우에는 걸러내기 전 후보를 그대로 두어
+        #    기존처럼 되묻는다 — 임의 확정보다 되묻기가 안전하다.
+        if len(project_docs) > 1 and len(kept) == 1:
+            pass                      # 후보를 줄이지 않는다(되묻기 유지)
+        else:
+            project_docs = kept
 
     # 지시어가 앞에 있어도 새 기관·사업명을 명시했다면 새 이름이 우선이다.
     # "그 사업 말고 별빛공사"나 미등록 기관을 직전 문서로 대신 답하지 않는다.
@@ -492,13 +638,20 @@ def _strip_known_names(text: str, explicit_ids: list[str], keys: list[str]) -> s
 
 
 def _document_title_keys(doc_id: str, index: IdentityIndex) -> list[str]:
-    """문서의 **공식** 사업명 비교 키(원형 + 기관 접두부를 뗀 형태)."""
+    """문서의 **공식** 사업명 비교 키.
+
+    원형 + 기관 접두부를 뗀 형태 + 공식 파일명의 짧은 사업명 + 조사만 접은 형태.
+    전부 공식 자료에서 결정적으로 만든 이름이라 "닮은 이름"을 승인하지 않는다.
+    """
     rec = index.get(doc_id)
     if rec is None:
         return []
     keys = [normalize_project_key(rec.project_name),
             strip_leading_org_from_project(rec.project_name, rec.buyer_org)]
-    return [k for k in keys if k]
+    for name in rec.project_names_for_keys():
+        keys.append(normalize_project_key(name))
+        keys.append(normalize_project_key(fold_possessive_particles(name)))
+    return [k for k in dict.fromkeys(keys) if k]
 
 
 def unexplained_comparison_targets(

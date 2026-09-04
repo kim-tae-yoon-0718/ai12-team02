@@ -9,7 +9,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 from table_query import (
-    FIELD_KEYWORDS, _DEADLINE_KEYWORDS, is_selection_question, parse_selection, needs_explanation,
+    detect_fields, detect_deadline_question,
+    is_selection_question, parse_selection, needs_explanation,
 )
 from doc_resolver import detect_document_ids, looks_like_specific_document
 
@@ -59,12 +60,13 @@ _NO_SEARCH_PATTERNS = _SYSTEM_HELP_PATTERNS + _GREETING_PATTERNS
 #   - 조건을 못 읽었어도 "여러 문서를 원한다"는 신호가 분명하면 선별형으로 보내
 #     무엇을 못 읽었는지 되묻는다(문서 특정 질문으로 잘못 보내지 않는다)
 # ⚠️ 2026-08-31 정정: 예전엔 "마감일"·"발주기관"이 여기 섞여 있었는데, 4-9-8 v3
-# 확정으로 이 둘은 최종 12필드에서 빠졌다. table_query.FIELD_KEYWORDS(실제 공식
-# 12필드 키워드)를 그대로 재사용해서 필드명이 어긋나지 않게 한다 — 목록이 둘로
-# 나뉘어 있으면 한쪽만 고치고 잊어버리기 쉽다.
-_FIELD_KEYWORD_ALTERNATION = "|".join(
-    re.escape(kw) for kws in FIELD_KEYWORDS.values() for kw in kws
-) + "|" + "|".join(re.escape(kw) for kw in _DEADLINE_KEYWORDS)
+# 확정으로 이 둘은 최종 12필드에서 빠졌다.
+# ⚠️ 2026-09-03 정정: 예전엔 라우터가 FIELD_KEYWORDS를 직접 정규식으로 이어 붙여
+#    "필드어가 글자 그대로 있는가"만 봤다. 그래서 table_query가 필드를 **뜻으로**
+#    알아보게 되면(예: "제안서를 어떤 방식으로 제출" → 제출 방식) 라우터만 못 보고
+#    QA로 새거나, 반대로 라우터만 추출형으로 보내고 실행부가 필드를 못 찾는
+#    어긋남이 생긴다. 이제 라우터와 실행부가 **같은 함수**(table_query.detect_fields)를
+#    쓴다 — 규칙이 두 벌로 갈라지지 않게 한다.
 # ⚠️ 정정: 예전엔 필드 키워드 뒤에 정해진 질문 어미(얼마/언제/어디/뭐/무엇/
 # 알려줘/확인/어떻게/어때/알고싶...)가 붙어야만 extract로 잡았다. 이 방식은
 # "필요해?"/"있나요?"처럼 목록에 없는 어미가 나올 때마다 계속 단어를
@@ -75,9 +77,22 @@ _FIELD_KEYWORD_ALTERNATION = "|".join(
 # 트레이드오프: 필드어가 있는 진짜 QA성 질문("예산이 부족해 취소됐다는데
 # 왜 그런거야")도 일단 extract를 거치지만, extract 내부의 needs_explanation
 # 감지가 검색+생성 경로로 넘겨서 최종 결과는 틀리지 않는다(에러도 없음).
-_EXTRACT_PATTERNS = [
-    rf"(?:{_FIELD_KEYWORD_ALTERNATION})",
-]
+
+
+def extract_signal(question: str) -> str | None:
+    """추출형 신호 — 실행부와 **같은** 필드 감지 결과를 쓴다.
+
+    최종 12필드(table_query.detect_fields) 또는 12필드 밖 마감일이 잡히면
+    그 필드 이름을 규칙 이름으로 돌려준다. 아무것도 없으면 None.
+    """
+    fields = detect_fields(question)
+    if detect_deadline_question(question):
+        fields = fields + ["입찰 참여 마감일"]
+    if not fields:
+        return None
+    return "field:" + ",".join(fields)
+
+
 _COMPARE_PATTERNS = [
     r"(비교|차이|어느 쪽|둘 중)",
 ]
@@ -130,7 +145,7 @@ def route(question: str, cfg: dict) -> RouteResult:
             rule = "selection:미해석조건+복수요청"
         return RouteResult("select", rule)
 
-    if (m := _match_any(_EXTRACT_PATTERNS, question)):
+    if (m := extract_signal(question)):
         return RouteResult("extract", m)
 
     # 아무 규칙도 안 걸리면 폴백 (4-10-1 확정: 기본 경로 QA + 재시도)

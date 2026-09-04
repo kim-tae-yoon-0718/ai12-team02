@@ -25,10 +25,16 @@ from pathlib import Path
 from typing import Any
 
 from text_normalize import (
+    filename_project_alias,
+    fold_possessive_particles,
+    is_generic_project_key,
+    project_rounds,
+    strip_bracketed,
     normalize_display,
     normalize_org_key,
     normalize_org_key_unbracketed,
     normalize_project_key,
+    normalize_project_key_particle_folded,
     normalize_project_key_unbracketed,
     strip_leading_org_from_project,
 )
@@ -94,6 +100,31 @@ class IdentityRecord:
         """사업명에서 발주기관 접두부만 뗀 비교 보조 키(없으면 빈 문자열)."""
         return strip_leading_org_from_project(self.project_name, self.buyer_org)
 
+    @property
+    def filename_project_alias(self) -> str:
+        """공식 파일명 `발주기관명_짧은 사업명.md`의 짧은 사업명(표시 표기 그대로).
+
+        파일명 앞 기관명이 같은 행 `buyer_org`와 정확히 일치할 때만 값이 있다.
+        일치하지 않으면 빈 문자열 — 추측으로 별칭을 만들지 않는다.
+        """
+        return filename_project_alias(self.source_filename_nfc, self.buyer_org,
+                                     self.project_name)
+
+    @property
+    def project_alias_keys(self) -> list[str]:
+        """공식 파일명에서 얻은 사업명 별칭의 비교 키(원래 키와 다를 때만)."""
+        alias = self.filename_project_alias
+        if not alias:
+            return []
+        keys = [normalize_project_key(alias),
+                normalize_project_key_unbracketed(alias)]
+        known = {self.project_key, self.project_key_unbracketed, self.project_core_key}
+        return [k for k in dict.fromkeys(keys) if k and k not in known]
+
+    def project_names_for_keys(self) -> list[str]:
+        """이 행이 가진 **공식** 사업명 표기 전부(정식 사업명 + 파일명 별칭)."""
+        return [n for n in (self.project_name, self.filename_project_alias) if n]
+
 
 @dataclass
 class IdentityIndex:
@@ -104,6 +135,10 @@ class IdentityIndex:
     by_org_key: dict[str, list[str]] = field(default_factory=dict)
     by_project_key: dict[str, list[str]] = field(default_factory=dict)
     by_project_core_key: dict[str, list[str]] = field(default_factory=dict)
+    # 공식 파일명 `발주기관명_짧은 사업명.md`에서 얻은 짧은 사업명 별칭
+    by_project_alias_key: dict[str, list[str]] = field(default_factory=dict)
+    # 낱말 사이의 조사 "의" 하나만 접은 보조 키(원래 키는 그대로 남는다)
+    by_project_folded_key: dict[str, list[str]] = field(default_factory=dict)
     org_display_by_key: dict[str, str] = field(default_factory=dict)
 
     # ---- 조회 ----
@@ -163,6 +198,13 @@ def load_identity(path: Path | str) -> IdentityIndex:
         rows = list(reader)
 
     index = IdentityIndex(path=path)
+    # 회차를 잃은 보조 키가 **다른 문서의 정식 사업명**과 같아지는지 보려면 전체
+    # 정식 키를 먼저 알아야 한다(한 번 훑고 색인은 그다음에 만든다).
+    primary_keys_by_doc = {
+        (r.get("document_id") or "").strip():
+            normalize_project_key(normalize_display(r.get("project_name")))
+        for r in rows
+    }
     for row in rows:
         doc_id = (row.get("document_id") or "").strip()
         if not doc_id:
@@ -195,16 +237,93 @@ def load_identity(path: Path | str) -> IdentityIndex:
         if org_unbr and org_unbr != rec.org_key:
             index.by_org_key.setdefault(org_unbr, []).append(doc_id)
             index.org_display_by_key.setdefault(org_unbr, rec.buyer_org)
-        if rec.project_key:
-            index.by_project_key.setdefault(rec.project_key, []).append(doc_id)
+        # ⚠️ 같은 문서의 여러 공식 별칭이 한 키로 합쳐질 수 있다(정식 사업명과
+        #    파일명 별칭이 같은 글자로 접히는 경우). 문서 ID를 두 번 넣으면
+        #    "후보가 2건"으로 잘못 세어 되묻기가 발생하므로 항상 중복을 막는다.
+        def _add(table: dict[str, list[str]], key: str) -> None:
+            if not key:
+                return
+            docs = table.setdefault(key, [])
+            if doc_id not in docs:
+                docs.append(doc_id)
+
+        rec_rounds = project_rounds(rec.project_name)
+
+        def _add_auxiliary(table: dict[str, list[str]], key: str,
+                           source: str | None = None) -> None:
+            """보조 키 전용 — 문서를 특정하지 못하게 된 키는 색인하지 않는다.
+
+            ⚠️ ① 주석을 떼다 보면 "위탁용역"처럼 여러 사업에 나올 수 있는 표현만
+               남을 수 있다. 그런 키는 부분문자열 비교에서 아무 질문에나 걸린다.
+            ⚠️ ② 사업 회차는 사업을 **구분하는** 정보다. 괄호 주석을 떼면서 회차까지
+               사라진 키("…기능개선 사업(1차)" → "…기능개선사업")를 색인하면, 회차가
+               없는 다른 사업과 키가 같아져 후보가 번지고 되묻기가 늘어난다.
+               회차를 잃은 보조 키는 넣지 않는다(원래 키는 그대로 남는다).
+            """
+            if is_generic_project_key(key):
+                return
+            if source is not None and project_rounds(source) != rec_rounds:
+                # 회차를 잃은 키는, 그 키가 **다른 문서의 정식 사업명**과 똑같아질
+                # 때만 뺀다. 그때만 회차가 다른 두 사업이 한 이름으로 뭉개진다.
+                # 충돌이 없으면 넣어 둔다 — 괄호 주석을 뗀 이름으로 부르는 질문
+                # ("모바일오피스 시스템 고도화 용역")을 계속 찾을 수 있어야 한다.
+                if any(other != doc_id and pk == key
+                       for other, pk in primary_keys_by_doc.items()):
+                    return
+            _add(table, key)
+
+        _add(index.by_project_key, rec.project_key)          # 공식 사업명 전체 — 그대로
         proj_unbr = rec.project_key_unbracketed
         if proj_unbr and proj_unbr != rec.project_key:
-            index.by_project_key.setdefault(proj_unbr, []).append(doc_id)
-        core = rec.project_core_key
-        if core:
-            index.by_project_core_key.setdefault(core, []).append(doc_id)
+            _add_auxiliary(index.by_project_key, proj_unbr,
+                           source=strip_bracketed(rec.project_name))
+        _add_auxiliary(index.by_project_core_key, rec.project_core_key,
+                       source=rec.project_core_key)
+        # 공식 파일명의 짧은 사업명 — 기관 접두가 정확히 일치할 때만 채워진다
+        for alias_key in rec.project_alias_keys:
+            _add_auxiliary(index.by_project_alias_key, alias_key,
+                           source=rec.filename_project_alias)
+        # 조사 "의"만 접은 보조 키 — 정식 사업명·괄호 제거형·기관접두 제거형·
+        # 파일명 별칭 전부에 같은 규칙을 적용한다(원래 키는 위에 그대로 남는다).
+        for name in rec.project_names_for_keys():
+            for variant in (name, strip_bracketed(name)):
+                _add_auxiliary(index.by_project_folded_key,
+                               normalize_project_key_particle_folded(variant),
+                               source=variant)
+            # 기관 접두를 뗀 형태도 같은 규칙으로 한 번 더 본다. 접두 제거는
+            # 공백을 없앤 뒤에 일어나므로 **접기를 먼저** 적용해야 한다.
+            folded_core = strip_leading_org_from_project(
+                fold_possessive_particles(name), rec.buyer_org)
+            if folded_core and folded_core != strip_leading_org_from_project(
+                    name, rec.buyer_org):
+                _add_auxiliary(index.by_project_folded_key, folded_core)
 
+    _link_aliases_to_overlapping_official_names(index)
     return index
+
+
+def _link_aliases_to_overlapping_official_names(index: "IdentityIndex") -> None:
+    """보조 키가 **다른 문서의 공식 사업명 안에도 글자 그대로 있으면** 그 문서도 후보다.
+
+    ⚠️ 2026-09-03 적대적 점검에서 실제 퇴행이 나왔다. 파일명 별칭은 자기 행만
+    보고 만들어지므로, 그 이름이 다른 문서의 정식 사업명 안에도 그대로 들어 있는
+    경우를 놓쳤다. 그러면 두 문서에 다 해당하는 이름인데도 별칭 소유 문서 하나로
+    조용히 확정되고(임의 선택), 반대로 기관명까지 붙여 부른 질문은 기관과 사업명이
+    서로 다른 문서를 가리킨다며 되묻기로 퇴행했다.
+
+    여기서 쓰는 건 결정적 부분문자열 비교뿐이다 — 유사도가 아니다. 겹치는 문서를
+    후보로 **남기기만** 하므로, 실행부의 기존 규칙(기관+사업명 교집합 우선, 후보가
+    여럿이면 되묻기)이 그대로 판단한다.
+    """
+    for table in (index.by_project_alias_key, index.by_project_folded_key):
+        for key, docs in table.items():
+            for doc_id, rec in index.records.items():
+                if doc_id in docs:
+                    continue
+                official = (rec.project_key, rec.project_key_unbracketed,
+                            rec.project_core_key)
+                if any(o and key in o for o in official):
+                    docs.append(doc_id)
 
 
 # ---------------------------------------------------------------------------

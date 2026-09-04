@@ -196,10 +196,16 @@ prompt_route:     "route_v1.txt"       # F-0 경로 분기    — 이태민
 prompt_condition: "condition_v1.txt"   # G-2 조건 번역    — 이태민
                                        #   ⚠️ baseline은 규칙 기반이라 이 파일 미호출.
                                        #   자연어→필드/연산자 변환을 LLM으로 할 때만 사용
-prompt_generate:  "generate_v2.txt"    # J  답변 생성     — 이태민 (baseline에서 실제 사용)
-                                       #   v2(2026-09-02): 근거 인용 규약(USED_EVIDENCE)
-                                       #   추가 — 모델이 실제로 쓴 근거만 citations 로 남긴다.
-                                       #   v1은 수정하지 않고 그대로 보존(팀 규약)
+prompt_generate:  "generate_v3.txt"    # J  답변 생성     — 이태민 (baseline에서 실제 사용)
+                                       #   v3(2026-09-03): 형식 변환 규칙 추가 —
+                                       #   요약·목록·표·체크리스트 요청은 "내용 추가"가
+                                       #   아니라 "형식 변환"이며, 근거에 없는 사실·조건·
+                                       #   절차·판단 기준을 새로 만들지 않는다.
+                                       #   (실제 API 실행에서 체크포인트 답변이 원문에
+                                       #    없는 우선순위·영향분석·달성지표를 덧붙인
+                                       #    문제를 막기 위한 변경)
+                                       #   v2의 근거 인용 규약(USED_EVIDENCE)은 글자 그대로
+                                       #   유지. v1·v2는 수정하지 않고 보존(팀 규약)
 # prompt_score는 없음 — 확정 2026-08-31: 체크리스트3(김하루) 실제 채점 프롬프트
 #   (judge_checkpoint.v1.md, judge_faithfulness.v1.md, judge_list_item.v1.md)를
 #   그대로 사용. 체크리스트4 쪽 score_v1.txt는 별도로 만들지 않음

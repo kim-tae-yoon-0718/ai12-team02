@@ -34,6 +34,10 @@ def _find_base_yaml() -> Path:
 
 
 _REQUIRED_NON_NULL = ["top_k"]  # null이면 실행 전 즉시 중단해야 하는 필수값
+# ⚠️ prompt_generate는 여기 넣지 않았다. 기존 테스트가 쓰는 축약 config에는 이 키가
+#    없어서 config 단계에서 막으면 기존 테스트의 기대값을 바꿔야 한다. 대신 실제로
+#    프롬프트를 싣는 지점(generation_client._load_system_prompt_template)에서 비어 있으면
+#    즉시 중단하므로, 조용히 옛 프롬프트로 되돌아가는 경로는 이미 닫혀 있다.
 
 
 def _validate_config(cfg: dict[str, Any]) -> None:
