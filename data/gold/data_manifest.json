@@ -1,0 +1,13 @@
+{
+  "doc_count": 100,
+  "load_rate": 1.0,
+  "duplicate_doc_ids": [],
+  "corpus_version": "v2",
+  "extraction_table_version": "v3",
+  "raw_doc_count": 100,
+  "md_doc_count": 100,
+  "filename_normalization_mismatches": 0,
+  "csv_decode_failure_rows": 0,
+  "encoding_corruption_count": 0,
+  "zero_table_doc_count": 0
+}

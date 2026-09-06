@@ -16,6 +16,22 @@ from pathlib import Path
 import pytest
 
 
+def assert_identity_deadline_citation(cite):
+    """[2026-09-04 §8] 마감일 근거는 identity_v2 의 컬럼 자체다 — 좌표가 아니다.
+
+    예전에는 section="CSV" / ref_no="CSV: bid_deadline" 로 **좌표 모양**을 냈다.
+    원문에 그런 위치는 없으므로 위장이다. 이제 kind/document/field/source 로 내고,
+    좌표를 나타내는 키는 하나도 없어야 한다.
+    """
+    assert cite.get("kind") == "identity", cite
+    assert cite.get("field") == "bid_deadline", cite
+    assert cite.get("source") == "identity_v2", cite
+    for forbidden in ("ref_no", "section", "line", "line_end", "block_type",
+                      "block_index", "location"):
+        assert forbidden not in cite, (forbidden, cite)
+
+
+
 # ===========================================================================
 # 1-1 인덱스 태그 검증
 # ===========================================================================
@@ -440,7 +456,7 @@ class TestCitationsAreRealEvidenceOnly:
                                            gen, base_cfg, structured=[ev])
         assert gen.calls == 0
         assert len(r.citations) == 1
-        assert r.citations[0]["ref_no"] == "CSV: bid_deadline"
+        assert_identity_deadline_citation(r.citations[0])
 
     def test_deadline_qa_does_not_cite_unrelated_chunks(
         self, five_chunk_store, base_cfg, identity_index,
@@ -452,7 +468,8 @@ class TestCitationsAreRealEvidenceOnly:
         ev = build_deadline_evidence("RFP-000001", identity_index, cfg, eligibility=True)
         gen = FakeGen(use_evidence=())     # 설명에 원문을 쓰지 않았다고 선언
         r = self._search(five_chunk_store, cfg, gen, structured=[ev])
-        assert [c["ref_no"] for c in r.citations] == ["CSV: bid_deadline"]
+        assert len(r.citations) == 1
+        assert_identity_deadline_citation(r.citations[0])
         cited = {c.get("section") for c in r.citations}
         assert not ({"표지", "일반현황 및 연혁", "사업지원 요구사항"} & cited)
 
@@ -471,10 +488,16 @@ class TestCitationsAreRealEvidenceOnly:
         self, table_rows, base_cfg,
     ):
         """하루님 채점 기준(3-4-3)에서 '근거 누락'과 '잘못된 근거'가 갈리도록,
-        위치가 없으면 비우고(누락) 있으면 정확한 좌표만 낸다(오인용 0)."""
+        **없는 좌표를 지어내지 않는다**. [2026-09-04 §8] 위치가 없는 미기재 행은
+        빈 인용 대신 Evidence 형(kind/document/field/status)으로 낸다 — 좌표 키는 없다."""
         from answer_pipeline import build_field_evidence
         absent = build_field_evidence(table_rows, "RFP-000001", "지역제한", base_cfg)
-        assert absent.citations == []          # 위치가 없으면 지어내지 않는다 → 누락
+        assert len(absent.citations) == 1
+        cite = absent.citations[0]
+        assert cite["kind"] == "extraction_table" and cite["status"] == "field_absent"
+        assert cite["document"] == "RFP-000001" and cite["field"] == "지역제한"
+        assert not any(k in cite for k in
+                       ("location", "line", "ref_no", "section", "block_index"))
         present = build_field_evidence(table_rows, "RFP-000001", "예산", base_cfg)
         assert len(present.citations) == 1     # 실제 위치 하나만 → 오인용 없음
         assert present.citations[0]["line"] == 61
@@ -623,7 +646,8 @@ class TestDegradedOnlyPathCitations:
         r = answer_qa_or_extract_by_search("마감일", VectorStore(), FakeEmbed(), gen,
                                            base_cfg, structured=[ev])
         assert gen.calls == 0
-        assert [c["ref_no"] for c in r.citations] == ["CSV: bid_deadline"]
+        assert len(r.citations) == 1
+        assert_identity_deadline_citation(r.citations[0])
 
     def test_structured_plus_degraded_still_cites_structured_only(
         self, degraded_only_store, base_cfg, identity_index,
@@ -636,7 +660,8 @@ class TestDegradedOnlyPathCitations:
         r = answer_qa_or_extract_by_search("마감일", degraded_only_store, FakeEmbed(),
                                            gen, base_cfg, structured=[ev])
         assert gen.calls == 0
-        assert [c["ref_no"] for c in r.citations] == ["CSV: bid_deadline"]
+        assert len(r.citations) == 1
+        assert_identity_deadline_citation(r.citations[0])
         assert all(c.get("source") != "chunks_v3" for c in r.citations)
 
     def test_response_envelope_still_uniform(self, degraded_only_store, base_cfg):

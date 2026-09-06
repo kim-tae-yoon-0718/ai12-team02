@@ -383,14 +383,21 @@ class TestPractice8Mocked:
 
         # 근거는 "실제로 있는 위치"만 남긴다(결함 1-4) — 없으면 지어내지 않는다.
         # RFP-000001/지역제한 은 추출표가 field_absent 이고 representative_location 이
-        # 아예 없으므로 인용이 비는 것이 정상이다.
+        # 아예 없다. [2026-09-04 §8] 이때도 근거 자체는 있다(추출표의 그 행) —
+        # 좌표를 지어내는 대신 Evidence 형으로 낸다. 좌표 키가 하나라도 있으면 실패.
         no_location_expected = {"PRAC-EXT-004"}
         for qid, r in results.items():
             if r.abstained:
                 continue
             if qid in no_location_expected:
-                assert r.citations == [], (
-                    f"{qid}: 위치가 없는 항목인데 근거를 지어냈다 — {r.citations}")
+                assert len(r.citations) == 1, r.citations
+                cite = r.citations[0]
+                assert cite["kind"] == "extraction_table", cite
+                assert cite["status"] == "field_absent", cite
+                assert cite["document"] == "RFP-000001" and cite["field"] == "지역제한"
+                assert not any(k in cite for k in
+                               ("location", "line", "ref_no", "section", "block_index")), (
+                    f"{qid}: 위치가 없는 항목인데 좌표를 지어냈다 — {r.citations}")
                 continue
             assert r.citations, f"{qid}: citations 비어 있음"
             assert all(c.get("document") for c in r.citations)

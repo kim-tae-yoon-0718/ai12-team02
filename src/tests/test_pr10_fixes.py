@@ -18,6 +18,22 @@ from pathlib import Path
 import pytest
 
 
+def assert_identity_deadline_citation(cite):
+    """[2026-09-04 §8] 마감일 근거는 identity_v2 의 컬럼 자체다 — 좌표가 아니다.
+
+    예전에는 section="CSV" / ref_no="CSV: bid_deadline" 로 **좌표 모양**을 냈다.
+    원문에 그런 위치는 없으므로 위장이다. 이제 kind/document/field/source 로 내고,
+    좌표를 나타내는 키는 하나도 없어야 한다.
+    """
+    assert cite.get("kind") == "identity", cite
+    assert cite.get("field") == "bid_deadline", cite
+    assert cite.get("source") == "identity_v2", cite
+    for forbidden in ("ref_no", "section", "line", "line_end", "block_type",
+                      "block_index", "location"):
+        assert forbidden not in cite, (forbidden, cite)
+
+
+
 # ===========================================================================
 # 3-1 문서 특정 정책
 # ===========================================================================
@@ -163,7 +179,9 @@ class TestQaStructuredFusion:
         assert "2025-01-01 17:00" in r.text             # 정확한 마감일 포함
         assert "참여 가능" in r.text
         assert r.citations, "citations가 비면 안 됨"
-        assert any(c["ref_no"] == "CSV: bid_deadline" for c in r.citations)
+        ident = [c for c in r.citations if c.get("kind") == "identity"]
+        assert len(ident) == 1
+        assert_identity_deadline_citation(ident[0])
         assert e.calls >= 1 and g.calls >= 1            # 청크 검색도 보조로 사용
         assert g.last_structured_context is not None
         assert r.structured_answer["입찰 참여 마감일"]["source"] == "identity_v2"
@@ -229,7 +247,7 @@ class TestDeadlineSource:
         ev = build_deadline_evidence("RFP-000001", identity_index, base_cfg)
         assert "2025-01-01 17:00" in ev.answer_text
         assert ev.structured["value_normalized"] == "2025-01-01"
-        assert ev.citations[0]["ref_no"] == "CSV: bid_deadline"
+        assert_identity_deadline_citation(ev.citations[0])
         assert ev.used_source["source"] == "identity_v2"
         assert ev.structured["reference_datetime"] == "2024-06-01"
 

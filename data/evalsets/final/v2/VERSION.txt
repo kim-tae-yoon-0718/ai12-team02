@@ -1,0 +1,25 @@
+evalset: v2
+status: official
+supersedes: v1
+source_candidate: v1-candidate.6
+scorer: v2
+extraction_table: v3.1-candidate.1
+corpus: v2
+preprocess: v2
+chunking: v3
+registry: v2
+identity: v2
+index: v2
+reference_time: 2024-06-01
+items: 50 (selection 25 / extraction 15 / qa 10)
+evalset_sha256: 9bf9b22e2210ea99406aa7274dd90ba7d6e1a5e5d474691ab9ff77651d57be1c
+source_base_dev_commit: 2c405210d2b4b2385773e038a5be961d477faa64
+source_patch_sha256: 4aab013122805b7489dd6eabd8baa9b000d6d8a11092d400ab1c45b05dc056dd
+promoted: 2026-09-06
+
+정답 산출 순서:
+  1) 등록부에서 active=true 이고 retrieval_eligible=true 인 98문서만 사용
+  2) 문항 조건 적용
+  3) 기준일 2024-06-01 마감 필터 적용
+  4) 마감일 미상은 미상으로 표시한 뒤 포함
+  5) 남은 문서 전체를 정답으로 기록(개수 제한 없음)

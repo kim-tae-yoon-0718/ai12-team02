@@ -20,6 +20,22 @@ import test_selection_fix as h
 from answer_pipeline import SessionState, answer_to_response
 
 
+def assert_identity_deadline_citation(cite):
+    """[2026-09-04 §8] 마감일 근거는 identity_v2 의 컬럼 자체다 — 좌표가 아니다.
+
+    예전에는 section="CSV" / ref_no="CSV: bid_deadline" 로 **좌표 모양**을 냈다.
+    원문에 그런 위치는 없으므로 위장이다. 이제 kind/document/field/source 로 내고,
+    좌표를 나타내는 키는 하나도 없어야 한다.
+    """
+    assert cite.get("kind") == "identity", cite
+    assert cite.get("field") == "bid_deadline", cite
+    assert cite.get("source") == "identity_v2", cite
+    for forbidden in ("ref_no", "section", "line", "line_end", "block_type",
+                      "block_index", "location"):
+        assert forbidden not in cite, (forbidden, cite)
+
+
+
 DOC_A = "RFP-000971"
 DOC_B = "RFP-000972"
 FIELDS = tuple(h.OFFICIAL_FIELDS)
@@ -96,7 +112,20 @@ def test_all_twelve_fields_preserve_each_state(tmp_path, field, status):
         assert "첫번째상충내용" in result.text and "두번째상충내용" in result.text
         assert {c["line"] for c in result.citations} == {40, 50}
     elif status == "field_absent":
-        assert "단정" in result.text and result.citations == []
+        # [2026-09-04 §8 계약 변경] 미기재도 **근거는 있다** — 추출표의 그 행이다.
+        #   예전에는 좌표가 없다는 이유로 인용을 통째로 비웠다(출처 확인 불가).
+        #   이제 Evidence 형으로 내되, 없는 좌표를 지어내지 않는지 더 세게 본다.
+        assert "단정" in result.text
+        assert len(result.citations) == 1
+        cite = result.citations[0]
+        assert cite["kind"] == "extraction_table"
+        assert cite["document"] == DOC_A and cite["field"] == field
+        assert cite["status"] == "field_absent"
+        assert str(cite.get("source", "")).startswith("extraction_table")
+        # 가짜 좌표 금지 — 위치를 나타내는 키가 하나도 없어야 한다
+        for forbidden in ("location", "line", "line_end", "ref_no", "section",
+                          "block_type", "block_index"):
+            assert forbidden not in cite, forbidden
     elif status == "external_reference":
         assert "직접 확인" in result.text
     elif status == "not_disclosed":
@@ -146,7 +175,9 @@ def test_field_and_deadline_are_both_answered(tmp_path, field):
     assert f"자료971항목{FIELDS.index(field)}값" in result.text
     assert "2025-01-02 17:30" in result.text
     assert any(c.get("field") == field for c in result.citations)
-    assert any(c.get("ref_no") == "CSV: bid_deadline" for c in result.citations)
+    deadline_cites = [c for c in result.citations if c.get("kind") == "identity"]
+    assert len(deadline_cites) == 1
+    assert_identity_deadline_citation(deadline_cites[0])
 
 
 def test_deadline_single_field_keeps_existing_flat_structure(tmp_path):
@@ -179,7 +210,9 @@ def test_comparison_only_deadline_uses_identity(tmp_path, missing_deadline):
     assert set(result.structured_answer) == {DOC_A, DOC_B}
     assert result.abstained is missing_deadline
     assert result.structured_answer[DOC_A][DEADLINE] == "2025-01-02 17:30"
-    assert all(c["ref_no"] == "CSV: bid_deadline" for c in result.citations)
+    assert result.citations
+    for c in result.citations:
+        assert_identity_deadline_citation(c)
     if missing_deadline:
         assert "미상" in result.structured_answer[DOC_B][DEADLINE]
         assert "2025-01-02" not in result.structured_answer[DOC_B][DEADLINE]

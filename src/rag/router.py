@@ -96,6 +96,56 @@ def extract_signal(question: str) -> str | None:
 _COMPARE_PATTERNS = [
     r"(비교|차이|어느 쪽|둘 중)",
 ]
+
+# ---------------------------------------------------------------------------
+# 개념 차이 설명 vs 문서 비교 (2026-09-04 §10)
+# ---------------------------------------------------------------------------
+# "공동수급과 하도급의 차이가 뭐야?" 는 **제도 용어 두 개**의 뜻을 묻는 질문이고,
+# "RFP-000001과 RFP-000002의 예산을 비교해줘" 는 **문서 두 건**의 같은 필드를 묻는
+# 질문이다. 예전에는 "비교/차이/둘 중" 이 있으면 무조건 비교표 경로로 보냈고,
+# 그래서 개념 질문이 "비교하려면 문서가 두 건 이상 필요합니다" 로 끝났다(실측).
+#
+# 판단 기준: **문서를 두 건 이상 가리켰는가**. 아니면 비교표를 만들 수 없다.
+#   · 문서 ID 두 개              → 문서 비교
+#   · "두 사업/양쪽/둘 중/문서 간" 같은 복수 문서 지시 → 문서 비교(후속 질문 포함)
+#   · "A와 B의 차이" 의 A·B 가 문서를 부르는 말(…사업/공고/문서/용역/기관명)  → 문서 비교
+#   · 그 외(용어 두 개)          → 일반 QA(개념 설명)
+_MULTI_DOCUMENT_REF_RE = re.compile(
+    r"(?:두|둘|양쪽|여러|각|서로\s*다른|다른|나머지)\s*(?:개\s*)?(?:문서|사업|공고|건|곳)"
+    r"|문서\s*(?:간|끼리|들)|사업\s*(?:간|끼리|들)|공고\s*(?:간|끼리|들)"
+    r"|둘\s*중|어느\s*쪽|양쪽|두\s*건")
+# 비교 대상 한 짝을 이루는 두 표현을 잡는다("A와 B의 차이", "A과 B를 비교").
+_PAIR_RE = re.compile(
+    r"(?P<a>[^\s,，.。?!]{1,30})\s*(?:과|와|랑|이랑|vs\.?|대)\s+?(?P<b>[^\s,，.。?!]{1,30})"
+    r"[^.]{0,20}?(?:차이|비교|어느\s*쪽|둘\s*중)")
+# 표현이 '문서를 부르는 말'인지 — 사업/공고/문서 등 문서 지시어나 기관 접미사가 붙는다.
+_DOCUMENT_TERM_RE = re.compile(
+    r"(?:사업|공고|문서|용역|제안요청서|입찰|프로젝트|과업)"
+    r"|(?:재단|공사|공단|진흥원|연구원|연구소|협회|협의회|위원회|교육청|시청|도청|청|처|"
+    r"센터|대학교|공제회|조합|은행|병원|박물관)$")
+
+
+def _is_document_term(term: str) -> bool:
+    return bool(term) and bool(_DOCUMENT_TERM_RE.search(term))
+
+
+def is_concept_comparison(question: str) -> bool:
+    """문서 두 건이 아니라 **개념 두 개**의 차이를 묻는 질문인가.
+
+    ★문서를 두 건 이상 가리키는 신호가 하나라도 있으면 개념 질문이 아니다 —
+      후속 질문("둘 중 예산이 큰 건?")의 기존 비교 경로를 그대로 지킨다.
+    """
+    if len(detect_document_ids(question)) >= 2:
+        return False
+    if _MULTI_DOCUMENT_REF_RE.search(question):
+        return False
+    m = _PAIR_RE.search(question)
+    if not m:
+        return False
+    a, b = m.group("a"), m.group("b")
+    if _is_document_term(a) or _is_document_term(b):
+        return False       # "서울시 사업과 부산시 사업" — 문서 두 건을 부른 것이다
+    return True
 _DOCUMENT_CONTENT_SIGNAL_RE = re.compile(
     r"RFP-|사업|문서|공고|입찰|제안요청서|참가\s*자격"
 )
@@ -122,6 +172,10 @@ def route(question: str, cfg: dict) -> RouteResult:
     if (m := _match_any(_GREETING_PATTERNS, question)):
         return RouteResult("no_search_needed", m, no_search_kind=NO_SEARCH_GREETING)
     if (m := _match_any(_COMPARE_PATTERNS, question)):
+        # ★개념 두 개의 차이를 묻는 질문은 문서 비교표를 만들 수 없다 — 일반 QA 로 간다.
+        #   "차이" 라는 낱말만으로 비교표 경로에 보내지 않는다(§10).
+        if is_concept_comparison(question):
+            return RouteResult("qa", "concept_difference_explanation")
         # 한 문서 안의 개념 차이 설명은 여러 문서의 고정 필드 비교표가 아니다.
         # 두 문서 이상을 명시하거나 복수 사업을 부른 질문의 기존 비교 경로는 유지한다.
         document_ids = detect_document_ids(question)

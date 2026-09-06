@@ -330,13 +330,23 @@ def _link_aliases_to_overlapping_official_names(index: "IdentityIndex") -> None:
 # 마감일 — 값·근거 위치·기준 시각
 # ---------------------------------------------------------------------------
 
-def deadline_citation(document_id: str) -> dict:
-    """마감일 근거 위치. 평가셋 location 형식과 동일한 구조로 만든다."""
-    return {
+def deadline_citation(document_id: str, value: str | None = None) -> dict:
+    """마감일 근거 — identity_v2 의 컬럼 자체가 근거다(원문 줄이 아니다).
+
+    ★[2026-09-04 §8] 예전에는 section="CSV" / ref_no="CSV: bid_deadline" 처럼 **좌표
+      모양**으로 냈다. 그건 원문 위치가 아니라 CSV 컬럼 이름이라, 실제로 존재하지 않는
+      좌표를 가리키는 인용이 된다(위장). 이제 Evidence 형으로 무엇을 봤는지 그대로
+      적는다 — kind=identity / document / field / value / source. 좌표 키는 넣지 않는다.
+    """
+    cite = {
+        "kind": "identity",
         "document": document_id,
-        "section": DEADLINE_SECTION_LABEL,
-        "ref_no": DEADLINE_REF_NO,
+        "field": DEADLINE_COLUMN,
+        "source": "identity_v2",
     }
+    if value:
+        cite["value"] = value
+    return cite
 
 
 def deadline_evidence(index: IdentityIndex, document_id: str) -> dict:

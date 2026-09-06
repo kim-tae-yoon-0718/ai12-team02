@@ -1052,7 +1052,15 @@ class TestResponseContract:
         r = run_answer("예산 정보가 안 나와 있는 공고들만 알려줘", table,
                        identity=identity, registry_scope=scope)
         assert r.selected_document_ids == ["RFP-000902"]
-        assert r.citations == []
+        # [2026-09-04 §8] 미기재 근거는 Evidence 형으로 낸다 — 없는 문단을 지어내지
+        # 않는다는 원래 뜻은 그대로 두고, "무엇을 근거로 미기재라고 했는지"까지 본다.
+        assert len(r.citations) == 1
+        cite = r.citations[0]
+        assert cite["kind"] == "extraction_table"
+        assert cite["document"] == "RFP-000902" and cite["field"] == "예산"
+        assert cite["status"] == "field_absent"
+        for forbidden in ("location", "line", "ref_no", "section", "block_index"):
+            assert forbidden not in cite, forbidden
 
     def test_compound_condition_keeps_evidence_per_condition(self, tmp_path):
         specs = {"RFP-000991": {"예산": present("6억원", line=11),

@@ -195,6 +195,185 @@ def _project_terms_beyond_org(question: str, org_keys: list[str]) -> list[str]:
     return terms
 
 
+# ---------------------------------------------------------------------------
+# 기관 별칭·사업명 핵심 낱말 매칭 (2026-09-04 §9)
+# ---------------------------------------------------------------------------
+# 문제: 공식 발주기관명이 "KOICA 전자조달" 인데 사용자는 "KOICA" 라고만 부른다.
+#       공식 사업명은 아주 길고("우즈베키스탄 열린 의정활동 … PMC 용역") 사용자는
+#       수식어를 빼고 "우즈베키스탄 국회 방송시스템 구축 사업" 이라고 부른다.
+#       기존 매칭은 등록 키 **전체**가 질문 안에 연속으로 들어 있어야 해서 둘 다 놓쳤다.
+#
+# 해결: 둘 다 **공식 원자료(identity_v2)에서 결정적으로 파생**한 정보만 쓴다.
+#   · 기관 별칭 = 공식 buyer_org 를 낱말로 쪼갠 것 중, 일반어가 아니고 **기관 하나에만**
+#     나타나는 낱말. "KOICA" 는 되고 "전자조달"·"서울특별시" 처럼 여러 기관에 걸치거나
+#     일반어인 낱말은 별칭이 되지 않는다.
+#   · 사업명 핵심 낱말 = 질문이 부른 제목의 낱말이 공식 제목 안에 **같은 순서로 모두**
+#     들어 있는가. 편집거리·임베딩 유사도는 쓰지 않는다.
+# 확정 조건: 핵심 낱말이 2개 이상이고, 그렇게 걸린 문서가 **정확히 1건**일 때만.
+
+# 기관명을 이루지만 그 자체로는 기관을 가리키지 못하는 낱말(별칭에서 뺀다).
+_ORG_ALIAS_STOPWORDS = frozenset({
+    "전자조달", "조달", "구매", "계약", "사업단", "사업소", "본부", "지사", "지역본부",
+    "지방", "사무소", "센터", "본사", "지원단", "관리단", "추진단", "위원회", "재단",
+    "공사", "공단", "협회", "진흥원", "연구원", "연구소", "대학교", "학교", "병원",
+    "시청", "도청", "교육청", "주식회사", "사단법인", "재단법인", "korea", "한국",
+})
+_MIN_ALIAS_LEN = 3          # 두 글자 약어는 다른 이름 조각과 부딪히기 쉬워 쓰지 않는다
+_MIN_TITLE_TERMS = 2        # 핵심 낱말이 하나뿐이면 일반어 하나로 문서를 고를 수 있다
+# 예외: 기관을 명시해 범위가 이미 좁혀졌고, 그 하나의 낱말이 흔한 낱말이 아니라
+#       6자 이상의 복합명사일 때만 한 낱말로도 확정을 허용한다.
+#       ("국민연금공단 이러닝시스템 운영 용역" — 공식명은 '2024년 이러닝시스템 운영 용역')
+#       기관 단서가 없으면 이 예외를 쓰지 않는다("방송시스템 구축 사업"은 계속 확정 금지).
+_MIN_SINGLE_TERM_LEN = 6
+
+
+def _alias_tokens(display: str) -> list[str]:
+    """공식 표기 하나에서 별칭 후보 낱말을 뽑는다(공백·구두점 기준, 결정적)."""
+    text = unicodedata.normalize("NFKC", display or "")
+    out: list[str] = []
+    for word in re.findall(r"[가-힣A-Za-z0-9]+", text):
+        key = normalize_org_key(word)
+        if not key or len(key) < _MIN_ALIAS_LEN:
+            continue
+        if key in _ORG_ALIAS_STOPWORDS:
+            continue
+        if key not in out:
+            out.append(key)
+    return out
+
+
+def _title_word_keys(index: IdentityIndex) -> set[str]:
+    """공식 **사업명**에 등장하는 낱말 키 전체.
+
+    사업 제목에도 쓰이는 낱말("입찰공고", "의료원", "2025")은 기관을 가리키는 별칭이
+    될 수 없다 — 그런 낱말을 별칭으로 쓰면 정식 사업명을 그대로 적은 질문이
+    엉뚱한 기관으로 끌려가 이름 충돌로 막힌다(전수 점검에서 재현).
+    """
+    words: set[str] = set()
+    for doc_id in index.document_ids():
+        rec = index.get(doc_id)
+        if rec is None:
+            continue
+        for name in (rec.project_name, getattr(rec, "filename_project_alias", "") or ""):
+            for word in re.findall(r"[가-힣A-Za-z0-9]+",
+                                   unicodedata.normalize("NFKC", name)):
+                key = normalize_org_key(word)
+                if key:
+                    words.add(key)
+    return words
+
+
+def org_alias_map(index: IdentityIndex) -> dict[str, str]:
+    """별칭 낱말 → 공식 기관 키. 공식 identity_v2 의 buyer_org 에서만 만든다.
+
+    남기는 조건(모두 만족해야 한다)
+      ① 한 기관에만 나타나는 낱말        — 여러 기관이 공유하면 기관을 못 가른다
+      ② 공식 사업명에는 쓰이지 않는 낱말 — 제목 낱말은 기관 이름이 아니다
+      ③ 숫자만으로 이뤄지지 않은 낱말    — "2025" 같은 연도는 기관이 아니다
+    임의 별칭표를 코드에 적지 않는다.
+    """
+    cached = getattr(index, "_org_alias_map", None)
+    if cached is not None:
+        return cached
+    title_words = _title_word_keys(index)
+    owners: dict[str, set[str]] = {}
+    for org_key in index.by_org_key:
+        display = index.org_display_by_key.get(org_key, org_key)
+        for token in _alias_tokens(display):
+            if token == org_key or token in title_words or token.isdigit():
+                continue
+            owners.setdefault(token, set()).add(org_key)
+    alias = {tok: next(iter(orgs)) for tok, orgs in owners.items() if len(orgs) == 1}
+    try:
+        object.__setattr__(index, "_org_alias_map", alias)
+    except Exception:
+        pass
+    return alias
+
+
+def matched_org_alias_tokens(question: str, index: IdentityIndex) -> list[str]:
+    """질문 안에 실제로 적힌 기관 별칭 낱말(예: "koica")."""
+    qkey = normalize_org_key(question)
+    if not qkey:
+        return []
+    return sorted({token for token in org_alias_map(index) if token in qkey})
+
+
+def match_org_alias_keys(question: str, index: IdentityIndex) -> list[str]:
+    """질문에 **공식 기관명의 고유 낱말**이 적혀 있으면 그 기관 키를 돌려준다."""
+    alias = org_alias_map(index)
+    hits = [alias[token] for token in matched_org_alias_tokens(question, index)]
+    return _drop_subsumed(sorted(set(hits)))
+
+
+def _question_title_terms(question: str, org_keys: list[str]) -> list[str]:
+    """질문이 부른 제목의 핵심 낱말을 **질문에 적힌 순서대로** 뽑는다."""
+    remainder = unicodedata.normalize("NFKC", question)
+    for key in sorted({k for k in org_keys if k}, key=len, reverse=True):
+        remainder = re.sub(_key_pattern(key), " ", remainder, flags=re.IGNORECASE)
+    prefixes = _specific_title_prefixes(remainder)
+    if not prefixes:
+        prefixes = _specific_title_prefixes(remainder, require_query_tail=False)
+    if not prefixes:
+        return []
+    longest = max(prefixes, key=len)
+    terms: list[str] = []
+    for word in re.findall(r"[가-힣A-Za-z0-9]+", longest):
+        word = re.sub(r"(?:의|에서|은|는|이|가|을|를)$", "", word)
+        if len(word) < 2 or word in _TITLE_GENERIC_WORDS:
+            continue
+        key = normalize_project_key(word)
+        if key and key not in terms:
+            terms.append(key)
+    return terms
+
+
+def _terms_in_order(terms: list[str], name: str) -> bool:
+    """핵심 낱말이 공식 제목 안에 **같은 순서로 모두** 나오는가(부분열 검사)."""
+    key = normalize_project_key(name)
+    if not key:
+        return False
+    pos = 0
+    for term in terms:
+        found = key.find(term, pos)
+        if found < 0:
+            return False
+        pos = found + len(term)
+    return True
+
+
+def _official_names(rec) -> list[str]:
+    names = [rec.project_name]
+    alias = getattr(rec, "filename_project_alias", "")
+    if alias:
+        names.append(alias)
+    return [n for n in names if n]
+
+
+def match_docs_by_title_terms(question: str, index: IdentityIndex,
+                              scope: list[str] | None = None,
+                              org_keys: list[str] | None = None) -> tuple[list[str], list[str]]:
+    """줄여 부른 사업명으로 문서를 찾는다. (후보 문서, 사용한 핵심 낱말).
+
+    ★확정은 호출측이 한다 — 여기서는 조건에 맞는 후보를 **전부** 돌려준다.
+      후보가 둘 이상이면 호출측이 되묻는다(임의로 하나를 고르지 않는다).
+    """
+    terms = _question_title_terms(question, org_keys or [])
+    enough = (len(terms) >= _MIN_TITLE_TERMS
+              or (len(terms) == 1 and scope is not None
+                  and len(terms[0]) >= _MIN_SINGLE_TERM_LEN))
+    if not enough:
+        return [], terms
+    candidates = scope if scope is not None else index.document_ids()
+    hits = []
+    for doc_id in candidates:
+        rec = index.get(doc_id)
+        if rec is None:
+            continue
+        if any(_terms_in_order(terms, name) for name in _official_names(rec)):
+            hits.append(doc_id)
+    return hits, terms
+
 def detect_document_id(question: str) -> str | None:
     m = _DOC_ID_RE.search(question)
     return m.group(0) if m else None
@@ -498,9 +677,31 @@ def resolve_document(
         return DocumentResolution(None, RESOLVE_NONE, unknown_orgs=unknown_orgs)
 
     org_keys = match_org_keys(question, index)
+    # ★[2026-09-04 §9] 정식 기관명 전체가 안 적혀 있어도, 공식 기관명의 **고유 낱말**
+    #   ("KOICA 전자조달" 의 KOICA)만 적은 질문은 그 기관을 부른 것이다. 별칭은
+    #   identity_v2 의 buyer_org 에서 결정적으로 파생하며 한 기관에만 나타나는
+    #   낱말만 인정한다. 정식 이름이 이미 걸렸으면 별칭은 보지 않는다(기존 동작 유지).
+    alias_org_keys: list[str] = []
+    if not org_keys:
+        alias_org_keys = match_org_alias_keys(question, index)
+        org_keys = list(alias_org_keys)
     project_keys = match_project_keys(question, index)
     org_docs = _docs_for_org_keys(org_keys, index)
     project_docs = _docs_for_project_keys(project_keys, index)
+    # ★사업명을 줄여 불러 등록 키가 통째로 걸리지 않을 때만, 핵심 낱말이 공식 제목
+    #   안에 같은 순서로 모두 있는 문서를 찾는다. 기관 단서가 있으면 **그 기관 안에서만**
+    #   찾는다(다른 기관의 비슷한 이름으로 새지 않게).
+    title_terms: list[str] = []
+    title_docs: list[str] = []
+    if not project_docs and names_new_title:
+        scope = org_docs if org_docs else None
+        # 질문에 적힌 별칭 낱말("KOICA")도 기관 단서이므로 제목 낱말에서 뺀다 —
+        # 안 빼면 기관 이름이 사업명 핵심 낱말로 섞여 공식 제목과 어긋난다.
+        title_docs, title_terms = match_docs_by_title_terms(
+            question, index, scope=scope,
+            org_keys=org_keys + matched_org_alias_tokens(question, index))
+        if title_docs:
+            project_docs = title_docs
     # 사업 회차가 질문에 명시됐으면 회차가 같은 문서만 남긴다. 회차는 사업을
     # 구분하는 정보이므로 다른 회차·회차 없는 문서로 대신 답하지 않는다.
     # 질문 쪽은 **사업을 가리키는 문맥**의 회차만 읽는다(공고 차수·대화 순서 제외).
@@ -511,7 +712,12 @@ def resolve_document(
     # 보조 키(파일명 별칭·조사 접기)로만 걸린 문서는 제목 낱말까지 대조한다.
     # 원래 공식 사업명 키로 걸린 문서는 기존 그대로 둔다(동작 변화 없음).
     primary_docs = _docs_for_primary_project_keys(project_keys, index)
-    if len(project_docs) != len(primary_docs):
+    # ★핵심 낱말 경로로 찾은 문서는 이미 공식 제목과 **순서까지** 대조했다. 아래의
+    #   보조 키 검증(부분문자열 포함)을 다시 걸면 같은 확인을 더 약한 규칙으로
+    #   되풀이해 정상 매칭을 지운다 — 그래서 이 경로에는 적용하지 않는다.
+    if title_docs:
+        pass
+    elif len(project_docs) != len(primary_docs):
         kept = [d for d in project_docs
                 if d in primary_docs
                 or _title_terms_match_official(question, d, index)]
@@ -549,6 +755,11 @@ def resolve_document(
     if both:
         return _finish(both, RESOLVE_ORG_AND_PROJECT)
 
+    # ★기관이 **별칭 낱말로만** 걸렸고 사업명은 공식 키로 정확히 걸렸다면, 더 강한 쪽
+    #   (정식 사업명)을 따른다. 별칭은 보조 단서라 이름 충돌로 막을 근거가 못 된다.
+    if alias_org_keys and org_docs and project_docs and not set(org_docs) & set(project_docs):
+        if _docs_for_primary_project_keys(project_keys, index):
+            org_docs, org_keys = [], []
     # 기관과 사업명이 각각 존재해도 서로 다른 문서라면 둘 중 하나를 임의로 고르지 않는다.
     if org_docs and project_docs:
         return DocumentResolution(
@@ -558,7 +769,12 @@ def resolve_document(
 
     # 기관은 찾아도 사용자가 따로 부른 새 제목이 안 맞으면, 그 기관의 유일한
     # 다른 사업을 대신 답하지 않는다. 기관만 부른 질문은 기존 우선순위를 유지한다.
-    if org_docs and not project_docs and names_new_title and len(org_keys) == 1:
+    # ★[2026-09-04 §9] 예전에는 looks_like_specific_document(질문 전체)가 참일 때만 이
+    #   보호가 걸렸다. 그 함수는 기관명이 제목 앞에 붙어 있으면 제목을 못 알아봐서
+    #   "기초과학연구원 화성기지 관제시스템 구축 사업 예산"(없는 사업)이 그 기관의
+    #   유일한 문서로 확정됐다(전수 점검에서 재현). 이제 기관명을 **먼저 지운 뒤**
+    #   남은 제목 낱말이 있으면 그 낱말이 공식 제목과 맞는지 항상 확인한다.
+    if org_docs and not project_docs and len(org_keys) == 1 and not title_docs:
         terms = _project_terms_beyond_org(question, org_keys)
         compatible = any(
             all(term in normalize_project_key(index.get(doc_id).project_name) for term in terms)

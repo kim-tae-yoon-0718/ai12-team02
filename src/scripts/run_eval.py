@@ -40,6 +40,14 @@ from answer_pipeline import (  # noqa: E402
 )
 
 
+class ApiBlocked(RuntimeError):
+    """유료 API 가 필요한데 차단 대역으로 실행 중임을 알린다(가짜 성공 금지)."""
+
+    def __init__(self, stage: str) -> None:
+        super().__init__(f"api_blocked:{stage}")
+        self.stage = stage
+
+
 def load_evalset(path: Path) -> list[dict]:
     items = []
     with open(path, "r", encoding="utf-8") as f:
@@ -69,6 +77,21 @@ def _merge_usage(*clients) -> Usage:
     return total
 
 
+def _sha256_of(path: Path) -> str:
+    import hashlib
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _evalset_version_of(path: Path) -> str:
+    """채점 대상 평가셋 옆 VERSION.txt 의 evalset: 값. 없으면 UNKNOWN."""
+    v = path.resolve().parent / "VERSION.txt"
+    if v.exists():
+        for line in v.read_text(encoding="utf-8-sig").splitlines():
+            if line.strip().startswith("evalset:"):
+                return line.split(":", 1)[1].strip()
+    return "UNKNOWN"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--evalset", required=True)
@@ -78,6 +101,10 @@ def main() -> None:
         "--continuous-session", action="store_true",
         help="평가셋에 session_id가 없을 때 파일 전체를 하나의 이어지는 대화로 취급한다. "
              "기본값은 문항마다 독립(세션 리셋).")
+    parser.add_argument(
+        "--api-mode", choices=("live", "blocked"), default="live",
+        help="blocked 이면 생성·임베딩 API 를 **차단 대역**으로 둔다. 호출이 필요한 문항은 "
+             "가짜 답을 만들지 않고 'api_blocked' 로 기록하고 넘어간다(시스템 오류와 구분).")
     parser.add_argument(
         "--allow-errors", action="store_true",
         help="문항 오류가 있어도 실패 종료코드 대신 성공으로 끝내는 것을 명시적으로 허용.")
@@ -102,11 +129,15 @@ def main() -> None:
     cache: dict = {}
 
     def get_embed_client() -> EmbeddingClient:
+        if args.api_mode == "blocked":
+            raise ApiBlocked("embedding")
         if "embed" not in cache:
             cache["embed"] = EmbeddingClient(cfg)
         return cache["embed"]
 
     def get_gen_client() -> GenerationClient:
+        if args.api_mode == "blocked":
+            raise ApiBlocked("generation")
         if "gen" not in cache:
             cache["gen"] = GenerationClient(cfg)
         return cache["gen"]
@@ -164,6 +195,7 @@ def main() -> None:
         retries_used = 0
         result = None
         last_error = None
+        api_blocked_stage = None
         t0 = time.perf_counter()
         for attempt in range(args.max_item_retries + 1):
             if attempt:
@@ -176,12 +208,27 @@ def main() -> None:
                                 table, cfg, identity=identity, session=session,
                                 locator=locator, registry_scope=registry_scope)
                 last_error = None
+            except ApiBlocked as e:
+                # ★차단 대역 — 유료 API 가 필요한 문항이다. 시스템 오류가 아니고,
+                #   가짜 성공도 만들지 않는다. 어느 API 가 필요했는지만 남긴다.
+                api_blocked_stage = e.stage
+                last_error = None
+                result = None
+                break
             except Exception as e:  # noqa: BLE001
                 last_error = sanitize_error(f"{type(e).__name__}: {e}")
                 result = None
             if result is not None and not result.error_stage:
                 break
             if result is not None and result.error_stage:
+                # 파이프라인이 내부에서 예외를 잡아 error_stage 로 바꿔 놓았어도,
+                # 원인이 차단 대역이면 시스템 오류가 아니라 'API 필요' 로 센다.
+                if "ApiBlocked" in str(result.error_detail or ""):
+                    api_blocked_stage = ("embedding" if "embedding" in str(result.error_detail)
+                                         else "generation")
+                    last_error = None
+                    result = None
+                    break
                 last_error = result.error_detail
         latency_ms = round((time.perf_counter() - t0) * 1000)
         total_retries += retries_used
@@ -203,7 +250,9 @@ def main() -> None:
                 "answer": None, "sources": [], "abstained": None,
                 "retrieved_chunk_ids": [], "retrieved_scores": [],
                 "condition_query": None, "condition_result_doc_ids": [],
-                "error_stage": "pipeline_call", "error": last_error,
+                "error_stage": ("api_blocked" if api_blocked_stage else "pipeline_call"),
+                "error": last_error,
+                "api_blocked": api_blocked_stage,
                 "session_id": cur_session_id,
                 "active_document_after": session.active_document_id,
                 "latency_ms": latency_ms, "cost_usd": cost_usd,
@@ -215,7 +264,9 @@ def main() -> None:
                 "id": qid, "answer": None, "structured_answer": None,
                 "contexts": [], "retrieved": [], "citations": [],
                 "selected_document_ids": [], "abstained": None, "route": None,
-                "failure": last_error, "latency_ms": latency_ms, "cost_usd": cost_usd,
+                "failure": (f"api_blocked:{api_blocked_stage}" if api_blocked_stage
+                            else last_error),
+                "latency_ms": latency_ms, "cost_usd": cost_usd,
             })
         else:
             result.latency_ms = latency_ms
@@ -249,6 +300,7 @@ def main() -> None:
                 "cost_detail": cost_detail, "retries": retries_used,
                 "called_generation_api": item_usage.generation_requests > 0,
                 "called_embedding_api": item_usage.embedding_requests > 0,
+                "api_blocked": None,
             }
             responses.append(answer_to_response(qid, result))
 
@@ -310,7 +362,14 @@ def main() -> None:
         "prompt_generate_configured": cfg.get("prompt_generate"),
         "prompt_generate_loaded": getattr(cache.get("gen"), "prompt_file", None),
         "total_questions": len(items),
-        "task_type_distribution": task_counts,
+        # ★평가셋에 선언된 유형 분포가 아니라 **모델이 예측한** 유형 분포다
+        #   (record["actual_task_type"]). 이름이 task_type_distribution 이면
+        #   평가셋 구성으로 오해된다 — 실제로 그렇게 읽힌 적이 있다.
+        "predicted_task_type_distribution": task_counts,
+        # 어떤 평가셋으로 낸 응답인지 요약만 봐도 알 수 있어야 한다.
+        "evaluation_set_path": str(Path(args.evalset).resolve()),
+        "evaluation_set_sha256": _sha256_of(Path(args.evalset)),
+        "evaluation_set_version": _evalset_version_of(Path(args.evalset)),
         "route_distribution": {
             r: sum(1 for d in details if d["route"] == r)
             for r in sorted({d["route"] for d in details if d["route"]})
@@ -318,6 +377,10 @@ def main() -> None:
         "abstain_count": abstain_count,
         "abstain_rate": abstain_count / len(items) if items else 0,
         "routing_fallback_count": fallback_count,
+        "api_mode": args.api_mode,
+        # 차단 대역에서 API 가 필요했던 문항 — 시스템 오류와 **분리해서** 센다
+        "api_blocked_count": sum(1 for d in details if d.get("api_blocked")),
+        "api_blocked_ids": [d["question_id"] for d in details if d.get("api_blocked")],
         "error_count": sum(1 for d in details if d["error"]),
         "total_cost_usd": total_cost,
         "total_elapsed_ms": total_elapsed_ms,
@@ -328,6 +391,9 @@ def main() -> None:
     print(f"✅ 평가 완료: {out_dir}")
     print(f"   기권율 {summary['abstain_rate']:.1%}, 분기 폴백 {fallback_count}건, "
           f"에러 {summary['error_count']}건, 총비용 {total_cost}")
+    if summary["api_blocked_count"]:
+        print(f"   ⓘ API 차단 대역: {summary['api_blocked_count']}건이 생성·임베딩을 "
+              f"필요로 해 실행하지 않았습니다(시스템 오류 아님).")
 
     if summary["error_count"] > 0 and not args.allow_errors:
         print(f"❌ 오류 {summary['error_count']}건 있어 실패로 종료합니다. "

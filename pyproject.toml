@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rag-grader-pipeline"
+version = "0.1.0"
+description = "Professional RAG evaluation and LLM Judge pipeline"
+requires-python = ">=3.10"
+dependencies = [
+  "pydantic>=2.8,<3",
+  "PyYAML>=6.0,<7",
+  "httpx>=0.27,<1",
+  "python-dotenv>=1.0,<2"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<10",
+  "ruff>=0.6,<1"
+]
+
+[project.scripts]
+grader = "grader.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+# ⚠️ testpaths = ["tests"] 이면 채점기 테스트만 모이고 모델의 src/tests·src/chunking 이
+#    통째로 빠진다(루트에서 pytest 만 치면 1,478건이 사라짐). 세 경로를 모두 넣어
+#    저장소 루트의 명령 하나로 모델·채점기 테스트가 함께 수집되게 한다.
+testpaths = ["tests", "src/tests", "src/chunking"]

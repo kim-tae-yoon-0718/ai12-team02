@@ -384,6 +384,24 @@ def chunk_to_citation(m: ChunkMetadata) -> dict:
 
 
 # 하위호환 별칭 (기존 테스트·외부 호출용)
+def table_state_citation(document_id: str, field_name: str, status: str,
+                         cfg: dict[str, Any] | None = None) -> dict:
+    """원문 위치가 없는 추출표 근거(미기재·외부참조 등)를 **Evidence 형**으로 낸다.
+
+    ★가리킬 원문 줄이 없을 때 빈 section 과 필드명을 ref_no 에 넣으면 좌표처럼 보이지만
+      실제로 없는 위치다(위장). 대신 무엇을 근거로 삼았는지 그대로 적는다 —
+      kind / document / field / status / source. location 은 넣지 않는다.
+    """
+    src = "extraction_table"
+    if cfg is not None:
+        tag = _source_tag(cfg, "extraction_table")
+        src = str(tag.get("extraction_version") or tag.get("source") or src)
+        if not str(src).startswith("extraction_table"):
+            src = f"extraction_table_{src}"
+    return {"kind": "extraction_table", "document": document_id,
+            "field": field_name, "status": status, "source": src}
+
+
 def table_row_to_citation(document_id: str, row: dict) -> dict:
     cites = row_citations(document_id, row)
     return cites[0]
@@ -444,7 +462,7 @@ def build_deadline_evidence(
     """
     ev = deadline_evidence(identity, document_id)
     rec = identity.get(document_id)
-    cite = deadline_citation(document_id)
+    cite = deadline_citation(document_id, (ev or {}).get("value"))
     used = _source_tag(cfg, "identity_v2")
 
     if rec is None:
@@ -602,6 +620,12 @@ def build_field_evidence(
         abstain = status in ("extraction_failed", "review_required")
         # 값이 없다고 답한 근거 위치는 있으면 남기고, 없으면 비운다(지어내지 않음)
         cites = _cite(row.get("representative_location"))
+        # ★[2026-09-04 §8] 원문 위치가 없는 상태(미기재 등)도 **근거는 있다** — 추출표의
+        #   그 행 자체다. 예전에는 좌표가 없다는 이유로 인용을 아예 비웠고, 그러면
+        #   "지역제한이 안 적혀 있다"는 답의 출처를 확인할 방법이 없었다(SEL-011·014
+        #   실측: n_citations=0). 없는 줄 번호를 지어내는 대신 Evidence 형으로 낸다.
+        if not cites:
+            cites = [table_state_citation(document_id, field_name, status, cfg)]
         return StructuredEvidence(
             kind="field", document_id=document_id, field_name=field_name,
             status=status, value_raw=value_raw, value_normalized=value_norm,
