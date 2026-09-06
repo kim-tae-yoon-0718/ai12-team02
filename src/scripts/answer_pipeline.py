@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "rag"))
 
 from config import (  # noqa: E402
     load_config, index_dir, extraction_table_path, extraction_metadata_path,
+    ExtractionTablePathError,
     document_registry_path, identity_path, chunks_path,
 )
 from vector_store import (  # noqa: E402
@@ -1641,10 +1642,18 @@ def answer_to_response(question_id: str, result: Answer) -> dict:
 # ---------------------------------------------------------------------------
 
 def _try_derive(explicit: str | None, deriver, cfg, label: str) -> Path | None:
+    """① 사용자가 명시한 경로가 있으면 **무조건** 그것을 쓴다. 없으면 자동 조립.
+
+    ⚠️ ExtractionTablePathError 만은 삼키지 않는다. "두 곳의 같은 버전이 서로 다르다"
+       같은 진짜 원인이 '이 값 없이 진행합니다' 경고로 덮이면, 나중에 뭉뚱그린
+       '공식 추출표를 찾지 못했습니다'만 남아 원인을 못 찾는다.
+    """
     if explicit:
         return Path(explicit)
     try:
         return deriver(cfg)
+    except ExtractionTablePathError:
+        raise
     except Exception as e:  # noqa: BLE001
         print(f"⚠️  {label} 자동 조립 실패({e}) — 이 값 없이 진행합니다.", file=sys.stderr)
         return None
@@ -1659,8 +1668,18 @@ def build_runtime(args, cfg) -> dict[str, Any]:
             "인덱스 없이는 실행할 수 없습니다. --index를 직접 주거나 RAG_ROOT를 설정하세요.")
     table_arg = _try_derive(args.extraction_table, extraction_table_path, cfg,
                             "--extraction-table")
-    meta_arg = _try_derive(getattr(args, "extraction_metadata", None),
-                           extraction_metadata_path, cfg, "--extraction-metadata")
+    # 이름표는 **추출표 파일과 같은 폴더**에 있다. 추출표를 명시했는데 이름표만
+    # 설정 경로로 따로 조립하면, 명시한 표와 다른 폴더의 이름표를 짝지으려다
+    # "그 버전을 어디에서도 못 찾았다"고 엉뚱하게 실패한다(load_extraction_table 의
+    # 기본값과도 같은 규칙 — 기준을 이중화하지 않는다).
+    meta_explicit = getattr(args, "extraction_metadata", None)
+    if meta_explicit:
+        meta_arg = Path(meta_explicit)
+    elif args.extraction_table:
+        meta_arg = Path(args.extraction_table).parent / "extraction_metadata.json"
+    else:
+        meta_arg = _try_derive(None, extraction_metadata_path, cfg,
+                               "--extraction-metadata")
     identity_arg = _try_derive(args.identity, identity_path, cfg, "--identity")
     registry_arg = _try_derive(args.registry, document_registry_path, cfg, "--registry")
     chunks_arg = _try_derive(getattr(args, "chunks", None), chunks_path, cfg, "--chunks")
