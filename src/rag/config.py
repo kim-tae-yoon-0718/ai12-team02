@@ -94,10 +94,80 @@ def corpus_dir(cfg: dict[str, Any]) -> Path:
     return resolve_path(cfg, "shared_data", "processed", f"corpus_{cfg['corpus']}")
 
 
+class ExtractionTablePathError(RuntimeError):
+    """공식 추출표를 찾지 못했거나, 두 곳의 같은 버전이 서로 다를 때.
+
+    ★일반 RuntimeError 와 구분하는 이유: 호출부(answer_pipeline._try_derive)가
+      경로 조립 실패를 '경고 후 계속'으로 넘긴다. 이 오류만은 그대로 터뜨려서
+      "왜 못 찾았는지"가 '공식 추출표를 찾지 못했습니다'라는 뭉뚱그린 문구로
+      덮이지 않게 한다.
+    """
+
+
+def repo_root() -> Path:
+    """저장소 루트 — config/base.yaml 이 있는 폴더의 부모."""
+    return _find_base_yaml().resolve().parent.parent
+
+
+def _sha256(path: Path) -> str:
+    import hashlib
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def extraction_table_candidates(cfg: dict[str, Any]) -> list[Path]:
+    """추출표 폴더 후보를 **우선순위 순서대로** 돌려준다.
+
+      ② 저장소 공식 자료 (data/preprocessed/rfp_extraction_table_vN)
+      ③ 서버 공용 경로 ($RAG_ROOT/shared_data/processed/rfp_extraction_table_vN)
+
+    (①'사용자가 명시한 경로'는 CLI 인자라 이 함수 위에서 처리된다.)
+
+    ⚠️ 버전 폴더 이름에 cfg['table'] 을 그대로 쓴다. 못 찾았다고 다른 버전으로
+      되돌아가지 않는다 — 조용한 버전 강등은 채점 결과를 통째로 무의미하게 만든다.
+    """
+    version = cfg["table"]
+    out: list[Path] = []
+    try:
+        out.append(repo_root() / "data" / "preprocessed" / f"rfp_extraction_table_{version}")
+    except Exception:
+        pass
+    try:
+        out.append(resolve_path(cfg, "shared_data", "processed",
+                                f"rfp_extraction_table_{version}"))
+    except Exception:
+        pass   # RAG_ROOT 없음 — 저장소 경로만으로 진행
+    return out
+
+
 def extraction_table_dir(cfg: dict[str, Any]) -> Path:
-    return resolve_path(
-        cfg, "shared_data", "processed", f"rfp_extraction_table_{cfg['table']}"
-    )
+    """실제로 쓸 공식 추출표 폴더. 우선순위는 extraction_table_candidates 참조.
+
+    두 곳에 **같은 버전**이 다 있는데 파일 지문이 다르면, 어느 쪽이 진짜인지
+    코드가 판단할 수 없으므로 하나를 고르지 않고 중단한다.
+    """
+    version = cfg["table"]
+    filename = f"extraction_table_{version}.json"
+    candidates = extraction_table_candidates(cfg)
+    found = [d for d in candidates if (d / filename).exists()]
+
+    if not found:
+        raise ExtractionTablePathError(
+            f"공식 추출표 {version} 을 어디에서도 찾지 못했습니다. 찾아본 곳:\n"
+            + "\n".join(f"  - {d / filename}" for d in candidates)
+            + "\n--extraction-table 로 직접 지정하거나 공식 자료를 배치하세요. "
+              "다른 버전으로 자동 대체하지 않습니다."
+        )
+
+    if len(found) > 1:
+        digests = {str(d): _sha256(d / filename) for d in found}
+        if len(set(digests.values())) > 1:
+            detail = "\n".join(f"  - {k}/{filename}: {v}" for k, v in digests.items())
+            raise ExtractionTablePathError(
+                f"같은 버전({version})의 추출표가 두 곳에 있는데 내용이 다릅니다 — "
+                f"어느 쪽이 공식인지 코드가 정할 수 없어 중단합니다.\n{detail}\n"
+                f"--extraction-table 로 쓸 파일을 명시하세요."
+            )
+    return found[0]
 
 
 def extraction_table_path(cfg: dict[str, Any]) -> Path:

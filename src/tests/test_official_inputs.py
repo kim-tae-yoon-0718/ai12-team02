@@ -16,14 +16,44 @@ import pytest
 RAG_ROOT = Path(os.environ.get("RAG_ROOT_OFFICIAL", "/srv/rfp"))
 PROCESSED = RAG_ROOT / "shared_data" / "processed"
 REGISTRY_DIR = PROCESSED / "document_registry_v2"
-EXTRACTION_DIR = PROCESSED / "rfp_extraction_table_v4"
 CHUNKS_DIR = PROCESSED / "chunks_v3"
 IDENTITY_CSV = REGISTRY_DIR / "document_identity_v2.csv"
 PRACTICE_ITEMS = RAG_ROOT / "evalset" / "practice_items.jsonl"
 
+# 저장소 루트 — 이 파일은 <repo>/src/tests/ 에 있다.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+# 공식 자료 위치는 conftest 의 공용 함수 하나로 정한다(파일마다 다른 기준 금지).
+from conftest import resolve_official_extraction_dir  # noqa: E402
+
+EXTRACTION_DIR = resolve_official_extraction_dir("v4")
+
+# 자료별로 "왜 없는지"를 남긴다 — 뭉뚱그린 skip 사유는 원인을 숨긴다.
+_MISSING = [
+    name for name, ok in (
+        ("공식 추출표 v4(저장소 data/preprocessed 또는 서버 공용 경로)",
+         EXTRACTION_DIR is not None),
+        (f"identity({IDENTITY_CSV})", IDENTITY_CSV.exists()),
+        (f"공식 청크({CHUNKS_DIR})", CHUNKS_DIR.exists()),
+    ) if not ok
+]
+
+# ★공식 서버 검증 모드: 자료가 없으면 skip 이 아니라 **실패**.
+#   CI/서버 점검에서 "조용히 건너뛰고 초록불"이 나오는 것을 막는다.
+REQUIRE_OFFICIAL = os.environ.get("RFP_REQUIRE_OFFICIAL_INPUTS", "").strip().lower() \
+    in {"1", "true", "yes", "on"}
+
+if _MISSING and REQUIRE_OFFICIAL:
+    raise RuntimeError(
+        "RFP_REQUIRE_OFFICIAL_INPUTS=1 인데 공식 입력 자료가 없습니다: "
+        + ", ".join(_MISSING)
+        + " — 공식 서버 검증 모드에서는 skip 하지 않습니다."
+    )
+
 pytestmark = pytest.mark.skipif(
-    not (IDENTITY_CSV.exists() and EXTRACTION_DIR.exists() and CHUNKS_DIR.exists()),
-    reason="공식 입력 자료(/srv/rfp)가 없는 환경",
+    bool(_MISSING),
+    reason="공식 입력 자료 없음: " + ", ".join(_MISSING),
 )
 
 OFFICIAL_CFG = {

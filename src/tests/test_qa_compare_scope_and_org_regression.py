@@ -274,14 +274,27 @@ def test_unknown_new_org_never_falls_back_to_the_active_document(world):
 _RAG_ROOT = Path(os.environ.get("RAG_ROOT_OFFICIAL", "/srv/rfp"))
 _PROCESSED = _RAG_ROOT / "shared_data" / "processed"
 _IDENTITY_CSV = _PROCESSED / "document_registry_v2" / "document_identity_v2.csv"
-_EXTRACTION_DIR = _PROCESSED / "rfp_extraction_table_v4"
+# ⚠️ 공식 추출표 v4·평가셋 v2 는 저장소(data/)에 있다. 서버 공용 경로만 보면
+#    자료가 있는데도 "없는 환경"으로 판정해 이 파일의 공식 검사가 통째로 skip 된다.
+from conftest import (resolve_official_extraction_dir,      # noqa: E402
+                      resolve_official_evalset_items)
+
+_EXTRACTION_DIR = resolve_official_extraction_dir("v4")
 _CHUNKS_DIR = _PROCESSED / "chunks_v3"
 _PRACTICE_ITEMS = _RAG_ROOT / "evalset" / "practice_items.jsonl"
-_OFFICIAL_ITEMS = _RAG_ROOT / "evalset" / "v2" / "items.jsonl"
+_OFFICIAL_ITEMS = resolve_official_evalset_items("v2")
+
+_MISSING_OFFICIAL = [
+    name for name, ok in (
+        ("identity", _IDENTITY_CSV.exists()),
+        ("추출표 v4", _EXTRACTION_DIR is not None),
+        ("청크 v3", _CHUNKS_DIR.exists()),
+    ) if not ok
+]
 
 official = pytest.mark.skipif(
-    not (_IDENTITY_CSV.exists() and _EXTRACTION_DIR.exists() and _CHUNKS_DIR.exists()),
-    reason="공식 입력 자료(/srv/rfp)가 없는 환경",
+    bool(_MISSING_OFFICIAL),
+    reason="공식 입력 자료 없음: " + ", ".join(_MISSING_OFFICIAL),
 )
 
 _OFFICIAL_CFG = dict(
@@ -315,6 +328,8 @@ def official_table():
 
 def _official_question(item_id: str) -> str:
     for path in (_OFFICIAL_ITEMS, _PRACTICE_ITEMS):
+        if path is None or not path.exists():
+            continue
         for line in path.read_text(encoding="utf-8").splitlines():
             if line.strip():
                 item = json.loads(line)

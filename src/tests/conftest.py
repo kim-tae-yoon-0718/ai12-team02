@@ -14,6 +14,39 @@ _SRC = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_SRC / "rag"))
 sys.path.insert(0, str(_SRC / "scripts"))
 
+# ---------------------------------------------------------------------------
+# 공식 자료 위치 해석 — 저장소 우선, 서버 공용 경로는 그 다음.
+#
+# ⚠️ 공식 추출표 v4·평가셋 v2 는 저장소(data/)로 옮겨졌는데, 테스트들은 계속
+#    서버 공용 경로(/srv/rfp/...)만 쳐다봤다. 그래서 자료가 **있는데도** "없는 환경"
+#    으로 판정해 공식 검사들이 통째로 skip 됐다 — 안전망이 꺼진 채 초록불이 떴고,
+#    추출표 v4 ↔ 인덱스 계보 v3 불일치를 아무도 잡지 못했다.
+#    실행 코드(config.extraction_table_candidates)와 **같은 우선순위**를 쓴다.
+# ---------------------------------------------------------------------------
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+OFFICIAL_RAG_ROOT = Path(os.environ.get("RAG_ROOT_OFFICIAL", "/srv/rfp"))
+OFFICIAL_PROCESSED = OFFICIAL_RAG_ROOT / "shared_data" / "processed"
+
+
+def resolve_official_extraction_dir(version: str = "v4") -> Path | None:
+    """공식 추출표 폴더 — ① 저장소 data/preprocessed ② 서버 공용 경로."""
+    for d in (REPO_ROOT / "data" / "preprocessed" / f"rfp_extraction_table_{version}",
+              OFFICIAL_PROCESSED / f"rfp_extraction_table_{version}"):
+        if (d / f"extraction_table_{version}.json").exists():
+            return d
+    return None
+
+
+def resolve_official_evalset_items(version: str = "v2") -> Path | None:
+    """공식 평가셋 items.jsonl — ① 저장소 data/evalsets/final ② 서버 공용 경로."""
+    for p in (REPO_ROOT / "data" / "evalsets" / "final" / version / "items.jsonl",
+              OFFICIAL_RAG_ROOT / "evalset" / version / "items.jsonl"):
+        if p.exists():
+            return p
+    return None
+
+
 OFFICIAL_FIELDS = [
     "사업 개요", "사업분야", "공고일", "사업기간", "예산",
     "참가 자격(면허·실적)", "지역제한", "컨소시엄 요건",
