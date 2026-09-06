@@ -1105,10 +1105,10 @@ class TestReadmeAndScripts:
         for r in ALL_ROUTES:
             assert f"`{r}`" in readme, f"README에 route {r}가 없습니다"
 
-    def test_readme_uses_v3_extraction_table(self):
+    def test_readme_uses_v4_extraction_table(self):
         readme = (Path(__file__).resolve().parent.parent / "README.md").read_text(
             encoding="utf-8")
-        assert "extraction_table_v3.json" in readme
+        assert "extraction_table_v4.json" in readme
         assert "extraction_table_v2.json" not in readme
         assert "rfp_extraction_table_v2" not in readme
 

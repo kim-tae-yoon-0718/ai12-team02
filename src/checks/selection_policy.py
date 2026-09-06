@@ -273,7 +273,7 @@ from pathlib import Path as _Path   # noqa: E402
 SRV = _Path("/srv/rfp")
 REGISTRY_PATH = SRV / "shared_data/processed/document_registry_v2/document_registry_v2.json"
 IDENTITY_PATH = SRV / "shared_data/processed/document_registry_v2/document_identity_v2.csv"
-TABLE_PATH = SRV / "shared_data/processed/rfp_extraction_table_v3/extraction_table_v3.json"
+TABLE_PATH = SRV / "shared_data/processed/rfp_extraction_table_v4/extraction_table_v4.json"
 
 
 def load_official(registry=None, identity=None, table=None) -> dict:

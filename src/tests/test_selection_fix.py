@@ -1390,8 +1390,8 @@ class TestRound2ConsortiumClauseScope:
         import json
         from pathlib import Path
         from table_query import classify_consortium
-        official = Path("/srv/rfp/shared_data/processed/rfp_extraction_table_v3/"
-                        "extraction_table_v3.json")
+        official = Path("/srv/rfp/shared_data/processed/rfp_extraction_table_v4/"
+                        "extraction_table_v4.json")
         if not official.exists():
             pytest.skip("공식 추출표 없음")
         rows = json.loads(official.read_text(encoding="utf-8"))["rows"]
@@ -1405,8 +1405,8 @@ class TestRound2ConsortiumClauseScope:
             dist[(r["status"], v.required, v.allowed)] += 1
         assert dist[("value_present", False, True)] == 45      # 허용
         assert dist[("value_present", False, False)] == 28     # 금지
-        assert dist[("value_present", None, None)] == 15       # 판단 불가
-        assert dist[("field_absent", None, None)] == 11
+        assert dist[("value_present", None, None)] == 17       # 판단 불가
+        assert dist[("field_absent", None, None)] == 9
         assert dist[("conflict", None, None)] == 1
         # 공식표에 공동수급을 무조건 필수로 요구하는 문서는 없다
         assert not any(k[1] is True for k in dist)

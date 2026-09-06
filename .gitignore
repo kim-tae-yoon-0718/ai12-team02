@@ -231,7 +231,19 @@ credentials/
 service-account*.json
 
 # 원본 RFP 데이터 (비밀유지계약 - 외부 공유 금지)
-data/
+# 아래 세 묶음만 팀 검증을 위해 버전 관리한다.
+data/*
+!data/README.md
+!data/gold/
+!data/gold/**
+!data/evalsets/
+data/evalsets/*
+!data/evalsets/final/
+!data/evalsets/final/**
+!data/preprocessed/
+data/preprocessed/*
+!data/preprocessed/rfp_extraction_table_v4/
+!data/preprocessed/rfp_extraction_table_v4/**
 
 # 벡터 DB / 인덱스
 vectorstore/

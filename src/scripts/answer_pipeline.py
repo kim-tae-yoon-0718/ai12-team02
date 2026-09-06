@@ -12,7 +12,7 @@
 - 문서 특정: doc_resolver의 5단계 우선순위(정확한 ID → active_document_id →
   기관명+사업명 → 기관명 → 사업명 단일후보). 모호하면 임의로 고르지 않고 되묻는다.
 - QA형이라도 질문에 확정된 구조화 필드가 있으면 구조화 자료를 **함께** 쓴다.
-  마감일 → identity_v2, 12필드 → extraction_table_v3, 설명 보완 → chunks_v3.
+  마감일 → identity_v2, 12필드 → 설정된 공식 추출표, 설명 보완 → chunks_v3.
 - 구조화 값은 공식 확정 값이고, 청크는 설명·문맥 보완 근거다. 모델이 청크를
   보고 확정 값을 바꾸지 못하게 프롬프트에서 구분한다. 단, 구조화 자료 자체가
   conflict면 하나를 고르지 않고 충돌로 답한다.
@@ -285,11 +285,14 @@ def location_to_citation(document_id: str, loc: dict, source: str) -> dict:
     }
 
 
-def row_citations(document_id: str, row: dict | None, source: str = "extraction_table_v3") -> list[dict]:
+def row_citations(document_id: str, row: dict | None, source: str | None = None) -> list[dict]:
     """representative_location과 additional_locations를 **모두** 근거로 만든다.
     첫 위치만 남기지 않는다(4-3 확정). conflict 행에서 특히 중요."""
     if row is None:
         return []
+    if source is None:
+        version = str(row.get("extraction_version") or "").strip()
+        source = f"extraction_table_{version}" if version else "extraction_table"
     out: list[dict] = []
     rep = row.get("representative_location")
     if isinstance(rep, dict) and rep:
@@ -544,6 +547,10 @@ def build_field_evidence(
     근거를 지어내지 않고 비운다.
     """
     used = _source_tag(cfg, "extraction_table")
+    table_source = str(used.get("extraction_version") or used.get("source")
+                       or "extraction_table")
+    if not table_source.startswith("extraction_table"):
+        table_source = f"extraction_table_{table_source}"
     row = lookup_field(table, document_id, field_name)
     if row is None:
         return StructuredEvidence(
@@ -572,7 +579,9 @@ def build_field_evidence(
         if not isinstance(loc, dict) or not loc:
             return []
         if locator is not None:
-            c = locator.citation_for_location(document_id, loc, field=field_name)
+            c = locator.citation_for_location(
+                document_id, loc, field=field_name, source=table_source
+            )
             if c:
                 return [c]
         line = loc.get("line", loc.get("line_start"))
@@ -585,7 +594,7 @@ def build_field_evidence(
         return [{
             "document": document_id, "section": section, "ref_no": ref,
             "line": line, "line_end": loc.get("line_end", line),
-            "field": field_name, "source": "extraction_table_v3(raw_location)",
+            "field": field_name, "source": f"{table_source}(raw_location)",
         }]
 
     if status == "conflict":

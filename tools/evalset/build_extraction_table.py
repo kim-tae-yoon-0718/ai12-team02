@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #@title 1-12-2 추출 테이블 생성기 — 문서 100건 × 필드 12개 = 1,200행
 #@markdown 공식 전처리 문서·sidecar·문서 등록부·원본 메타데이터를 **읽기만** 해서
-#@markdown `extraction_table_v3.csv/.json` 을 만든다. 원본과 공식 자료는 절대 건드리지 않는다.
+#@markdown `extraction_table_v4.csv/.json` 을 만든다. 원본과 공식 자료는 절대 건드리지 않는다.
 #@markdown
 #@markdown 추출은 두 갈래를 합친다.
 #@markdown   (1) 규칙: 항목명·동의어를 찾아 값을 떼어낸다 (코드가 한다)
@@ -39,11 +39,11 @@ CALIBRATION_CSV = Path(_os.environ.get(_CAL_ENV, "")) if _os.environ.get(_CAL_EN
 RULES_YAML = Path(_os.environ.get(_RULES_ENV, "")) if _os.environ.get(_RULES_ENV) else None
 
 SCHEMA_VERSION = "1-12-2/v3"  # 스키마는 v3 그대로(열 구조 불변)
-EXTRACTION_VERSION = "v3.1-candidate.1"
+EXTRACTION_VERSION = "v4"
 PENDING_STATUSES = frozenset({"extraction_failed", "review_required"})
 
 # 결정 파일 — 이 세션에서 내린 의미 판단을 **고정**해 둔 자료
-DECISIONS_CSV = "semantic_decisions_v3.csv"
+DECISIONS_CSV = "semantic_decisions_v4.csv"
 DECISION_FIELDS = ["document_id", "field_name", "status", "answer_raw", "answer_normalized",
                    "matched_expression", "representative_source_type",
                    "representative_location", "source_excerpt_redacted",
@@ -2106,7 +2106,7 @@ def process_document(reg_row: dict, meta_row: dict | None, decisions: dict,
 
 def write_outputs(out_dir: Path, rows: list[dict], aliases: list[dict], meta: dict) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
-    with (out_dir / "extraction_table_v3.csv").open("w", encoding="utf-8-sig",
+    with (out_dir / "extraction_table_v4.csv").open("w", encoding="utf-8-sig",
                                                       newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=COLUMNS, quoting=csv.QUOTE_ALL,
                            lineterminator="\n")
@@ -2131,7 +2131,7 @@ def write_outputs(out_dir: Path, rows: list[dict], aliases: list[dict], meta: di
                "document_count": len({r["document_id"] for r in rows}),
                "field_count": len(R.FIELDS), "row_count": len(rows),
                "fields": R.FIELDS, "rows": [unpack(r) for r in rows]}
-    (out_dir / "extraction_table_v3.json").write_text(
+    (out_dir / "extraction_table_v4.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8")
 
@@ -2145,7 +2145,7 @@ def write_outputs(out_dir: Path, rows: list[dict], aliases: list[dict], meta: di
             continue
         seen.add(key)
         uniq.append(a)
-    with (out_dir / "field_alias_candidates_v3.csv").open("w", encoding="utf-8-sig",
+    with (out_dir / "field_alias_candidates_v4.csv").open("w", encoding="utf-8-sig",
                                                             newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=afields, quoting=csv.QUOTE_ALL,
                            lineterminator="\n")
@@ -2158,7 +2158,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="1-12-2 추출 테이블 생성")
     ap.add_argument("--out", default=str(HERE))
     ap.add_argument("--decisions", default=None,
-                    help="고정된 의미 판단 파일(기본: --out 폴더의 semantic_decisions_v3.csv)")
+                    help="고정된 의미 판단 파일(기본: --out 폴더의 semantic_decisions_v4.csv)")
     ap.add_argument("--registry-dir", default=str(REGISTRY_DIR),
                     help="읽기 전용 문서 등록부 폴더")
     ap.add_argument("--corpus-dir", default=str(CORPUS_DIR),
@@ -2224,7 +2224,7 @@ def main() -> int:
     # 실행마다 달라지는 값은 본문이 아니라 메타데이터 파일에만 적는다
     (out_dir / "extraction_metadata.json").write_text(json.dumps({
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "generator": "outputs/rfp_extraction_table_v3/build_extraction_table.py (후보 재생성: evalset_scorer_policy4 tools 사본, EXTRACTION_VERSION 만 변경)",
+        "generator": "tools/evalset/build_extraction_table.py",
         "schema_version": SCHEMA_VERSION, "extraction_version": EXTRACTION_VERSION,
         "corpus_version": corpus_version, "registry_version": registry_version,
         "corpus_dir": str(CORPUS_DIR), "registry_dir": str(REGISTRY_DIR),

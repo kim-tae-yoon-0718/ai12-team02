@@ -101,7 +101,7 @@ def extraction_table_dir(cfg: dict[str, Any]) -> Path:
 
 
 def extraction_table_path(cfg: dict[str, Any]) -> Path:
-    """공식 추출표 JSON 파일 — extraction_table_v3.json (rows 안에 1,200행).
+    """공식 추출표 JSON 파일 — extraction_table_vN.json (rows 안에 1,200행).
     ⚠️ table.jsonl 같은 파일은 존재하지 않는다. 폴더 안 실제 파일명을
     가정할 수 없으면 --extraction-table로 파일 경로를 직접 넘긴다."""
     return extraction_table_dir(cfg) / f"extraction_table_{cfg['table']}.json"

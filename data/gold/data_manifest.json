@@ -3,7 +3,7 @@
   "load_rate": 1.0,
   "duplicate_doc_ids": [],
   "corpus_version": "v2",
-  "extraction_table_version": "v3",
+  "extraction_table_version": "v4",
   "raw_doc_count": 100,
   "md_doc_count": 100,
   "filename_normalization_mismatches": 0,

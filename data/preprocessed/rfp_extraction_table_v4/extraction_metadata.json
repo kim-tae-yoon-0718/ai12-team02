@@ -1,0 +1,28 @@
+{
+  "calibration_csv": "/home/spai1205/ai12-team02/outputs/rfp_30_fields_audit_merged.csv",
+  "corpus_dir": "/srv/rfp/shared_data/processed/corpus_v2",
+  "corpus_version": "v2",
+  "decisions_applied": 90,
+  "decisions_file": "semantic_decisions_v4.csv",
+  "document_count": 100,
+  "extraction_version": "v4",
+  "field_count": 12,
+  "generated_at": "2026-09-04T09:07:42+00:00",
+  "promoted_at": "2026-09-06",
+  "generator": "tools/evalset/build_extraction_table.py",
+  "metadata_csv": "/srv/rfp/shared_data/raw/data_list.csv",
+  "note": "v3과 같은 스키마를 사용하며 RFP-000067·RFP-000081의 컨소시엄 요건 2행만 원문 근거에 맞게 정정했다.",
+  "paths_repo_relative": {
+    "calibration_csv": "outputs/rfp_30_fields_audit_merged.csv",
+    "decisions_csv": "data/preprocessed/rfp_extraction_table_v4/semantic_decisions_v4.csv",
+    "official_table_v4": "data/preprocessed/rfp_extraction_table_v4/extraction_table_v4.json",
+    "rules_yaml": "preprocess/rules_v2.yaml"
+  },
+  "registry_dir": "/srv/rfp/shared_data/processed/document_registry_v2",
+  "registry_version": "v2",
+  "row_count": 1200,
+  "rules_sha256": "be3a9d03fd4b96518be219aea9a0fdb894ebbb3f0f062524c73523c6a6c4d257",
+  "schema_version": "1-12-2/v3",
+  "source_candidate_version": "v3.1-candidate.1",
+  "source_candidate_sha256": "68c1188150ea68a17a27b3a224bbd7c1913a8d745e0647d80e6e0eb285c5e3c9"
+}

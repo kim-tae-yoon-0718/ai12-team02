@@ -274,10 +274,10 @@ def test_unknown_new_org_never_falls_back_to_the_active_document(world):
 _RAG_ROOT = Path(os.environ.get("RAG_ROOT_OFFICIAL", "/srv/rfp"))
 _PROCESSED = _RAG_ROOT / "shared_data" / "processed"
 _IDENTITY_CSV = _PROCESSED / "document_registry_v2" / "document_identity_v2.csv"
-_EXTRACTION_DIR = _PROCESSED / "rfp_extraction_table_v3"
+_EXTRACTION_DIR = _PROCESSED / "rfp_extraction_table_v4"
 _CHUNKS_DIR = _PROCESSED / "chunks_v3"
 _PRACTICE_ITEMS = _RAG_ROOT / "evalset" / "practice_items.jsonl"
-_OFFICIAL_ITEMS = _RAG_ROOT / "evalset" / "v1" / "items.jsonl"
+_OFFICIAL_ITEMS = _RAG_ROOT / "evalset" / "v2" / "items.jsonl"
 
 official = pytest.mark.skipif(
     not (_IDENTITY_CSV.exists() and _EXTRACTION_DIR.exists() and _CHUNKS_DIR.exists()),
@@ -285,8 +285,8 @@ official = pytest.mark.skipif(
 )
 
 _OFFICIAL_CFG = dict(
-    cfg(), corpus="v2", preprocess="v2", table="v3",
-    document_registry_version="v2", chunking_version="v3", extraction_version="v3",
+    cfg(), corpus="v2", preprocess="v2", table="v4",
+    document_registry_version="v2", chunking_version="v3", extraction_version="v4",
     schema_version="1-12-2/v3",
 )
 
@@ -309,7 +309,7 @@ def official_identity():
 def official_table():
     from table_query import load_extraction_table
     return load_extraction_table(
-        _EXTRACTION_DIR / "extraction_table_v3.json", cfg=_OFFICIAL_CFG,
+        _EXTRACTION_DIR / "extraction_table_v4.json", cfg=_OFFICIAL_CFG,
         metadata_path=_EXTRACTION_DIR / "extraction_metadata.json", official=True)
 
 

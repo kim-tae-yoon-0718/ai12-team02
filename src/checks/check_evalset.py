@@ -445,7 +445,7 @@ REFERENCE_TIME_EXPECTED = "2024-06-01"
 
 OFFICIAL_REGISTRY = "/srv/rfp/shared_data/processed/document_registry_v2/document_registry_v2.json"
 OFFICIAL_IDENTITY = "/srv/rfp/shared_data/processed/document_registry_v2/document_identity_v2.csv"
-OFFICIAL_TABLE = "/srv/rfp/shared_data/processed/rfp_extraction_table_v3/extraction_table_v3.json"
+OFFICIAL_TABLE = "/srv/rfp/shared_data/processed/rfp_extraction_table_v4/extraction_table_v4.json"
 OFFICIAL_CHUNKS = "/srv/rfp/shared_data/processed/chunks_v3/chunks.jsonl"
 
 

@@ -183,12 +183,12 @@ gate:
 provenance:
   corpus: UNKNOWN        # ① 원문 코퍼스 — 실행 시 RAG_ROOT/VERSION.txt 에서 해석(실사용 v2)
   preprocess: UNKNOWN    # ② 전처리 — 실행 시 해석(실사용 v2 / chunks_v3)
-  table: v3             # ③ 구조화 추출 테이블 — 실사용값 rfp_extraction_table_v3 (팀장)
+  table: v4             # ③ 구조화 추출 테이블 — 실사용값 rfp_extraction_table_v4
   index: v2             # ④ 검색 인덱스 — [2026-09-04 정정] 실사용은 index_v2
                         #    (chunks_v3 + text-embedding-3-small, dim 1536).
                         #    생성 시각은 manifest.index_build_timestamp 에 별도 자동 기록.
-  evalset: UNKNOWN       # ⑤ 평가셋 — 실행 시 VERSION.txt 에서 해석(후보본 v1-candidate.1)
-                        #    base.yaml §① "evalset: v1"은 아직 TODO(임현진 평가셋 동결 시 확정).
+  evalset: UNKNOWN       # ⑤ 평가셋 — 실행 시 VERSION.txt에서 공식 v2를 읽어 기록한다.
+                        #    자료 경로가 없는 테스트에서는 UNKNOWN을 유지해 거짓 버전을 쓰지 않는다.
   scorer: v2             # ⑥ 채점기 버전 — v2 (2026-09-02, 채점 오류 수정: 금액 조건 분리 /
                         #    빈 정규화형 / 항목 1:1 대응 / abstained 필수 / 검색경로 구분 등).
                         #    팀 실험 결과는 같은 scorer 버전끼리만 비교한다.

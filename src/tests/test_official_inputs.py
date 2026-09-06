@@ -16,7 +16,7 @@ import pytest
 RAG_ROOT = Path(os.environ.get("RAG_ROOT_OFFICIAL", "/srv/rfp"))
 PROCESSED = RAG_ROOT / "shared_data" / "processed"
 REGISTRY_DIR = PROCESSED / "document_registry_v2"
-EXTRACTION_DIR = PROCESSED / "rfp_extraction_table_v3"
+EXTRACTION_DIR = PROCESSED / "rfp_extraction_table_v4"
 CHUNKS_DIR = PROCESSED / "chunks_v3"
 IDENTITY_CSV = REGISTRY_DIR / "document_identity_v2.csv"
 PRACTICE_ITEMS = RAG_ROOT / "evalset" / "practice_items.jsonl"
@@ -27,9 +27,9 @@ pytestmark = pytest.mark.skipif(
 )
 
 OFFICIAL_CFG = {
-    "top_k": 5, "corpus": "v2", "preprocess": "v2", "table": "v3",
+    "top_k": 5, "corpus": "v2", "preprocess": "v2", "table": "v4",
     "document_registry_version": "v2", "chunking_version": "v3",
-    "extraction_version": "v3", "schema_version": "1-12-2/v3",
+    "extraction_version": "v4", "schema_version": "1-12-2/v3",
     "routing_method": "rule_based", "routing_fallback": "qa",
     "reference_datetime_source": "external", "reference_datetime": "2024-06-01",
     "deadline_filter_field": "bid_deadline",
@@ -49,7 +49,7 @@ OFFICIAL_CFG = {
 def official_table():
     from table_query import load_extraction_table
     return load_extraction_table(
-        EXTRACTION_DIR / "extraction_table_v3.json", cfg=OFFICIAL_CFG,
+        EXTRACTION_DIR / "extraction_table_v4.json", cfg=OFFICIAL_CFG,
         metadata_path=EXTRACTION_DIR / "extraction_metadata.json", official=True)
 
 
@@ -74,10 +74,10 @@ class TestOfficialExtractionTable:
         assert len(combos) == 1200
 
     def test_declared_versions(self):
-        doc = json.loads((EXTRACTION_DIR / "extraction_table_v3.json").read_text(
+        doc = json.loads((EXTRACTION_DIR / "extraction_table_v4.json").read_text(
             encoding="utf-8"))
         assert doc["schema_version"] == "1-12-2/v3"
-        assert doc["extraction_version"] == "v3"
+        assert doc["extraction_version"] == "v4"
         assert doc["corpus_version"] == "v2"
         assert doc["registry_version"] == "v2"
 
@@ -89,12 +89,12 @@ class TestOfficialExtractionTable:
         assert meta["field_count"] == 12
 
     def test_stale_version_is_blocked(self):
-        """폴더·파일 이름만 v3인 것을 인정하지 않는다."""
+        """폴더·파일 이름만 v4인 것을 인정하지 않는다."""
         from table_query import load_extraction_table, ExtractionTableFormatError
         stale = dict(OFFICIAL_CFG)
         stale["extraction_version"] = "v2"
         with pytest.raises(ExtractionTableFormatError):
-            load_extraction_table(EXTRACTION_DIR / "extraction_table_v3.json",
+            load_extraction_table(EXTRACTION_DIR / "extraction_table_v4.json",
                                   cfg=stale, official=True)
 
     def test_rfp_000028_conflict_keeps_both_locations(self, official_table):

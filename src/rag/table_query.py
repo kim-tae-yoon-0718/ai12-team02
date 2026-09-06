@@ -1,7 +1,7 @@
 """
-G-2 — 조건 질의 및 공식 추출표(rfp_extraction_table_v3) 조회.
+G-2 — 조건 질의 및 설정된 공식 추출표 조회.
 
-공식 추출 테이블 형식 (extraction_table_v3.json, JSONL 아님. 최상위 'rows' 키):
+공식 추출 테이블 형식 (extraction_table_vN.json, JSONL 아님. 최상위 'rows' 키):
 {
   "document_id": "RFP-000001",
   "field_name": <공식 12필드 중 하나>,
@@ -48,7 +48,7 @@ NON_VALUE_STATUS = {
     "extraction_failed", "review_required",
 }
 
-# 공식 12필드 — extraction_table_v3.json의 "fields"와 정확히 같아야 한다
+# 공식 12필드 — 설정된 extraction_table_vN.json의 "fields"와 정확히 같아야 한다
 OFFICIAL_FIELDS: tuple[str, ...] = (
     "사업 개요", "사업분야", "공고일", "사업기간", "예산",
     "참가 자격(면허·실적)", "지역제한", "컨소시엄 요건",

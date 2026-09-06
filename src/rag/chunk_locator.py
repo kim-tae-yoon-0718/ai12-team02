@@ -9,7 +9,7 @@
     line     = md_line_start,  line_end = md_line_end
 
 평가셋 정답 좌표도 같은 규약이라 문자열/line 범위로 그대로 대조된다.
-추출표(extraction_table_v3)의 `representative_location`·`additional_locations`는
+추출표의 `representative_location`·`additional_locations`는
 `heading`/`block_index`/`line`만 갖고 있어 이 규약과 형식이 다르다 — 그래서
 줄 번호로 **그 줄을 포함하는 청크**를 찾아 청크 좌표로 변환한다.
 
@@ -153,7 +153,7 @@ class ChunkLocator:
 
     def citation_for_location(self, document_id: str, loc: dict,
                               field: str | None = None,
-                              source: str = "extraction_table_v3") -> dict | None:
+                              source: str = "extraction_table") -> dict | None:
         """추출표 위치 객체 → 청크 규약 좌표. 줄 번호가 없거나 매핑 실패면 None.
 
         ⚠️ 매핑에 실패하면 근거를 **지어내지 않는다** — 호출측이 "근거 위치 없음"으로

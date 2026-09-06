@@ -15,8 +15,8 @@ RFP(제안요청서) 문서에 대해 선별형·추출형·QA형·비교형 네
 | 청크 v3 | `$RAG_ROOT/shared_data/processed/chunks_v3/chunks.jsonl` | 일반 QA 원문 근거 |
 | 문서 등록부 v2 | `.../document_registry_v2/document_registry_v2.json` | 검색 대상·중복 판정, 해시 대조 |
 | **identity_v2** | `.../document_registry_v2/document_identity_v2.csv` | **마감일(`bid_deadline`)·발주기관·사업명** |
-| 추출표 v3 | `.../rfp_extraction_table_v3/extraction_table_v3.json` | 12필드 값·상태·위치 |
-| 추출표 이름표 | `.../rfp_extraction_table_v3/extraction_metadata.json` | 위 표의 공식 메타데이터 |
+| 추출표 v4 | `.../rfp_extraction_table_v4/extraction_table_v4.json` | 12필드 값·상태·위치 |
+| 추출표 이름표 | `.../rfp_extraction_table_v4/extraction_metadata.json` | 위 표의 공식 메타데이터 |
 
 > ⚠️ 마감일은 **identity_v2가 유일한 출처**입니다(2026-09-02, 4-4 확정).
 > 예전 코드가 읽던 원본 수집 CSV 경로는 폐기했습니다. identity_v2에 값이
@@ -74,8 +74,8 @@ python3 answer_pipeline.py --question "5억 이상인 사업 알려줘"
 | 자동 조립 | base.yaml 값 | 실제 예시 |
 |---|---|---|
 | 인덱스 | `index` | `$RAG_ROOT/shared_data/processed/index_v2` |
-| 추출표 | `table` | `.../rfp_extraction_table_v3/extraction_table_v3.json` |
-| 추출표 이름표 | `table` | `.../rfp_extraction_table_v3/extraction_metadata.json` |
+| 추출표 | `table` | `.../rfp_extraction_table_v4/extraction_table_v4.json` |
+| 추출표 이름표 | `table` | `.../rfp_extraction_table_v4/extraction_metadata.json` |
 | 등록부 | `document_registry_version` | `.../document_registry_v2/document_registry_v2.json` |
 | identity_v2 | `document_registry_version` | `.../document_registry_v2/document_identity_v2.csv` |
 | 청크 | `chunking_version` | `.../chunks_v3/chunks.jsonl` |
@@ -206,7 +206,7 @@ QA형으로 분류돼도 질문에 확정된 구조화 필드가 있으면 구�
 ```
 
 - 마감일 질문 → `identity_v2`의 값과 위치를 우선 사용
-- 12필드 질문 → `extraction_table_v3`의 값·상태·위치를 우선 사용
+- 12필드 질문 → `extraction_table_v4`의 값·상태·위치를 우선 사용
 - 프롬프트에서 구조화 값은 "공식 확정 값"으로, 청크는 "설명·문맥 보완 근거"로
   구분해 넣고, 모델이 청크를 보고 확정 값을 바꾸지 못하게 지시합니다
 - 단, 구조화 자료 자체가 `conflict`면 하나를 고르지 않고 충돌로 답합니다
