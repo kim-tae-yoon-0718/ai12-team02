@@ -39,7 +39,8 @@ from config import load_config, index_dir, chunks_version_file
 from git_info import get_git_info, warn_if_dirty
 from embedding_client import EmbeddingClient
 from vector_store import (VectorStore, ChunkMetadata, IndexTag, config_mismatch_check,
-                          ConfigMismatchError, validate_index_tag, IndexTagError)
+                          ConfigMismatchError, validate_index_tag, IndexTagError,
+                          index_source_extraction_version)
 
 
 def load_chunks(chunks_path: Path) -> list[dict]:
@@ -161,6 +162,74 @@ def parse_chunks_version_file(path: Path) -> dict[str, str]:
         if mapped:
             out[mapped] = value.strip()
     return out
+
+
+class ChunkLineageError(ValueError):
+    """인덱스 꼬리표에 적을 추출표 계보를 정할 수 없을 때."""
+
+
+def resolve_index_extraction_lineage(
+    cfg: dict, declared: dict[str, str] | None = None,
+    chunks: list[dict] | None = None,
+) -> str:
+    """새 인덱스 꼬리표에 적을 **추출표 계보**를 정한다.
+
+    ★핵심: cfg['extraction_version'](지금 조회에 쓰는 추출표)을 그냥 복사하지
+      않는다. 그렇게 하면 추출표만 v4로 올린 순간, 실제로는 chunks_v3 로 만든
+      인덱스에 "v4로 만들었다"는 거짓 꼬리표가 찍힌다.
+
+    우선순위
+      ① 청크 VERSION.txt 의 `table version`  — 공식 자료의 계보 선언
+      ② 청크 레코드 안의 extraction_version   — 값이 하나로 일치할 때만
+      ③ cfg['index_source_extraction_version'] — 명시된 계보 설정
+      ④ 정할 수 없으면 중단
+
+    ①②로 정한 값이 ③과 다르면, 설정이 실제 입력 청크와 어긋난 것이므로 중단한다.
+    """
+    from_declared = (declared or {}).get("extraction_version") or None
+
+    from_chunks = None
+    if chunks:
+        vals = {c.get("extraction_version") for c in chunks if c.get("extraction_version")}
+        if len(vals) > 1:
+            raise ChunkLineageError(
+                f"청크 안에 extraction_version 이 섞여 있습니다: {sorted(vals)}")
+        if vals:
+            from_chunks = next(iter(vals))
+
+    if from_declared and from_chunks and from_declared != from_chunks:
+        raise ChunkLineageError(
+            f"청크 VERSION.txt 의 table version({from_declared!r})과 청크 레코드의 "
+            f"extraction_version({from_chunks!r})이 다릅니다.")
+
+    actual = from_declared or from_chunks
+    expected = index_source_extraction_version(cfg)
+
+    if actual is None:
+        # ★청크에서 계보를 못 얻었으면 **명시된 계보 설정만** 인정한다.
+        #   여기서 index_source_extraction_version() 의 하위호환 폴백을 쓰면
+        #   cfg.extraction_version(조회용 v4)이 그대로 꼬리표에 박혀 거짓 계보가 된다.
+        explicit = cfg.get("index_source_extraction_version")
+        if explicit is not None:
+            return explicit
+        if expected is None:
+            raise ChunkLineageError(
+                "인덱스 꼬리표에 적을 추출표 계보를 정할 수 없습니다. 청크 "
+                "VERSION.txt 의 `table version` 이 없고, 설정에 "
+                "index_source_extraction_version 도 없습니다. "
+                "cfg.extraction_version 을 대신 쓰지 않습니다 — 거짓 계보가 됩니다.")
+        raise ChunkLineageError(
+            "입력 청크에서 추출표 계보를 얻지 못했습니다. 설정에 "
+            "index_source_extraction_version 을 명시하거나 청크 VERSION.txt 를 "
+            "지정하세요. cfg.extraction_version"
+            f"({cfg.get('extraction_version')!r})을 계보로 복사하지 않습니다.")
+
+    if expected is not None and actual != expected:
+        raise ChunkLineageError(
+            f"입력 청크의 추출표 계보({actual!r})가 설정 "
+            f"index_source_extraction_version({expected!r})과 다릅니다. "
+            f"설정을 실제 청크에 맞추거나, 맞는 청크로 인덱싱하세요.")
+    return actual
 
 
 def validate_chunk_versions(
@@ -444,6 +513,15 @@ def main():
     if declared_versions:
         print(f"   청크 메타데이터 교차 확인 OK: {declared_versions}")
 
+    # ⭐ 꼬리표에 적을 추출표 계보 — 실제 입력 청크에서 정한다(cfg 복사 금지).
+    try:
+        lineage = resolve_index_extraction_lineage(cfg, declared_versions, chunks)
+    except ChunkLineageError as e:
+        print(f"❌ {e}")
+        sys.exit(1)
+    print(f"   인덱스 추출표 계보: {lineage} "
+          f"(현재 조회용 추출표는 {cfg.get('extraction_version')})")
+
     registry_path = Path(args.registry) if args.registry else None
     registry_report = None
     if registry_path is not None:
@@ -580,7 +658,8 @@ def main():
         preprocess_version=cfg.get("preprocess", ""),
         corpus_version=cfg["corpus"],
         registry_version=cfg.get("document_registry_version", cfg["corpus"]),
-        extraction_version=cfg.get("extraction_version", ""),
+        # ★cfg['extraction_version'](현재 조회용)이 아니라 실제 입력 청크의 계보.
+        extraction_version=lineage,
         chunking_version=cfg.get("chunking_version", ""),
         vector_dimension=(store.dimension or 0),
         document_count=active_doc_count,
