@@ -124,6 +124,10 @@ INDEX_TAG_REQUIRED_KEYS = (
     "build_timestamp",
 )
 
+# 인덱스 꼬리표의 extraction_version 이 뜻하는 것 —
+# "그 인덱스를 만든 청크의 추출표 계보"이지 "지금 조회에 쓰는 추출표"가 아니다.
+INDEX_LINEAGE_CFG_KEY = "index_source_extraction_version"
+
 # 설정(cfg) 키 → 꼬리표(tag) 키. 빌드와 실행이 **같은 표**를 본다(기준 이중화 금지).
 INDEX_TAG_CFG_MAP = (
     ("chunk_size", "chunk_size"),
@@ -134,13 +138,34 @@ INDEX_TAG_CFG_MAP = (
     ("preprocess", "preprocess_version"),
     ("chunking_version", "chunking_version"),
     ("__registry__", "registry_version"),
-    ("extraction_version", "extraction_version"),
+    # ⚠️ 왼쪽은 index_source_extraction_version(인덱스 계보)이지 extraction_version
+    #    (현재 조회용 추출표)이 아니다. 둘을 한 값으로 묶으면 추출표를 승격하는 순간
+    #    멀쩡한 인덱스가 "낡았다"고 차단된다 — 실제로 v4 승격 때 그렇게 막혔다.
+    (INDEX_LINEAGE_CFG_KEY, "extraction_version"),
 )
+
+
+def index_source_extraction_version(cfg: dict[str, Any]) -> Any:
+    """이 인덱스를 만든 청크의 추출표 계보로 **기대되는** 값.
+
+    ★공통 함수 — validate_index_tag(실행 경로)·config_mismatch_check(빌드 경로)·
+      build_index 가 모두 이걸 쓴다. 기준이 둘로 갈리면 한쪽만 고쳐지고 다른 쪽이
+      조용히 옛 기준으로 남는다.
+
+    설정에 index_source_extraction_version 이 없으면 extraction_version 으로
+    되돌아간다. 두 개념이 분리되기 전에 쓰던 config(기존 테스트 포함)를 그대로
+    지원하기 위한 하위호환이며, **검사를 느슨하게 만들지 않는다** — 되돌아간 값이
+    꼬리표와 다르면 예전처럼 그대로 차단된다(닫히는 쪽으로 실패).
+    """
+    v = cfg.get(INDEX_LINEAGE_CFG_KEY)
+    return cfg.get("extraction_version") if v is None else v
 
 
 def _cfg_value(cfg: dict[str, Any], cfg_key: str) -> Any:
     if cfg_key == "__registry__":
         return cfg.get("document_registry_version", cfg.get("corpus"))
+    if cfg_key == INDEX_LINEAGE_CFG_KEY:
+        return index_source_extraction_version(cfg)
     return cfg.get(cfg_key)
 
 
@@ -174,8 +199,14 @@ def validate_index_tag(
 
     검사 항목
       ① 꼬리표 존재·JSON 파싱          ② 필수 항목 누락
-      ③ 코퍼스·전처리·청킹·등록부·추출표 버전, 임베딩 모델/제공자, 청크 크기/겹침
+      ③ 코퍼스·전처리·청킹·등록부 버전, 임베딩 모델/제공자, 청크 크기/겹침,
+         그리고 **인덱스를 만든 청크의 추출표 계보**
+         (cfg.index_source_extraction_version ↔ tag.extraction_version)
       ④ 벡터 차원 (꼬리표 vs 실제 vectors.npy)
+
+    ★ 여기서 보지 않는 것: 지금 구조화 조회에 쓰는 추출표 버전(cfg.extraction_version).
+      그건 추출표 자체의 메타데이터와 대조하는 일이라 table_query.validate_extraction_table
+      이 맡는다. 인덱스는 추출표를 임베딩하지 않으므로 이 축으로 인덱스를 막지 않는다.
 
     ★ 이 함수는 build_index.py 와 answer_pipeline.build_runtime 이 **같이** 쓴다.
     ★ 반드시 임베딩·생성 클라이언트를 만들기 **전에** 부른다(실패 시 API 호출 0회).
@@ -198,8 +229,13 @@ def validate_index_tag(
             continue
         if actual != expected:
             label = "document_registry_version" if cfg_key == "__registry__" else cfg_key
+            hint = ""
+            if cfg_key == INDEX_LINEAGE_CFG_KEY:
+                hint = ("  ※ 이 축은 '인덱스를 만든 청크의 추출표 계보'다. "
+                        "지금 조회에 쓰는 추출표(extraction_version="
+                        f"{cfg.get('extraction_version')!r})와는 다른 값일 수 있다.")
             mismatches.append(
-                f"  - {tag_key}: 인덱스={actual!r} / 설정({label})={expected!r}"
+                f"  - {tag_key}: 인덱스={actual!r} / 설정({label})={expected!r}{hint}"
             )
 
     dim_note = None
@@ -259,7 +295,8 @@ def config_mismatch_check(index_dir: Path, cfg: dict[str, Any]) -> None:
         ("preprocess_version", cfg.get("preprocess")),
         ("chunking_version", cfg.get("chunking_version")),
         ("registry_version", cfg.get("document_registry_version", cfg.get("corpus"))),
-        ("extraction_version", cfg.get("extraction_version")),
+        # 빌드 경로도 실행 경로와 **같은 공통 함수**로 계보를 구한다.
+        ("extraction_version", index_source_extraction_version(cfg)),
     ]
     mismatches = {
         tag_key: (existing.get(tag_key), new_val)
