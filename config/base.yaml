@@ -224,7 +224,23 @@ track_document_version: true  # 확정 — 모든 청크·벡터에 document_id,
                               #   (위치정보 해시) 저장. 같은 document_id에 버전/해시
                               #   섞이면 인덱싱 중단
 extraction_version: "v4"      # 확정 2026-09-06 — rfp_extraction_table_v4 기준.
-                              #   ①의 table과 항상 같아야 함
+                              #   ①의 table과 항상 같아야 함.
+                              #   ★뜻: "지금 구조화 조회에 쓰는 추출표 버전".
+                              #     인덱스를 만들 당시의 계보와는 다른 개념이다 —
+                              #     그 값은 아래 index_source_extraction_version.
+index_source_extraction_version: "v3"
+                              # 확정 2026-09-06 — 현재 index_v2를 만든 chunks_v3의
+                              #   추출표 계보. chunks_v3/VERSION.txt의
+                              #   `table version : v3`, index_v2/index_tag.json의
+                              #   `extraction_version: "v3"`와 같은 값이어야 한다.
+                              #   ★왜 분리했나: 예전에는 extraction_version 하나가
+                              #     "현재 조회용 추출표"와 "인덱스 생성 당시 계보"
+                              #     두 뜻으로 쓰였다. 추출표만 v4로 승격되자 두 뜻이
+                              #     갈라졌는데 코드는 둘이 같아야 한다고 검사해
+                              #     베이스라인 실행이 통째로 막혔다(재현: repro/before.log).
+                              #   ⚠️ 이 값은 인덱스를 새로 만들 때만 바뀐다. 실제
+                              #     chunks_v4로 index_v3를 만들면 그때 v4가 된다.
+                              #     추출표를 올렸다고 이 값을 따라 올리지 않는다.
 schema_version: "1-12-2/v3"   # 확정 2026-09-01 — extraction_metadata.json의
                               #   schema_version 값
 
