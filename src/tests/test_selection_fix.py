@@ -1389,11 +1389,13 @@ class TestRound2ConsortiumClauseScope:
         import collections
         import json
         from pathlib import Path
+        from conftest import resolve_official_extraction_dir
         from table_query import classify_consortium
-        official = Path("/srv/rfp/shared_data/processed/rfp_extraction_table_v4/"
-                        "extraction_table_v4.json")
-        if not official.exists():
-            pytest.skip("공식 추출표 없음")
+        # 저장소 data/preprocessed 우선 — 서버 경로만 보면 자료가 있는데도 skip 된다.
+        official_dir = resolve_official_extraction_dir("v4")
+        if official_dir is None:
+            pytest.skip("공식 추출표 v4 를 저장소·서버 어디에서도 찾지 못함")
+        official = official_dir / "extraction_table_v4.json"
         rows = json.loads(official.read_text(encoding="utf-8"))["rows"]
         dist = collections.Counter()
         for r in rows:
