@@ -103,6 +103,58 @@ def test_list_hallucinated_extra_item_fails(_=None):
     assert s_miss.score == 0.0 and s_miss.detail["fail_reason"] == "missing"
 
 
+def test_list_bare_enum_tokens_not_counted_as_extra():
+    """EXT-01 회귀: 추출표/모델이 '가.', '나.' 같은 순번 토큰을 별도 배열 원소로 담아도
+    정답을 다 맞혔으면 통과해야 한다. 순번 토큰은 값이 아니다."""
+    gold = ["지방계약법 시행령 제92조 해당 안됨", "본점 소재지가 부산광역시", "직접생산확인증명서 소지"]
+    it = _item(answer_type="list", answer_normalized=gold)
+    resp = _resp(
+        answer="가. 지방계약법 시행령 제92조 해당 안됨 나. 본점 소재지가 부산광역시 다. 직접생산확인증명서 소지",
+        structured_answer=["가.", "지방계약법 시행령 제92조 해당 안됨", "나.", "본점 소재지가 부산광역시",
+                           "다.", "직접생산확인증명서 소지"],
+    )
+    s = grade_list(it, resp)
+    assert s.score == 1.0, s.detail
+    assert s.detail["n_extra"] == 0
+    assert set(s.detail["ignored_fragments"]) == {"가.", "나.", "다."}
+
+
+def test_list_paren_only_fragment_not_counted_as_extra():
+    """EXT-12 회귀: 앞 항목에서 떨어져 나온 괄호 부연('(원본대조필)')은 별도 항목이 아니다."""
+    gold = ["사업자등록증 사본", "법인등기부등본"]
+    it = _item(answer_type="list", answer_normalized=gold)
+    resp = _resp(answer="사업자등록증 사본 (원본대조필) 법인등기부등본",
+                 structured_answer=["사업자등록증 사본", "(원본대조필)", "법인등기부등본"])
+    s = grade_list(it, resp)
+    assert s.score == 1.0, s.detail
+    assert s.detail["ignored_fragments"] == ["(원본대조필)"]
+
+
+def test_list_enum_prefixed_duplicate_of_hit_not_counted_as_extra():
+    """EXT-13 회귀: 이미 hit 로 잡힌 정답이 '3) ...' 처럼 순번 붙어 한 번 더 들어와도
+    덧붙임이 아니다 (같은 항목의 중복)."""
+    gold = ["정보시스템 운영 및 유지관리", "정보시스템 개발/운영 관련 제반 업무"]
+    it = _item(answer_type="list", answer_normalized=gold)
+    resp = _resp(answer="정보시스템 운영 및 유지관리 / 정보시스템 개발/운영 관련 제반 업무",
+                 structured_answer=["정보시스템 운영 및 유지관리",
+                                    "정보시스템 개발/운영 관련 제반 업무",
+                                    "3) 정보시스템 개발/운영 관련 제반 업무"])
+    s = grade_list(it, resp)
+    assert s.score == 1.0, s.detail
+    assert s.detail["ignored_duplicates"] == ["3) 정보시스템 개발/운영 관련 제반 업무"]
+
+
+def test_list_genuine_extra_item_still_fails_after_noise_filter():
+    """노이즈 필터가 진짜 환각/추가 항목까지 봐주면 안 된다."""
+    it = _item(answer_type="list", answer_normalized=["가", "나"])
+    resp = _resp(answer="가 나 그리고 임의추가",
+                 structured_answer=["가.", "가", "나", "임의추가항목"])
+    s = grade_list(it, resp)
+    assert s.score == 0.0
+    assert s.detail["extra"] == ["임의추가항목"]
+    assert s.detail["fail_reason"] == "extra"
+
+
 def test_short_answer_verbose_gold_exact_match_passes():
     """정답 자체가 날짜/금액 포함 서술형일 때, pred 가 정답 그대로면 verbose 패널티로
     0점 나면 안 된다 (PRAC-QA-001 류)."""

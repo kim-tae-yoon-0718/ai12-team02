@@ -305,6 +305,27 @@ def grade_short_answer(item: EvaluationItem, response: ModelResponse, cfg: dict)
                      detail={"why": why, "gold": item.answer_raw, "pred": response.answer})
 
 
+# 목록 답변 배열에 섞여 들어오는 **비-내용 조각** — 값이 아니라 원문 서식 흔적이다.
+#   ① 순번 토큰 단독: "가.", "나)", "3)", "①"  (strip_enum_prefix 하면 아무것도 안 남음)
+#   ② 괄호로만 이뤄진 조각: "(원본대조필)", "(입찰금액의 5%)"  (앞 항목에서 떨어져 나온 부연)
+# 추출표 v4 answer_normalized 나 모델 출력이 목록을 이렇게 쪼개 담을 때가 있는데
+# (실 데이터에서 EXT-01·12 확인), 채점기가 이걸 '덧붙인 항목'으로 세면 정답을 다 맞힌
+# 답도 extra 때문에 0점이 된다. 매칭 대상에서는 빼지 않고(진짜 항목에 붙어 있으면 그대로
+# 매칭됨), extra 집계에서만 제외한다.
+_PAREN_ONLY = re.compile(r"^[（(][^（()]*[）)]$")
+
+
+def _is_list_noise_fragment(x) -> bool:
+    t = str(x or "").strip()
+    if not t:
+        return True
+    if strip_enum_prefix(t).strip() == "":   # 순번 토큰만 남은 조각
+        return True
+    if _PAREN_ONLY.match(t):                  # 괄호 부연 단독
+        return True
+    return False
+
+
 # ------------------------------------------------------------------ extraction + answer_type=list
 
 def grade_list(item: EvaluationItem, response: ModelResponse,
@@ -357,20 +378,36 @@ def grade_list(item: EvaluationItem, response: ModelResponse,
                 assigned = True
         (hit if assigned else miss).append(g)
 
-    extra = [got_items[i] for i in range(len(got_items)) if i not in used_got]
+    extra_raw = [got_items[i] for i in range(len(got_items)) if i not in used_got]
+    # extra 정리: ① 순번·괄호 조각(값 아님) ② 이미 hit 로 잡힌 정답의 순번 붙은 중복
+    #   을 골라내 별도 집계한다. 환각(근거 밖 새 항목)은 그대로 extra 로 남긴다.
+    hit_norm = {normalize_text(strip_enum_prefix(str(g))) for g in hit}
+    extra, ignored_fragments, ignored_duplicates = [], [], []
+    for x in extra_raw:
+        if _is_list_noise_fragment(x):
+            ignored_fragments.append(x)
+        elif normalize_text(strip_enum_prefix(str(x))) in hit_norm:
+            ignored_duplicates.append(x)
+        else:
+            extra.append(x)
     coverage = len(hit) / len(gold_items) if gold_items else 1.0
     # exact-all: 빠뜨림도 덧붙임도 없어야 통과 (고정 정책). ★덧붙임(환각 항목)을 통과시키면
     # "다 넣고 환각도 덧붙인" 답이 "하나 빠뜨린" 답보다 높게 나온다 — 뒤집힌 순서(3-4-4).
     # 빠뜨림/덧붙임은 detail 에 따로 센다(합산 금지) — score 는 이진.
     score = 1.0 if (not miss and not extra) else 0.0
 
-    return TaskScore(kind="list", score=score, detail={
+    detail = {
         "completeness_rule": "exact_all",  # 코드 고정값. 스키마 필드 아님.
         "coverage": coverage, "hit": hit, "missing": miss, "extra": extra,
         "n_missing": len(miss), "n_extra": len(extra),
         "fail_reason": ("missing" if miss else "extra" if extra else None),
         "note": "빠뜨림과 덧붙임은 별도 집계 — 합산 금지(3-4-4). 둘 다 없어야 통과",
-    })
+    }
+    if ignored_fragments:
+        detail["ignored_fragments"] = ignored_fragments   # 순번·괄호 조각 (점수 미반영)
+    if ignored_duplicates:
+        detail["ignored_duplicates"] = ignored_duplicates  # 순번 붙은 정답 중복
+    return TaskScore(kind="list", score=score, detail=detail)
 
 
 # ------------------------------------------------------------------ qa: summary (checkpoint)

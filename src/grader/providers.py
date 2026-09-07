@@ -46,7 +46,7 @@ class OpenAICompatibleProvider:
     api_key: str
     model: str
     timeout_seconds: int = 120
-    temperature: float = 0.0
+    temperature: float | None = 0.0
     name: str = "openai_compatible"
 
     def judge(self, prompt: str) -> dict[str, Any]:
@@ -62,7 +62,6 @@ class OpenAICompatibleProvider:
         }
         payload = {
             "model": self.model,
-            "temperature": self.temperature,
             "messages": [
                 {
                     "role": "system",
@@ -71,8 +70,20 @@ class OpenAICompatibleProvider:
                 {"role": "user", "content": prompt},
             ],
         }
+        if self.temperature is not None:
+            payload["temperature"] = self.temperature
+
         with httpx.Client(timeout=self.timeout_seconds) as client:
             response = client.post(url, headers=headers, json=payload)
+            # GPT-5 계열(gpt-5-mini/nano)은 temperature 커스텀값을 거부한다(기본값 1만 허용).
+            # base.yaml 생성 설정과 동일하게 이 경우 인자를 빼고 한 번 재시도한다.
+            if (
+                response.status_code == 400
+                and "temperature" in payload
+                and "temperature" in response.text
+            ):
+                payload.pop("temperature")
+                response = client.post(url, headers=headers, json=payload)
             response.raise_for_status()
             data = response.json()
 
