@@ -877,6 +877,93 @@ def build_prefix(doc_title: str, path: tuple) -> str:
     return " > ".join([doc_title] + list(path))
 
 
+# ─────────────────────────────────────────────────────────────
+# 소실 헤딩 복원
+#
+# 실측(2026-09-04) — 헤딩 8,609개 중 4,080개가 어떤 청크의 section_path 에도
+# 들어가지 못하고 본문에도 남지 않는다. 같은 레벨의 형제 헤딩이 연달아 나오면
+# 뒤 헤딩이 앞 헤딩을 pop 하는데, 그 사이에 본문이 없으면 앞 헤딩의 텍스트는
+# 어디에도 남지 않는다.
+#     ### □ 사업명 : 통합 정보시스템 구축 사전 컨설팅   ← pop 당하고 소실
+#     ### □ 사업기간 : 계약체결일로부터 ~ …            ← pop 당하고 소실
+#     ### □ 사업예산 : 50,000,000                     ← 이것만 남아 뒤 표의 경로가 된다
+# 사업명·사업기간·사업예산 같은 핵심 메타데이터가 이렇게 사라진다.
+#
+# ⚠️ 복원은 '새 문단을 만들지 않는' 방식이어야 한다. 문단이 하나라도 늘면
+#    para_no 가 밀려 location_label 의 문단 번호가 전부 바뀌고, 평가셋 좌표가
+#    깨진다(팀 결정 2026-09-03).
+#      - 뒤가 문단이면 : 그 문단 앞에 빈 줄 없이 이어 붙인다 → 문단 수 불변
+#      - 뒤가 표면     : 그 표 청크의 search_text 앞에만 넣는다 → content(HTML) 무변경
+#    실측상 표가 먼저 오는 1,105건 중 1,102건은 헤딩 텍스트가 그 표 안에
+#    없었다. 그 헤딩들은 대개 바로 뒤 표의 제목 역할을 한다.
+# ─────────────────────────────────────────────────────────────
+
+LEADING_BLANK_RE = re.compile(r"\A(?:[ \t]*\n)+")
+
+
+def _produces_unit(kind: str, body: str) -> bool:
+    """이 블록이 청크 후보 단위(unit)를 만드는가.
+
+    ⚠️ 헤딩은 unit 을 만들지 않는다. 헤딩을 unit 으로 세면 "형제 헤딩이
+       뒤따르니 소실이 아니다"로 잘못 판정해 복원 대상이 대량으로 빠진다.
+    """
+    if kind == "heading":
+        return False
+    if kind in ("table", "pipe_table"):
+        return True
+    return any(p.strip() for p in re.split(r"\n\s*\n", body))
+
+
+def find_lost_headings(blocks, boiler_of):
+    """어떤 청크에도 남지 못하는 헤딩을 찾는다 → {블록 순번: 제목}, 별첨 제외 수
+
+    소실 판정 = 그 헤딩의 서브트리(다음에 나오는 level <= 자기 level 인 헤딩
+    직전까지) 안에서 unit 이 하나도 안 만들어짐. 그런 헤딩은 pop 될 때까지
+    아무 unit 도 거치지 않으므로 section_path 에 들어갈 기회 자체가 없다.
+
+    ⚠️ clean_heading 이 빈 문자열을 만든 줄은 제외한다. process_document 가
+       스택에 올리지도 않고(레벨 비교조차 하지 않는다) 살릴 제목도 없다.
+       그래서 서브트리 경계 계산에서도 그런 줄은 헤딩으로 세지 않는다.
+    ⚠️ 별첨·서식 구간(sidecar sections) 안의 헤딩도 제외한다. 살려도
+       retrieval_eligible=false 라 검색에 들어가지 않는다.
+    """
+    heads = []
+    for i, (kind, body, ln0, _ln1) in enumerate(blocks):
+        if kind != "heading":
+            continue
+        m = HEADING_RE.match(body)
+        title = clean_heading(m.group(2))
+        if not title:
+            continue
+        heads.append((i, len(m.group(1)), title, ln0))
+
+    lost, skipped = {}, 0
+    for n, (i, level, title, ln0) in enumerate(heads):
+        end = len(blocks)
+        for j in range(n + 1, len(heads)):
+            if heads[j][1] <= level:
+                end = heads[j][0]
+                break
+        if any(_produces_unit(blocks[k][0], blocks[k][1])
+               for k in range(i + 1, end)):
+            continue                      # 서브트리에 unit 있음 → 소실 아님
+        if boiler_of(ln0)[0] is not None:
+            skipped += 1
+            continue                      # 별첨·서식 구간
+        lost[i] = title
+    return lost, skipped
+
+
+def attach_lead(body: str, pending: list) -> str:
+    """문단 앞에 소실 헤딩 텍스트를 빈 줄 없이 이어 붙인다.
+
+    ⚠️ 빈 줄(\\n\\n)로 이으면 문단이 하나 늘어 para_no 가 밀린다.
+       원문 첫머리의 빈 줄도 걷어내야 한다. "제목" + "\\n" + "\\n\\n본문" 이면
+       결국 빈 줄이 생겨 같은 사고가 난다.
+    """
+    return "\n".join(pending) + "\n" + LEADING_BLANK_RE.sub("", body)
+
+
 def para_label(path: tuple, doc_title: str, start: int, end: int) -> str:
     """C-3 ④ — 절 안의 문단 순번. 헤딩이 없으면 문서명을 0단 절로 쓴다."""
     where = path[-1] if path else doc_title
@@ -1034,14 +1121,23 @@ def process_document(reg_row, md_dir, sidecar_dir, cfg, errors):
 
     blocks = split_blocks(md_text)
 
+    # 어떤 청크에도 남지 못하는 헤딩. 판정은 매 실행 런타임에 다시 계산한다.
+    lost_headings, lost_skipped_boiler = find_lost_headings(blocks, boiler_of)
+    pending_lead = []                            # 아직 못 붙인 소실 헤딩 제목
+    recov = {"text": 0, "table": 0, "boilerplate": lost_skipped_boiler}
+
     # 장절 경로 스택과 절 안 문단 순번
     stack = []                                   # [(level, title)]
     para_no = defaultdict(int)
     table_idx = 0
     units = []                                   # 청크 후보 단위
 
-    for kind, body, ln0, ln1 in blocks:
+    for bi, (kind, body, ln0, ln1) in enumerate(blocks):
         if kind == "heading":
+            if bi in lost_headings:
+                # 스택에는 평소대로 올라가지만 어차피 unit 없이 pop 된다.
+                # 텍스트만 뒤따르는 첫 문단·표로 실어 보낸다.
+                pending_lead.append(lost_headings[bi])
             m = HEADING_RE.match(body)
             level, title = len(m.group(1)), clean_heading(m.group(2))
             if not title:
@@ -1056,17 +1152,29 @@ def process_document(reg_row, md_dir, sidecar_dir, cfg, errors):
 
         if kind in ("table", "pipe_table"):
             table_idx += 1
+            # 표 HTML 은 건드리지 않는다. 소실 헤딩 텍스트는 search_text 에만 실린다.
+            lead = "\n".join(pending_lead) if pending_lead else None
+            if pending_lead:
+                recov["table"] += len(pending_lead)
+                pending_lead = []
             units.append({
                 "kind": "table", "html": body, "path": path,
                 "line_start": ln0, "line_end": ln1,
                 "table_idx": table_idx, "boiler_type": b_type, "boiler_label": b_label,
+                "lead_text": lead,
             })
         else:
+            # ⚠️ 문단 수는 '원문 기준으로' 먼저 센다. 복원 텍스트를 붙인 뒤에 세면
+            #    para_no 가 밀려 location_label 의 문단 번호가 통째로 바뀐다.
             n_paras = len([p for p in re.split(r"\n\s*\n", body) if p.strip()])
             if n_paras == 0:
-                continue
+                continue                        # 빈 블록 — pending 은 다음으로 넘긴다
             start_no = para_no[path] + 1
             para_no[path] += n_paras
+            if pending_lead:
+                body = attach_lead(body, pending_lead)
+                recov["text"] += len(pending_lead)
+                pending_lead = []
             units.append({
                 "kind": "text", "text": body, "path": path,
                 "line_start": ln0, "line_end": ln1,
@@ -1120,6 +1228,10 @@ def process_document(reg_row, md_dir, sidecar_dir, cfg, errors):
                     "part": part, "of": of,
                     "blank_ratio": ratio, "blank_cells": blank, "total_cells": total,
                     "boiler_type": u["boiler_type"], "boiler_label": u["boiler_label"],
+                    # 표 제목 역할을 하던 소실 헤딩. 조각마다 반복한다 —
+                    # 머리글 반복(C-2 ③-a)과 같은 이유로, 조각 하나만 검색에
+                    # 걸려도 무슨 표인지 알 수 있어야 한다.
+                    "lead_text": u.get("lead_text"),
                     # C-2 ③-c — 자르지 못해 남긴 조각에만 표시한다.
                     # ⚠️ len(html) > budget 으로 재면 안 된다. 머리글 반복분 때문에
                     #    정상 분할된 조각도 넘을 수 있어 오탐이 생긴다(950자 조각이
@@ -1142,6 +1254,9 @@ def process_document(reg_row, md_dir, sidecar_dir, cfg, errors):
 
         if c["kind"] == "table":
             body_search = table_search_text(c["content"])
+            if c.get("lead_text"):
+                # content(HTML)는 그대로 두고 검색 텍스트에만 얹는다.
+                body_search = c["lead_text"] + "\n" + body_search
             # C-2 ② degraded 판정은 검색 대상 표에만 적용한다
             degraded = bool(eligible and c["blank_ratio"] is not None
                             and c["blank_ratio"] > degraded_th)
@@ -1196,6 +1311,12 @@ def process_document(reg_row, md_dir, sidecar_dir, cfg, errors):
         "eligible": sum(1 for c in out if c["retrieval_eligible"]),
         "degraded": sum(1 for c in out if c["table_degraded"]),
         "oversize": sum(1 for c in out if c["oversize"]),
+        # 소실 헤딩 복원 내역. unrecovered 는 문서 끝까지 붙일 곳이 없던 것.
+        "heading_lost": len(lost_headings),
+        "heading_to_text": recov["text"],
+        "heading_to_table": recov["table"],
+        "heading_unrecovered": len(pending_lead),
+        "heading_skipped_boilerplate": recov["boilerplate"],
     }
     return out, doc_stat
 
@@ -1438,6 +1559,11 @@ def main():
         "embedding": {k: cfg.get(k) for k in OPTIONAL_KEYS},
         "extraction_check": ext_report,
         "location_verification": loc_report,
+        "heading_recovery": {
+            k: sum(s.get(k, 0) for s in per_doc.values())
+            for k in ("heading_lost", "heading_to_text", "heading_to_table",
+                      "heading_unrecovered", "heading_skipped_boilerplate")
+        } if per_doc else None,
         "git": gi,
         "mode": "partial" if only else "full",
         "documents_in_file": len({c["document_id"] for c in all_chunks}),
@@ -1554,6 +1680,15 @@ def render_version(cfg, gi, stats, registry_path, corpus_dir, table_dir):
     else:
         loc_line = "location 대조 : 미수행 (--verify-location 미사용)"
 
+    hr = stats.get("heading_recovery")
+    if hr:
+        head_line = (f"소실 헤딩 복원: {hr['heading_to_text'] + hr['heading_to_table']}건 "
+                     f"(문단 {hr['heading_to_text']} / 표 search_text "
+                     f"{hr['heading_to_table']}) · 미복원 {hr['heading_unrecovered']} "
+                     f"· 별첨 제외 {hr['heading_skipped_boilerplate']}")
+    else:
+        head_line = "소실 헤딩 복원: 해당 없음"
+
     lines = [
         "# RFP 검색용 청크",
         f"chunking version   : {cfg['chunking_version']}",
@@ -1591,6 +1726,7 @@ def render_version(cfg, gi, stats, registry_path, corpus_dir, table_dir):
          f"최대 {stats['token_len']['max']}"
          if stats.get("token_len") else "토큰 길이     : 미측정 (--tokenize 미사용)"),
         loc_line,
+        head_line,
         "",
         "⚠️ chunk_size·chunk_overlap 은 baseline 시작값이다.",
         "   최종 확정은 토큰 측정과 검색 평가 후 (C-1 · 4-7).",

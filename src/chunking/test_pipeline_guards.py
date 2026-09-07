@@ -407,6 +407,208 @@ def test_no_cross_section_merge_in_output():
         shutil.rmtree(root, ignore_errors=True)
 
 
+# ─────────────────────────────────────────────────────────────
+# location 전수 대조 게이트 (--verify-location, 팀 결정 2026-09-03)
+# ─────────────────────────────────────────────────────────────
+
+# 한 절 안에 문단 6개. chunk_size 를 줄이면 조각이 늘어 count_changed 가 생긴다.
+LONG_DOC = "# 1. 개요\n\n" + "\n\n".join(
+    f"문단 {i} " + "가" * 200 for i in range(1, 7)) + "\n"
+
+# 사업명은 사업기간에게 pop 당해 소실 → 뒤따르는 표의 search_text 로 간다.
+TABLE_LEAD_DOC = (
+    "# 1. 개요\n\n"
+    "### □ 사업명 : 통합 정보시스템\n\n"
+    "### □ 사업기간 : 12개월\n\n"
+    f"{HTML}\n"
+)
+
+CHUNKS = ("shared_data", "processed", "chunks_v1")
+
+
+def _rewrite_doc(root: Path, n: int, body: str):
+    """가짜 문서 한 건의 본문만 갈아끼운다.
+
+    등록부의 processed_sha256 은 청킹 코드가 대조하지 않고 그대로 메타데이터에
+    싣기만 하므로(build_chunks 는 등록부 조인 값을 신뢰한다) 본문만 바꿔도 된다.
+    """
+    md = root / "shared_data" / "processed" / "corpus_v2" / "md"
+    (md / unicodedata.normalize("NFD", f"문서{n}.md")).write_text(body, encoding="utf-8")
+
+
+def _set_chunk_size(root: Path, size: int):
+    cfg = root / "repo" / "config" / "base.yaml"
+    cfg.write_text(cfg.read_text(encoding="utf-8")
+                   .replace("chunk_size: 1500", f"chunk_size: {size}"), encoding="utf-8")
+
+
+def _make_reference(root: Path) -> Path:
+    """정상 실행 산출물을 대조용 참조 파일로 떠 둔다."""
+    _check(run(root).returncode == 0, "참조용 선행 실행이 실패했다")
+    ref = root / "ref.jsonl"
+    shutil.copy(root.joinpath(*CHUNKS) / "chunks.jsonl", ref)
+    return ref
+
+
+def _rewrite_jsonl(path: Path, fn):
+    rows = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    fn(rows)
+    path.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n",
+                    encoding="utf-8")
+
+
+def _location_verification(root: Path) -> dict:
+    stats = json.loads((root.joinpath(*CHUNKS) / "stats.json").read_text(encoding="utf-8"))
+    lv = stats.get("location_verification")
+    _check(lv is not None, "stats.json 에 location_verification 이 없다")
+    return lv
+
+
+def test_verify_location_same_input_passes():
+    root = with_fixture()
+    try:
+        ref = _make_reference(root)
+        r = run(root, "--verify-location", str(ref))
+        _check(r.returncode == 0, f"같은 입력 대조가 실패했다\n{r.stderr[:400]}")
+        lv = _location_verification(root)
+        for k in ("document_missing", "document_added", "location_missing",
+                  "location_added", "eligible_changed", "count_changed"):
+            _check(lv[k] == 0, f"{k} 가 0이 아니다: {lv[k]}")
+        _check(lv["result"] == "ok" and lv["mode"] == "set", f"요약이 이상하다: {lv}")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_verify_location_mismatch_stops_and_writes_nothing():
+    root = with_fixture()
+    try:
+        ref = _make_reference(root)
+        _rewrite_jsonl(ref, lambda rows: rows[0].__setitem__(
+            "location_label", rows[0]["location_label"] + " (변조)"))
+
+        # '미생성' 을 확인하려면 빈 상태에서 돌려야 한다
+        out = root.joinpath(*CHUNKS)
+        shutil.rmtree(out)
+
+        r = run(root, "--verify-location", str(ref))
+        _check(r.returncode == 4, f"종료코드 4를 기대했으나 {r.returncode}\n{r.stderr[:400]}")
+        for name in ("chunks.jsonl", "stats.json", "VERSION.txt"):
+            _check(not (out / name).exists(), f"중단했는데 {name} 이 생성됐다")
+        _check(not list(out.glob("*.tmp")), f".tmp 잔재가 남았다: {list(out.glob('*.tmp'))}")
+
+        errs = [json.loads(l) for l in
+                (out / "errors.jsonl").read_text(encoding="utf-8").splitlines()]
+        kinds = {e.get("kind") for e in errs}
+        _check({"location_missing", "location_added"} <= kinds,
+               f"불일치 상세가 기록되지 않았다: {kinds}")
+        summary = [e for e in errs if e.get("kind") == "summary"][0]
+        _check(summary["level"] == "error" and summary["location_missing"] == 1,
+               f"요약이 이상하다: {summary}")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_verify_location_count_change_passes_in_set_mode():
+    """chunk_size 를 바꾸면 같은 라벨의 개수만 늘어난다 — 집합 비교는 통과한다."""
+    root = with_fixture()
+    try:
+        _rewrite_doc(root, 1, LONG_DOC)
+        ref = _make_reference(root)
+        _set_chunk_size(root, 500)
+
+        r = run(root, "--verify-location", str(ref))
+        _check(r.returncode == 0, f"집합 비교가 중단됐다\n{r.stderr[:400]}")
+        lv = _location_verification(root)
+        _check(lv["location_missing"] == 0 and lv["location_added"] == 0,
+               f"라벨 값이 바뀌었다: {lv}")
+        # 개수 변화가 실제로 안 생기면 이 시험도, 다음 strict 시험도 무의미해진다
+        _check(lv["count_changed"] > 0,
+               "chunk_size 를 줄였는데 개수 변화가 없다 — 픽스처가 시험을 못 하고 있다")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_verify_location_strict_stops_on_count_change():
+    """같은 조건에서 --verify-location-strict 는 중단해야 한다."""
+    root = with_fixture()
+    try:
+        _rewrite_doc(root, 1, LONG_DOC)
+        ref = _make_reference(root)
+        _set_chunk_size(root, 500)
+
+        expect_stop(root, "--verify-location", str(ref), "--verify-location-strict",
+                    code=4, must_contain="개수 변화")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_verify_location_strict_requires_verify_location():
+    root = with_fixture()
+    try:
+        expect_stop(root, "--verify-location-strict", code=1,
+                    must_contain="--verify-location")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_verify_location_bad_reference_stops():
+    """참조 경로가 없거나 코퍼스가 다르면 처리 전에 멈춘다 (입력 오류이므로 1)."""
+    root = with_fixture()
+    try:
+        expect_stop(root, "--verify-location", str(root / "없는파일.jsonl"),
+                    code=1, must_contain="참조 파일이 없습니다")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+    root = with_fixture()
+    try:
+        ref = _make_reference(root)
+        _rewrite_jsonl(ref, lambda rows: [r.__setitem__("corpus_version", "v1")
+                                          for r in rows])
+        expect_stop(root, "--verify-location", str(ref),
+                    code=1, must_contain="corpus_version")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+# ─────────────────────────────────────────────────────────────
+# 소실 헤딩 복원 — 표는 content 를 건드리지 않는다
+# ─────────────────────────────────────────────────────────────
+
+def test_recovered_heading_touches_table_search_text_only():
+    root = with_fixture()
+    try:
+        _rewrite_doc(root, 1, TABLE_LEAD_DOC)
+        _check(run(root).returncode == 0, "정상 실행이 실패했다")
+
+        rows = [json.loads(l) for l in
+                (root.joinpath(*CHUNKS) / "chunks.jsonl").read_text(
+                    encoding="utf-8").splitlines()]
+        tables = [r for r in rows
+                  if r["document_id"] == "RFP-000001" and r["block_type"] == "table"]
+        _check(tables, "표 청크가 없다")
+
+        hit = [r for r in tables if "□ 사업명 : 통합 정보시스템" in r["search_text"]]
+        _check(hit, "소실 헤딩이 표 청크의 search_text 에 실리지 않았다")
+
+        c = hit[0]
+        _check("사업명" not in c["content"],
+               f"복원 텍스트가 표 content(HTML) 에 섞였다: {c['content'][:120]!r}")
+        _check(c["content"].strip() == HTML,
+               "표 content 가 원본 HTML 과 다르다")
+        # 살아남은 형제만 경로에 남는다 — 복원은 경로를 바꾸지 않는다
+        _check("□ 사업명 : 통합 정보시스템" not in c["section_path"],
+               f"복원 텍스트가 section_path 에 들어갔다: {c['section_path']}")
+
+        stats = json.loads((root.joinpath(*CHUNKS) / "stats.json").read_text(
+            encoding="utf-8"))
+        hr = stats["heading_recovery"]
+        _check(hr["heading_to_table"] >= 1,
+               f"표로 간 복원 건수가 기록되지 않았다: {hr}")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def test_edgeless_pipe_line_is_not_a_table():
     """양 끝 파이프가 없는 줄을 표로 오인하면 안 된다.
 

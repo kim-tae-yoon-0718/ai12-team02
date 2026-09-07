@@ -17,8 +17,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from build_chunks import (                                    # noqa: E402
     CELL_RE, TABLE_CLOSE_RE, TABLE_OPEN_RE,
-    can_merge, clean_heading, common_prefix,
-    find_tables, outer_cells, split_blocks, split_table,
+    attach_lead, can_merge, clean_heading, common_prefix,
+    find_lost_headings, find_tables, outer_cells, split_blocks, split_table,
     table_blank_ratio, table_kind, table_parts,
     table_row_count, table_search_text,
 )
@@ -443,6 +443,107 @@ def test_paragraph_oversize_flag():
     for piece, over in pieces:
         if not over:
             _check(len(piece) <= 300 + 50, f"정상 조각이 budget을 넘는다: {len(piece)}")
+
+
+# ─────────────────────────────────────────────────────────────
+# 소실 헤딩 복원 (2026-09-07)
+#
+# 같은 레벨의 형제 헤딩이 연달아 나오면 뒤 헤딩이 앞 헤딩을 pop 한다.
+# 그 사이에 본문이 없으면 앞 헤딩은 어떤 청크의 section_path 에도 못 들어가고
+# 본문에도 안 남는다. 실측 3,765건(별첨 제외 후).
+# ─────────────────────────────────────────────────────────────
+
+# 소실이 생기는 두 가지 모양을 모두 담는다.
+#   ① 형제끼리 pop     — 사업명·사업기간이 뒤 형제에게 밀려 소실
+#   ② 자식이 헤딩뿐    — '2. 배경' 아래에 '2.1 세부' 헤딩만 있고 본문이 없다
+# ②가 있어야 "헤딩을 unit 으로 잘못 세는" 회귀를 잡는다. ①만으로는 서브트리
+# 범위가 비어 있어 그 버그가 드러나지 않는다.
+LOST_SIBLINGS = (
+    "# 1. 개요\n\n"
+    "### □ 사업명 : 통합 정보시스템\n\n"
+    "### □ 사업기간 : 12개월\n\n"
+    "### □ 사업예산 : 5천만원\n\n"
+    "첫 문단입니다.\n\n"
+    "둘째 문단입니다.\n\n"
+    "## 2. 배경\n\n"
+    "### 2.1 세부\n\n"
+    "## 3. 범위\n\n"
+    "마지막 문단입니다.\n"
+)
+
+LOST_EXPECTED = ["2. 배경", "2.1 세부",
+                 "□ 사업기간 : 12개월", "□ 사업명 : 통합 정보시스템"]
+
+NO_BOILER = lambda line_no: (None, None)         # noqa: E731 — 별첨 구간 없음
+
+
+def _n_paras(text: str) -> int:
+    """build_chunks 가 문단을 세는 방식 그대로."""
+    return len([p for p in re.split(r"\n\s*\n", text) if p.strip()])
+
+
+def test_lost_sibling_headings_do_not_shift_paragraph_count():
+    """형제 헤딩이 서로 pop 되는 경우를 잡아내고, 붙여도 문단 수가 안 변해야 한다.
+
+    문단이 하나라도 늘면 para_no 가 밀려 location_label 의 문단 번호가
+    전부 바뀐다(팀 결정 2026-09-03로 금지).
+    """
+    blocks = split_blocks(LOST_SIBLINGS)
+    lost, skipped = find_lost_headings(blocks, NO_BOILER)
+    _check(skipped == 0, f"별첨이 없는데 제외가 생겼다: {skipped}")
+    _check(sorted(lost.values()) == LOST_EXPECTED,
+           f"소실 헤딩 판정이 틀렸다: {sorted(lost.values())}")
+    # 본문을 거느린 헤딩은 section_path 로 남으므로 복원 대상이 아니다
+    for alive in ("1. 개요", "□ 사업예산 : 5천만원", "3. 범위"):
+        _check(alive not in lost.values(), f"살아 있는 헤딩을 소실로 봤다: {alive}")
+
+    body = [b for k, b, *_ in blocks if k == "text"][0]
+    before = _n_paras(body)
+    _check(before == 2, f"픽스처의 문단 수가 2가 아니다: {before}")
+    after = _n_paras(attach_lead(body, ["□ 사업명 : 통합 정보시스템", "□ 사업기간 : 12개월"]))
+    _check(after == before, f"복원 후 문단 수가 {before} → {after} 로 변했다")
+
+
+def test_attach_lead_does_not_create_a_paragraph():
+    """원문 첫머리에 빈 줄이 있어도 제목이 별도 문단이 되면 안 된다.
+
+    "제목" + "\\n" + "\\n\\n본문" 이면 결국 빈 줄이 생겨 문단이 늘어난다.
+    """
+    for body in ("본문입니다.",
+                 "\n\n본문입니다.",
+                 "  \n\t\n본문 A\n\n본문 B",
+                 "\n본문 A\n\n본문 B\n\n본문 C"):
+        before = _n_paras(body)
+        merged = attach_lead(body, ["□ 사업명 : 통합"])
+        _check(_n_paras(merged) == before,
+               f"문단 수가 {before} → {_n_paras(merged)} ({body!r})")
+        first = [p for p in re.split(r"\n\s*\n", merged) if p.strip()][0]
+        _check("□ 사업명 : 통합" in first and "본문" in first,
+               f"제목이 첫 문단과 분리됐다: {first!r}")
+
+    # 여러 건이 쌓여도 마찬가지다
+    merged = attach_lead("본문 A\n\n본문 B", ["제목1", "제목2", "제목3"])
+    _check(_n_paras(merged) == 2, f"여러 건을 붙이자 문단이 늘었다: {_n_paras(merged)}")
+
+
+def test_boilerplate_headings_excluded_from_recovery():
+    """별첨·서식 구간(boiler_of) 안의 헤딩은 복원 대상에서 빠져야 한다.
+
+    살려도 retrieval_eligible=false 라 검색에 들어가지 않는다.
+    """
+    blocks = split_blocks(LOST_SIBLINGS)
+    boiler_line = [ln for k, b, ln, _ in blocks
+                   if k == "heading" and "사업기간" in b][0]
+
+    def boiler_of(line_no):
+        return ("attachment", "[붙임1]") if line_no == boiler_line else (None, None)
+
+    lost, skipped = find_lost_headings(blocks, boiler_of)
+    _check(skipped == 1, f"별첨 제외 수가 1이 아니다: {skipped}")
+    _check(all("사업기간" not in t for t in lost.values()),
+           f"별첨 구간 헤딩이 복원 대상에 남았다: {sorted(lost.values())}")
+    _check(any("사업명" in t for t in lost.values()),
+           f"별첨이 아닌 소실 헤딩까지 빠졌다: {sorted(lost.values())}")
 
 
 if __name__ == "__main__":
