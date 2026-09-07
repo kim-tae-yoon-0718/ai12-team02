@@ -44,7 +44,8 @@ def build_fixture(root: Path, *, rows=None, field_count=None,
                   extra_doc=False, missing_doc=False,
                   extraction_version="v3", schema_version="1-12-2/v3",
                   corpus_version="v2", registry_version="v2",
-                  drop_metadata=False, chunk_size=1500):
+                  drop_metadata=False, chunk_size=1500,
+                  cfg_schema_version="1-12-2/v3"):
     """가짜 코퍼스·등록부·추출표를 만든다. 인자로 특정 결함을 주입한다."""
     proc = root / "shared_data" / "processed"
     md = proc / "corpus_v2" / "md"
@@ -134,12 +135,18 @@ def build_fixture(root: Path, *, rows=None, field_count=None,
 
     cfg_dir = root / "repo" / "config"
     cfg_dir.mkdir(parents=True, exist_ok=True)
+    # cfg_schema_version 은 base.yaml 쪽 값이다. 위의 schema_version 인자는
+    # extraction_metadata.json 쪽 값이라 서로 다른 값을 넣어 불일치를 만들 수 있다.
+    # None 을 주면 키 자체를 쓰지 않는다(선언 누락 상황 재현).
+    schema_line = (f'schema_version: "{cfg_schema_version}"\n'
+                   if cfg_schema_version is not None else "")
     (cfg_dir / "base.yaml").write_text(
         f"corpus: v2\npreprocess: v2\ntable: v3\n"
         f"chunk_size: {chunk_size}\nchunk_overlap: 150\nchunking_version: v1\n"
         f'chunk_unit: "char"\ntable_chunk_threshold: 1500\n'
         f'table_degraded_threshold: 0.6\ntable_format: "html"\n'
         f'table_empty_cell: "skip_in_search"\n'
+        + schema_line +
         f'embedding_model: "text-embedding-3-small"\nembedding_max_length: 8192\n',
         encoding="utf-8")
     return root
@@ -272,6 +279,21 @@ def test_stop_when_extraction_version_is_v2():
 
 def test_stop_on_wrong_schema_version():
     root = with_fixture(schema_version="1-12-2/v2")
+    try:
+        expect_stop(root, must_contain="schema_version")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_stop_when_config_schema_version_missing():
+    """base.yaml 에 schema_version 이 없으면 대조를 건너뛰지 말고 중단해야 한다.
+
+    ⚠️ 예전에는 cfg 에 없으면 조용히 건너뛰고, 대신 메타데이터의 schema 문자열이
+       '.../{table}' 로 끝나는지 봤다. 추출표 v4 가 v3 스키마를 그대로 쓰면서
+       그 검사를 걷어냈으므로, 이 대조가 스키마를 지키는 유일한 자리다.
+       선택 항목으로 되돌리면 스키마가 틀려도 아무도 못 막는다.
+    """
+    root = with_fixture(cfg_schema_version=None)
     try:
         expect_stop(root, must_contain="schema_version")
     finally:

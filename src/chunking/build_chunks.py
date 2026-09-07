@@ -214,8 +214,17 @@ def load_extraction_metadata(table_dir: Path, cfg: dict):
     if cfg_ext is not None and str(cfg_ext) != str(cfg["table"]):
         die(f"base.yaml 안에서 충돌합니다 — table: {cfg['table']} / "
             f"extraction_version: {cfg_ext}. 두 값은 항상 같아야 합니다.")
+    # ⚠️ schema_version 은 필수다. 없으면 건너뛰지 않고 중단한다.
+    #    예전에는 cfg 에 없으면 이 대조를 건너뛰고, 대신 아래에서 schema 문자열이
+    #    '.../{table}' 로 끝나는지 봤다. 그 검사를 걷어냈으므로(추출표 v4 가 v3
+    #    스키마를 그대로 쓴다) 이 대조가 스키마를 지키는 유일한 자리다.
+    #    선택 항목으로 두면 schema_version 을 안 적은 설정에서 추출표 메타데이터의
+    #    스키마가 틀려도 아무도 못 막는다 — 폴더 이름만 보고 내용을 믿게 된다.
     cfg_schema = cfg.get("schema_version")
-    if cfg_schema is not None and str(cfg_schema) != str(meta.get("schema_version")):
+    if cfg_schema is None:
+        die("base.yaml 에 schema_version 이 없습니다. 추출표 메타데이터의 스키마를 "
+            "대조할 수 없으므로 중단합니다 (지어내지 않습니다).")
+    if str(cfg_schema) != str(meta.get("schema_version")):
         die(f"base.yaml 의 schema_version({cfg_schema})이 "
             f"extraction_metadata.json({meta.get('schema_version')})과 다릅니다.")
 
@@ -224,10 +233,19 @@ def load_extraction_metadata(table_dir: Path, cfg: dict):
         die("추출표 메타데이터의 버전이 설정과 다릅니다: " +
             " / ".join(f"{k}: {a} (기대 {b})" for k, (a, b) in bad.items()))
 
+    # 스키마 이름표는 있어야 한다. 다만 "스키마 문자열이 추출표 버전을 담는다"고
+    # 보면 안 된다.
+    # ⚠️ 예전에는 schema_version 이 '.../{table}' 로 끝나는지 봤다. v4 가 v3 스키마를
+    #    그대로 쓰면서(추출표 v4 는 RFP-000067·RFP-000081 두 행만 정정한 것이라
+    #    schema_version 이 "1-12-2/v3" 이다) 이 검사가 멀쩡한 조합을 막았다.
+    #    버전 고정은 이미 위에서 두 번 한다 — base.yaml 의 schema_version 과
+    #    메타데이터 대조, 그리고 want["extraction_version"] == cfg["table"] 대조.
+    #    (같은 유형의 이중 의미 문제를 팀이 extraction_version /
+    #     index_source_extraction_version 분리로 한 번 겪었다 — base.yaml 참조)
     schema = meta.get("schema_version")
-    if not schema or not str(schema).endswith("/" + str(cfg["table"])):
-        die(f"schema_version 이 추출표 버전과 맞지 않습니다: {schema} "
-            f"(기대 '.../{cfg['table']}')")
+    if not schema:
+        die("추출표 메타데이터에 schema_version 이 없습니다. "
+            "공식 산출물로 쓸 수 없습니다.")
 
     for k in ("row_count", "document_count", "field_count"):
         if not isinstance(meta.get(k), int) or meta[k] <= 0:
