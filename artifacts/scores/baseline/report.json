@@ -1,0 +1,6275 @@
+{
+  "manifest": {
+    "run_id": "run-20260907-011409",
+    "timestamp": "2026-09-07T01:14:09+00:00",
+    "provenance": {
+      "corpus": "v2",
+      "preprocess": "v2",
+      "table": "v3",
+      "index": "v2",
+      "evalset": "v2",
+      "scorer": "v2"
+    },
+    "git_commit": "15867c0",
+    "git_dirty": false,
+    "judge_prompt_versions": {
+      "judge_faithfulness": "v1",
+      "judge_checkpoint": "v1",
+      "judge_list_item": "v1"
+    },
+    "judge_prompt_hashes": {
+      "judge_faithfulness": "4b968e37c8a52cbd49d6996f27c932d70f0a9122d29545a2c136e5949943ad59",
+      "judge_checkpoint": "3ab3820cacd64f6837c191ab05165b83ce6b99851d6aa452495b096d9f348d56",
+      "judge_list_item": "70bd31fa57a61d9226ac1f0a66fc6b78580e2f38671594a20c21b98bcf128ea1"
+    },
+    "grading_config": {
+      "accept_natural_absence_phrasing": true,
+      "allow_partial": false,
+      "grade_citations": true,
+      "residual_limit": 20
+    },
+    "retrieval_config": {
+      "non_search_routes": [
+        "identity_v2_값조회",
+        "검색불필요_사용법안내",
+        "검색불필요_인사응답",
+        "애매_되묻기",
+        "추출테이블_값조회",
+        "추출테이블_문서선별",
+        "추출테이블_비교조립"
+      ],
+      "clarify_routes": [
+        "애매_되묻기"
+      ],
+      "retrieval_k": 5,
+      "reranker_k": null,
+      "context_k": 5
+    },
+    "schema_version": "v1",
+    "subset": "development",
+    "generator_family": null,
+    "generator_family_normalized": null,
+    "note": "runner=spai1204",
+    "judge": {
+      "kind": "stub",
+      "score_source": "stub",
+      "provider": "none",
+      "model": "stub",
+      "family": "none",
+      "family_normalized": null,
+      "tier": "dev",
+      "usable_for_final": false,
+      "note": "★StubJudge — 경계 포함 문자열 매처. 의미 비교가 아니며 최종 점수 근거로 쓸 수 없다(tier=final 가드가 별도로 막는다).",
+      "final_readiness": {
+        "ready": false,
+        "mode": "development",
+        "judge_kind": "stub",
+        "generator_family": null,
+        "judge_family": null,
+        "checks": {
+          "mode_is_final": false,
+          "judge_is_not_stub": false,
+          "judge_is_not_mock": true,
+          "provider_present": false,
+          "judge_model_recorded": false,
+          "judge_family_recorded": false,
+          "judge_tier_is_final": false,
+          "temperature_is_zero": true,
+          "generator_family_recorded": false,
+          "families_differ": true,
+          "human_verification_exists": false,
+          "agreement_meets_threshold": false,
+          "verification_is_blind": false,
+          "prompt_versions_recorded": false,
+          "prompt_files_exist": true,
+          "prompt_hashes_recorded": true
+        },
+        "problems": [
+          "실행 모드가 final 이 아니다(mode=development) — 최종 점수는 final 실행에서만 낸다",
+          "⓪ StubJudge — 경계 포함 문자열 매처이며 의미 비교가 아니다",
+          "⓪ provider 미주입 — 호출할 모델이 없다",
+          "⓪ 심판 model='stub' — 실제 모델명이 기록되지 않았다",
+          "⓪ 심판 family='none' — 계열이 기록되지 않았다",
+          "④ 심판 tier=dev — final 실행에는 tier=final 이어야 한다",
+          "② 생성 모델 계열(family)이 기록되지 않았다 — 심판과 같은 계열인지 확인할 수 없다. --generator-family 로 지정하라",
+          "③ 사람 채점 대조 기록 없음 — 검증 전 심판은 채점이 아니다(3-9)",
+          "⑤ 심판 프롬프트 버전 미기록: (비어 있음)"
+        ]
+      }
+    },
+    "final_readiness": {
+      "ready": false,
+      "mode": "development",
+      "judge_kind": "stub",
+      "generator_family": null,
+      "judge_family": null,
+      "checks": {
+        "mode_is_final": false,
+        "judge_is_not_stub": false,
+        "judge_is_not_mock": true,
+        "provider_present": false,
+        "judge_model_recorded": false,
+        "judge_family_recorded": false,
+        "judge_tier_is_final": false,
+        "temperature_is_zero": true,
+        "generator_family_recorded": false,
+        "families_differ": true,
+        "human_verification_exists": false,
+        "agreement_meets_threshold": false,
+        "verification_is_blind": false,
+        "prompt_versions_recorded": false,
+        "prompt_files_exist": true,
+        "prompt_hashes_recorded": true
+      },
+      "problems": [
+        "실행 모드가 final 이 아니다(mode=development) — 최종 점수는 final 실행에서만 낸다",
+        "⓪ StubJudge — 경계 포함 문자열 매처이며 의미 비교가 아니다",
+        "⓪ provider 미주입 — 호출할 모델이 없다",
+        "⓪ 심판 model='stub' — 실제 모델명이 기록되지 않았다",
+        "⓪ 심판 family='none' — 계열이 기록되지 않았다",
+        "④ 심판 tier=dev — final 실행에는 tier=final 이어야 한다",
+        "② 생성 모델 계열(family)이 기록되지 않았다 — 심판과 같은 계열인지 확인할 수 없다. --generator-family 로 지정하라",
+        "③ 사람 채점 대조 기록 없음 — 검증 전 심판은 채점이 아니다(3-9)",
+        "⑤ 심판 프롬프트 버전 미기록: (비어 있음)"
+      ]
+    },
+    "response_contract": {
+      "ok": true,
+      "n_items": 50,
+      "n_responses": 50,
+      "missing": [],
+      "duplicate": [],
+      "extra": [],
+      "require_exact": false,
+      "problems": []
+    }
+  },
+  "layers": [
+    {
+      "layer": 1,
+      "status": "SKIP",
+      "reason": "data_manifest 없음 — 박예진 산출물 대기"
+    },
+    {
+      "layer": 2,
+      "status": "PASS",
+      "problems": [],
+      "n_items": 50
+    },
+    {
+      "layer": 3,
+      "status": "SKIP",
+      "reason": "표본 대조 파일 없음 — 박예진 4-6-2 대기"
+    },
+    {
+      "layer": 4,
+      "status": "FAIL",
+      "gate_failed": [
+        "critical"
+      ],
+      "report": {
+        "n_items": 50,
+        "overall_score": 0.1343,
+        "main": {
+          "by_task_type": {
+            "extraction": {
+              "n": 15,
+              "score": 0.1333,
+              "pp_per_item": 6.67,
+              "reliable": true,
+              "warning": null
+            },
+            "qa": {
+              "n": 10,
+              "score": 0.2714,
+              "pp_per_item": 10.0,
+              "reliable": true,
+              "warning": null
+            },
+            "selection": {
+              "n": 25,
+              "score": 0.08,
+              "pp_per_item": 4.0,
+              "reliable": true,
+              "warning": null
+            }
+          },
+          "primary": {
+            "selection": {
+              "metric": "완결성(누락 없이 다 찾았는가) — recall 가중 점수",
+              "value": 0.08,
+              "n": 25,
+              "must_read_with": "extraction.overall_accuracy (순환 경보)",
+              "extraction_accuracy": null
+            },
+            "extraction": {
+              "metric": "값 정확도 + critical 필드 정답률",
+              "value": 0.1333,
+              "n": 15,
+              "critical_field_score": 0.0
+            },
+            "qa": {
+              "metric": "내용 점수(task content score) — 검색 재현율(context_k)과 짝으로 읽을 것(D7)",
+              "value": 0.2714,
+              "n": 10,
+              "context_recall": 0.75,
+              "faithfulness_note": "충실성은 별도 축(report.faithfulness)이며 실심판을 돌린 실행에서만 값이 있다"
+            }
+          },
+          "integrated_score": null,
+          "integrated_note": "통합 점수 산출 방식은 확정(2-16) — 가중치는 1-2 업무빈도·위험 기준. 다만 gate.task_weight 값이 아직 없어 계산하지 않는다. 감으로 채운 가중치는 근거 없는 우선순위 선언과 같다."
+        },
+        "severity": {
+          "by_field_tag": {
+            "None": {
+              "n": 8,
+              "score": 0.25,
+              "pp_per_item": 12.5,
+              "reliable": true,
+              "warning": null
+            },
+            "critical": {
+              "n": 24,
+              "score": 0.0833,
+              "pp_per_item": 4.17,
+              "reliable": true,
+              "warning": null
+            },
+            "major": {
+              "n": 14,
+              "score": 0.1429,
+              "pp_per_item": 7.14,
+              "reliable": true,
+              "warning": null
+            },
+            "minor": {
+              "n": 4,
+              "score": 0.1786,
+              "pp_per_item": 25.0,
+              "reliable": false,
+              "warning": "칸당 문항 4개 — 숫자로 말하지 말 것(3-12)"
+            }
+          },
+          "gate": {
+            "critical": {
+              "status": "FAIL",
+              "score": 0.0833,
+              "threshold": 0.85,
+              "n": 24,
+              "reliable": true
+            }
+          },
+          "note": "critical 필드의 기권은 감점이 아니라 정상 동작일 수 있다(1-5) — abstention 리포트와 함께 볼 것"
+        },
+        "severity_weighted_score": 0.1025,
+        "severity_weighted_note": "가중 평균(가중치 출처: gate.field_tag_weight) — 사용된 field_tag: ['critical', 'major', 'minor'], n=42, field_tag 없어 제외된 문항 8건",
+        "by_field_tag": {
+          "None": {
+            "n": 8,
+            "score": 0.25,
+            "pp_per_item": 12.5,
+            "reliable": true,
+            "warning": null
+          },
+          "critical": {
+            "n": 24,
+            "score": 0.0833,
+            "pp_per_item": 4.17,
+            "reliable": true,
+            "warning": null
+          },
+          "major": {
+            "n": 14,
+            "score": 0.1429,
+            "pp_per_item": 7.14,
+            "reliable": true,
+            "warning": null
+          },
+          "minor": {
+            "n": 4,
+            "score": 0.1786,
+            "pp_per_item": 25.0,
+            "reliable": false,
+            "warning": "칸당 문항 4개 — 숫자로 말하지 말 것(3-12)"
+          }
+        },
+        "abstention": {
+          "counts": {
+            "critical_abstain": 21,
+            "over_refusal": 15,
+            "ok": 12,
+            "clarification_ok": 1,
+            "hallucination": 1
+          },
+          "hallucination_rate": 0.02,
+          "over_refusal_rate": 0.3,
+          "critical_abstain_count": 21,
+          "clarification_count": 1,
+          "note": "critical_abstain 은 1-5 기준 정상 동작일 수 있음 — 과잉 거절과 합산 금지. clarification_ok(모호한 문항에 대한 정당한 되묻기)도 과잉 거절과 별도 집계"
+        },
+        "format": {
+          "by_final_status": {
+            "FAIL-content": 11,
+            "FAIL-format+content": 4,
+            "PENDING_THRESHOLD": 32,
+            "PASS": 3
+          },
+          "format_failure_rate": 0.08,
+          "note": "FAIL-format* 은 내용과 무관하게 output contract 위반으로 떨어진 문항"
+        },
+        "retrieval": {
+          "retrieval_k": {
+            "n": 4,
+            "recall@k": 0.75,
+            "recall_all_rate": 0.75,
+            "precision@k": 0.15000000000000002,
+            "mrr": 0.3833333333333333,
+            "failure_breakdown": {
+              "none": 3,
+              "rank_failure": 0,
+              "recall_failure": 1
+            },
+            "by_k": {
+              "3": {
+                "recall@k": 0.5,
+                "precision@k": 0.1667,
+                "mrr@k": 0.3333
+              },
+              "5": {
+                "recall@k": 0.75,
+                "precision@k": 0.15,
+                "mrr@k": 0.3833
+              }
+            }
+          },
+          "reranker_k": {
+            "n": 0
+          },
+          "context_k": {
+            "n": 4,
+            "recall@k": 0.75,
+            "recall_all_rate": 0.75,
+            "precision@k": 0.18333333333333335,
+            "mrr": 0.3833333333333333,
+            "failure_breakdown": {
+              "none": 3,
+              "rank_failure": 0,
+              "recall_failure": 1
+            }
+          },
+          "failure_rate": {
+            "recall_failure": 0.25,
+            "rank_failure": 0.0
+          },
+          "prescription_hint": "재현율 실패 우세 → 임베딩 교체·하이브리드·파싱 개선",
+          "note": "★최종 k는 미확정 — 세 단계를 각각 비교하고, 이태민의 실제 구조가 들어온 뒤 확정한다."
+        },
+        "citation": {
+          "n": 46,
+          "citation_accuracy": 0.1957,
+          "no_citation_rate": 0.7826,
+          "partial_missing_rate": 0.0217,
+          "wrong_citation_rate": 0.0652,
+          "n_gold_evidence_total": 746,
+          "n_fact_bundles_total": 743,
+          "n_matched_facts_total": 12,
+          "n_missing_facts_total": 731,
+          "n_wrong_citations_total": 4,
+          "note": "3-4-3 — 정답 위치 vs 인용 좌표. 안 붙임/일부 누락/틀리게 붙임을 분리 집계. check_format의 FAIL 대상 아님(진단 지표)."
+        },
+        "extraction": {},
+        "doc_selection": {
+          "n": 1,
+          "doc_selection_accuracy": 1.0,
+          "error_kinds": {
+            "correct": 1
+          },
+          "note": "1단계에서 놓친 문서는 복구가 안 된다 — 이 값이 추출형 성능의 상한(4-9-6)"
+        },
+        "failures": {
+          "n_items": 50,
+          "system_error_zero": 0,
+          "system_error_ids": [],
+          "content_zero": 43,
+          "content_zero_ids": [
+            "EXT-01",
+            "EXT-02",
+            "EXT-03",
+            "EXT-05",
+            "EXT-06",
+            "EXT-07",
+            "EXT-08",
+            "EXT-09",
+            "EXT-10",
+            "EXT-11",
+            "EXT-12",
+            "EXT-13",
+            "EXT-14",
+            "QA-001",
+            "QA-002",
+            "QA-003",
+            "QA-006",
+            "QA-007",
+            "QA-008",
+            "QA-010",
+            "SEL-001",
+            "SEL-002",
+            "SEL-003",
+            "SEL-004",
+            "SEL-005",
+            "SEL-006",
+            "SEL-007",
+            "SEL-008",
+            "SEL-009",
+            "SEL-010",
+            "SEL-011",
+            "SEL-012",
+            "SEL-013",
+            "SEL-014",
+            "SEL-015",
+            "SEL-016",
+            "SEL-017",
+            "SEL-018",
+            "SEL-019",
+            "SEL-021",
+            "SEL-022",
+            "SEL-023",
+            "SEL-024"
+          ],
+          "system_error_rate": 0.0,
+          "note": "system_error_zero=실행 실패로 인한 0점(인프라), content_zero=모델이 틀린 0점. 둘 다 분모에는 남는다 — 빼면 실패할수록 점수가 오른다(4-5)."
+        },
+        "missing_predictions": [],
+        "judge": {
+          "kind": "stub",
+          "score_source": "stub",
+          "provider": "none",
+          "model": "stub",
+          "family": "none",
+          "family_normalized": null,
+          "tier": "dev",
+          "usable_for_final": false,
+          "note": "★StubJudge — 경계 포함 문자열 매처. 의미 비교가 아니며 최종 점수 근거로 쓸 수 없다(tier=final 가드가 별도로 막는다).",
+          "final_readiness": {
+            "ready": false,
+            "mode": "development",
+            "judge_kind": "stub",
+            "generator_family": null,
+            "judge_family": null,
+            "checks": {
+              "mode_is_final": false,
+              "judge_is_not_stub": false,
+              "judge_is_not_mock": true,
+              "provider_present": false,
+              "judge_model_recorded": false,
+              "judge_family_recorded": false,
+              "judge_tier_is_final": false,
+              "temperature_is_zero": true,
+              "generator_family_recorded": false,
+              "families_differ": true,
+              "human_verification_exists": false,
+              "agreement_meets_threshold": false,
+              "verification_is_blind": false,
+              "prompt_versions_recorded": false,
+              "prompt_files_exist": true,
+              "prompt_hashes_recorded": true
+            },
+            "problems": [
+              "실행 모드가 final 이 아니다(mode=development) — 최종 점수는 final 실행에서만 낸다",
+              "⓪ StubJudge — 경계 포함 문자열 매처이며 의미 비교가 아니다",
+              "⓪ provider 미주입 — 호출할 모델이 없다",
+              "⓪ 심판 model='stub' — 실제 모델명이 기록되지 않았다",
+              "⓪ 심판 family='none' — 계열이 기록되지 않았다",
+              "④ 심판 tier=dev — final 실행에는 tier=final 이어야 한다",
+              "② 생성 모델 계열(family)이 기록되지 않았다 — 심판과 같은 계열인지 확인할 수 없다. --generator-family 로 지정하라",
+              "③ 사람 채점 대조 기록 없음 — 검증 전 심판은 채점이 아니다(3-9)",
+              "⑤ 심판 프롬프트 버전 미기록: (비어 있음)"
+            ]
+          }
+        },
+        "faithfulness": {
+          "applicable": false,
+          "n": 50,
+          "reason": "심판이 stub — 충실성은 의미 판정이라 문자열 매처나 더미 응답으로 대체할 수 없다"
+        },
+        "score_breakdown": {
+          "deterministic": {
+            "note": "규칙 기반 채점(문자열·금액·좌표·집합 비교) — 심판 없이 재현 가능",
+            "by_task_type": {
+              "extraction": 0.1333,
+              "selection": 0.08
+            }
+          },
+          "provisional_stub": {
+            "applicable": true,
+            "note": "StubJudge 문자열 비교가 섞인 임시 점수 — 목록형(judge_list_item)·요약형(judge_checkpoint) 매칭이 의미 비교가 아니다. 잠정값이다.",
+            "affected_answer_types": [
+              "list",
+              "summary"
+            ]
+          },
+          "real_judge_faithfulness": {
+            "applicable": false,
+            "n": 50,
+            "reason": "심판이 stub — 충실성은 의미 판정이라 문자열 매처나 더미 응답으로 대체할 수 없다"
+          },
+          "final_overall": null,
+          "provisional_real_judge": {
+            "applicable": false,
+            "value": null,
+            "note": "해당 없음"
+          },
+          "final_overall_note": "★통합 점수를 내지 않는다(null). 심판 종류=stub, 최종 준비=False. 미충족: 실행 모드가 final 이 아니다(mode=development) — 최종 점수는 final 실행에서만 낸다; ⓪ StubJudge — 경계 포함 문자열 매처이며 의미 비교가 아니다; ⓪ provider 미주입 — 호출할 모델이 없다"
+        }
+      },
+      "per_item": [
+        {
+          "id": "EXT-02",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "value",
+            "score": 0.0,
+            "detail": {
+              "why": "no_match",
+              "gold": "입찰공고일 전날부터 입찰일까지 법인등기부상 본점이 경상북도에 소재, 낙찰자는 계약체결일까지 유지",
+              "pred": "'지역제한'를 어느 문서에서 확인할까요? 문서 ID(예: RFP-000001), 발주기관명 또는 사업명을 알려주시면 찾아드릴게요."
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 1,
+            "n_fact_bundles": 1,
+            "n_matched_facts": 0,
+            "n_missing_facts": 1,
+            "n_missing_evidence": 1,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "critical_abstain"
+          },
+          "final_status": "FAIL-content",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 2.56249587982893,
+          "cache_hit": false
+        },
+        {
+          "id": "EXT-06",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "list",
+            "score": 0.0,
+            "detail": {
+              "completeness_rule": "exact_all",
+              "coverage": 0.0,
+              "hit": [],
+              "missing": [
+                "SW 기술인력 보유상태 6점",
+                "전략 및 방법론 10점",
+                "기술 및 기능 22점",
+                "성능 및 품질 18점",
+                "프로젝트 관리 10점",
+                "프로젝트 지원 10점",
+                "기술능력평가 90점",
+                "정량적 평가 20점",
+                "정성적 평가 70점",
+                "사업수행실적 6점",
+                "사회적 책임 2점",
+                "가격평가 10점",
+                "총계 100점",
+                "경영상태 6점"
+              ],
+              "extra": [],
+              "n_missing": 14,
+              "n_extra": 0,
+              "fail_reason": "missing",
+              "note": "빠뜨림과 덧붙임은 별도 집계 — 합산 금지(3-4-4). 둘 다 없어야 통과"
+            }
+          },
+          "format_status": {
+            "passed": false,
+            "violations": [
+              "list 답변은 structured_answer 가 배열이어야 함(output contract)"
+            ]
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 1,
+            "n_fact_bundles": 1,
+            "n_matched_facts": 0,
+            "n_missing_facts": 1,
+            "n_missing_evidence": 1,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "over_refusal"
+          },
+          "final_status": "FAIL-format+content",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 2.385964849963784,
+          "cache_hit": false
+        },
+        {
+          "id": "EXT-13",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "list",
+            "score": 0.0,
+            "detail": {
+              "completeness_rule": "exact_all",
+              "coverage": 1.0,
+              "hit": [
+                "내/외부 연계시스템 관련 운영/유지관리 및 연계 데이터 처리",
+                "정보시스템 개발/운영 관련 제반 업무",
+                "정보시스템 운영 및 유지관리"
+              ],
+              "missing": [],
+              "extra": [
+                "가) 인포21 연구행정시스템(일반행정시스템 회계, 인사 등 일부연계 포함)",
+                "나) 공통관리시스템"
+              ],
+              "n_missing": 0,
+              "n_extra": 2,
+              "fail_reason": "extra",
+              "note": "빠뜨림과 덧붙임은 별도 집계 — 합산 금지(3-4-4). 둘 다 없어야 통과"
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=추출테이블_값조회 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=추출테이블_값조회 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=추출테이블_값조회 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": true,
+            "score": 1.0,
+            "n_citations": 1,
+            "precision_unit": "ref_no",
+            "n_gold_locations": 1,
+            "n_gold_evidence": 1,
+            "n_fact_bundles": 1,
+            "n_matched_facts": 1,
+            "n_missing_facts": 0,
+            "n_missing_evidence": 0,
+            "n_wrong_citations": 0,
+            "wrong_citations": [],
+            "search_used": false,
+            "fact_keys": [
+              [
+                "loc",
+                "RFP-000012",
+                "('RFP-000012', '5. 일반내용', '5. 일반내용 · 문단 1-16')"
+              ]
+            ]
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": false,
+            "abstention_kind": "ok"
+          },
+          "final_status": "FAIL-content",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 1.644409028813243,
+          "cache_hit": false
+        },
+        {
+          "id": "QA-008",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "value",
+            "score": 0.0,
+            "detail": {
+              "why": "no_match",
+              "gold": "착수일로부터 80일 이내",
+              "pred": "착수일로부터 90일 이내"
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=추출테이블_값조회 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=추출테이블_값조회 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=추출테이블_값조회 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 1,
+            "precision_unit": "ref_no",
+            "n_gold_locations": 2,
+            "n_gold_evidence": 2,
+            "n_fact_bundles": 1,
+            "n_matched_facts": 0,
+            "n_missing_facts": 1,
+            "n_missing_evidence": 1,
+            "n_wrong_citations": 1,
+            "wrong_citations": [
+              {
+                "document": "RFP-000014",
+                "section": "1. 사업 개요",
+                "ref_no": "1. 사업 개요 · 문단 1-46",
+                "field": "사업기간",
+                "line": 42,
+                "line_end": 134,
+                "source": "extraction_table_v3",
+                "matched_from_line": 47
+              }
+            ],
+            "search_used": false,
+            "fact_keys": [
+              [
+                "fact",
+                "RFP-000060",
+                "사업기간"
+              ]
+            ],
+            "by_field": {
+              "사업기간": {
+                "matched": 0,
+                "total": 1
+              }
+            }
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": false,
+            "abstention_kind": "ok"
+          },
+          "final_status": "FAIL-content",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.8744439110159874,
+          "cache_hit": false
+        },
+        {
+          "id": "QA-004",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "summary",
+            "score": 0.7142857142857143,
+            "detail": {
+              "applicable": true,
+              "covered": [
+                "경영정보시스템",
+                "업무프로세스",
+                "기술지원",
+                "사용자 교육",
+                "현장업무 조기 적용"
+              ],
+              "missing": [
+                "기능 개선",
+                "사용자 요구사항 반영"
+              ]
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": true,
+              "stage": "retrieval_k",
+              "recall_at_k": 1.0,
+              "recall_all": true,
+              "precision_at_k": 0.2,
+              "mrr": 0.3333333333333333,
+              "failure_kind": "none",
+              "n_gold": 1,
+              "k": 5,
+              "precision_unit": "ref_no",
+              "by_k": {
+                "3": {
+                  "recall_at_k": 1.0,
+                  "precision_at_k": 0.3333333333333333,
+                  "mrr": 0.3333333333333333
+                },
+                "5": {
+                  "recall_at_k": 1.0,
+                  "precision_at_k": 0.2,
+                  "mrr": 0.3333333333333333
+                }
+              },
+              "n_gold_total": 1,
+              "n_gold_in_pool": 1,
+              "n_gold_in_context": 1
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "failure_kind": "none",
+              "reason": "재정렬 미적용 — 응답에 reranked 가 없음",
+              "n_gold_total": 1,
+              "n_gold_in_pool": 1,
+              "n_gold_in_context": 1
+            },
+            {
+              "applicable": true,
+              "stage": "context_k",
+              "recall_at_k": 1.0,
+              "recall_all": true,
+              "precision_at_k": 0.2,
+              "mrr": 0.3333333333333333,
+              "failure_kind": "none",
+              "n_gold": 1,
+              "k": 5,
+              "precision_unit": "ref_no",
+              "n_gold_total": 1,
+              "n_gold_in_pool": 1,
+              "n_gold_in_context": 1
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": true,
+            "score": 1.0,
+            "n_citations": 3,
+            "precision_unit": "ref_no",
+            "n_gold_locations": 1,
+            "n_gold_evidence": 1,
+            "n_fact_bundles": 1,
+            "n_matched_facts": 1,
+            "n_missing_facts": 0,
+            "n_missing_evidence": 0,
+            "n_wrong_citations": 2,
+            "wrong_citations": [
+              {
+                "document": "RFP-000035",
+                "section": "2. 사업목적",
+                "ref_no": "text 6 · line 79-84",
+                "line": 79,
+                "block_type": "text",
+                "block_index": 6,
+                "source": "chunks_v3"
+              },
+              {
+                "document": "RFP-000035",
+                "section": "1. 추진방향",
+                "ref_no": "text 9 · line 110-115",
+                "line": 110,
+                "block_type": "text",
+                "block_index": 9,
+                "source": "chunks_v3"
+              }
+            ],
+            "search_used": true,
+            "fact_keys": [
+              [
+                "loc",
+                "RFP-000035",
+                "('RFP-000035', '3. 사업범위', '3. 사업범위 · 문단 1-5')"
+              ]
+            ]
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": false,
+            "abstention_kind": "ok"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 1.8449928611516953,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-007",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 66,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000002",
+                "RFP-000003",
+                "RFP-000005",
+                "RFP-000007",
+                "RFP-000008",
+                "RFP-000009",
+                "RFP-000012",
+                "RFP-000013",
+                "RFP-000014",
+                "RFP-000015",
+                "RFP-000016",
+                "RFP-000018",
+                "RFP-000019",
+                "RFP-000020",
+                "RFP-000022",
+                "RFP-000023",
+                "RFP-000024",
+                "RFP-000030",
+                "RFP-000031",
+                "RFP-000034",
+                "RFP-000037",
+                "RFP-000038",
+                "RFP-000040",
+                "RFP-000041",
+                "RFP-000043",
+                "RFP-000044",
+                "RFP-000045",
+                "RFP-000046",
+                "RFP-000047",
+                "RFP-000048",
+                "RFP-000049",
+                "RFP-000050",
+                "RFP-000052",
+                "RFP-000054",
+                "RFP-000056",
+                "RFP-000057",
+                "RFP-000058",
+                "RFP-000059",
+                "RFP-000061",
+                "RFP-000062",
+                "RFP-000064",
+                "RFP-000065",
+                "RFP-000066",
+                "RFP-000067",
+                "RFP-000068",
+                "RFP-000069",
+                "RFP-000070",
+                "RFP-000072",
+                "RFP-000074",
+                "RFP-000075",
+                "RFP-000077",
+                "RFP-000078",
+                "RFP-000080",
+                "RFP-000082",
+                "RFP-000087",
+                "RFP-000089",
+                "RFP-000090",
+                "RFP-000091",
+                "RFP-000093",
+                "RFP-000094",
+                "RFP-000095",
+                "RFP-000096",
+                "RFP-000097",
+                "RFP-000098",
+                "RFP-000099",
+                "RFP-000100"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 66,
+            "n_fact_bundles": 66,
+            "n_matched_facts": 0,
+            "n_missing_facts": 66,
+            "n_missing_evidence": 66,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "critical_abstain"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.9705869015306234,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-001",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 73,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000002",
+                "RFP-000003",
+                "RFP-000005",
+                "RFP-000007",
+                "RFP-000008",
+                "RFP-000009",
+                "RFP-000012",
+                "RFP-000013",
+                "RFP-000014",
+                "RFP-000015",
+                "RFP-000016",
+                "RFP-000018",
+                "RFP-000019",
+                "RFP-000020",
+                "RFP-000022",
+                "RFP-000023",
+                "RFP-000024",
+                "RFP-000026",
+                "RFP-000028",
+                "RFP-000030",
+                "RFP-000031",
+                "RFP-000032",
+                "RFP-000034",
+                "RFP-000037",
+                "RFP-000038",
+                "RFP-000039",
+                "RFP-000040",
+                "RFP-000041",
+                "RFP-000043",
+                "RFP-000044",
+                "RFP-000045",
+                "RFP-000046",
+                "RFP-000047",
+                "RFP-000048",
+                "RFP-000049",
+                "RFP-000050",
+                "RFP-000052",
+                "RFP-000054",
+                "RFP-000056",
+                "RFP-000057",
+                "RFP-000058",
+                "RFP-000059",
+                "RFP-000061",
+                "RFP-000062",
+                "RFP-000064",
+                "RFP-000065",
+                "RFP-000066",
+                "RFP-000067",
+                "RFP-000068",
+                "RFP-000069",
+                "RFP-000070",
+                "RFP-000072",
+                "RFP-000073",
+                "RFP-000074",
+                "RFP-000075",
+                "RFP-000077",
+                "RFP-000078",
+                "RFP-000080",
+                "RFP-000082",
+                "RFP-000083",
+                "RFP-000085",
+                "RFP-000087",
+                "RFP-000089",
+                "RFP-000090",
+                "RFP-000091",
+                "RFP-000093",
+                "RFP-000094",
+                "RFP-000095",
+                "RFP-000096",
+                "RFP-000097",
+                "RFP-000098",
+                "RFP-000099",
+                "RFP-000100"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 73,
+            "n_fact_bundles": 73,
+            "n_matched_facts": 0,
+            "n_missing_facts": 73,
+            "n_missing_evidence": 73,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "over_refusal"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 1.0316630359739065,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-003",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 1,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000072"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 1,
+            "n_fact_bundles": 1,
+            "n_matched_facts": 0,
+            "n_missing_facts": 1,
+            "n_missing_evidence": 1,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "over_refusal"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.32608979381620884,
+          "cache_hit": false
+        },
+        {
+          "id": "EXT-07",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "value",
+            "score": 0.0,
+            "detail": {
+              "why": "no_match",
+              "gold": "2024-09-19 17:00:00",
+              "pred": "마감일을 어느 문서에서 확인할까요? 문서 ID(예: RFP-000001), 발주기관명 또는 사업명을 알려주시면 찾아드릴게요."
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 2,
+            "n_fact_bundles": 1,
+            "n_matched_facts": 0,
+            "n_missing_facts": 1,
+            "n_missing_evidence": 1,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "critical_abstain"
+          },
+          "final_status": "FAIL-content",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.46302005648612976,
+          "cache_hit": false
+        },
+        {
+          "id": "EXT-11",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "value",
+            "score": 0.0,
+            "detail": {
+              "why": "field_absent_rejected(기권·빈 답은 미기재 정답이 아니다)",
+              "gold": "이 문서에는 필수 제출 서류 항목이 별도로 명시되어 있지 않습니다.",
+              "pred": "조건을 이해하지 못했습니다. 더 구체적으로 말씀해주세요."
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 1,
+            "n_fact_bundles": 1,
+            "n_matched_facts": 0,
+            "n_missing_facts": 1,
+            "n_missing_evidence": 1,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "over_refusal"
+          },
+          "final_status": "FAIL-content",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.42393896728754044,
+          "cache_hit": false
+        },
+        {
+          "id": "QA-001",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "summary",
+            "score": 0.0,
+            "detail": {
+              "applicable": true,
+              "covered": [],
+              "missing": [
+                "버스정류장 안내단말기 확충",
+                "버스 운행정보 실시간 제공",
+                "대중교통 서비스 질 향상",
+                "광역 버스정보시스템 호환성 확보"
+              ]
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": true,
+              "stage": "retrieval_k",
+              "recall_at_k": 1.0,
+              "recall_all": true,
+              "precision_at_k": 0.2,
+              "mrr": 0.2,
+              "failure_kind": "none",
+              "n_gold": 1,
+              "k": 5,
+              "precision_unit": "ref_no",
+              "by_k": {
+                "3": {
+                  "recall_at_k": 0.0,
+                  "precision_at_k": 0.0,
+                  "mrr": 0.0
+                },
+                "5": {
+                  "recall_at_k": 1.0,
+                  "precision_at_k": 0.2,
+                  "mrr": 0.2
+                }
+              },
+              "n_gold_total": 1,
+              "n_gold_in_pool": 1,
+              "n_gold_in_context": 1
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "failure_kind": "none",
+              "reason": "재정렬 미적용 — 응답에 reranked 가 없음",
+              "n_gold_total": 1,
+              "n_gold_in_pool": 1,
+              "n_gold_in_context": 1
+            },
+            {
+              "applicable": true,
+              "stage": "context_k",
+              "recall_at_k": 1.0,
+              "recall_all": true,
+              "precision_at_k": 0.2,
+              "mrr": 0.2,
+              "failure_kind": "none",
+              "n_gold": 1,
+              "k": 5,
+              "precision_unit": "ref_no",
+              "n_gold_total": 1,
+              "n_gold_in_pool": 1,
+              "n_gold_in_context": 1
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": true,
+            "score": 1.0,
+            "n_citations": 2,
+            "precision_unit": "ref_no",
+            "n_gold_locations": 1,
+            "n_gold_evidence": 1,
+            "n_fact_bundles": 1,
+            "n_matched_facts": 1,
+            "n_missing_facts": 0,
+            "n_missing_evidence": 0,
+            "n_wrong_citations": 1,
+            "wrong_citations": [
+              {
+                "document": "RFP-000009",
+                "section": "1.1 제안의 배경 및 목적",
+                "ref_no": "text 29 · line 450-459",
+                "line": 450,
+                "block_type": "text",
+                "block_index": 29,
+                "source": "chunks_v3"
+              }
+            ],
+            "search_used": true,
+            "fact_keys": [
+              [
+                "loc",
+                "RFP-000009",
+                "('RFP-000009', '1.2 사업의 배경 및 목적', '1.2 사업의 배경 및 목적 · 문단 1')"
+              ]
+            ]
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": false,
+            "abstention_kind": "ok"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 1.3749999925494194,
+          "cache_hit": false
+        },
+        {
+          "id": "QA-003",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "summary",
+            "score": 0.0,
+            "detail": {
+              "applicable": true,
+              "covered": [],
+              "missing": [
+                "설비온라인 시스템 구축",
+                "공정 및 장비 실시간 모니터링",
+                "인터페이스 연계",
+                "관리체계 확립"
+              ]
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 1,
+            "n_fact_bundles": 1,
+            "n_matched_facts": 0,
+            "n_missing_facts": 1,
+            "n_missing_evidence": 1,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "over_refusal"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.706688966602087,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-014",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 6,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000026",
+                "RFP-000032",
+                "RFP-000039",
+                "RFP-000073",
+                "RFP-000083",
+                "RFP-000085"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 6,
+            "n_fact_bundles": 6,
+            "n_matched_facts": 0,
+            "n_missing_facts": 6,
+            "n_missing_evidence": 6,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "critical_abstain"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.36627589724957943,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-017",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 4,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000026",
+                "RFP-000067",
+                "RFP-000083",
+                "RFP-000085"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 4,
+            "n_fact_bundles": 4,
+            "n_matched_facts": 0,
+            "n_missing_facts": 4,
+            "n_missing_evidence": 4,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "over_refusal"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.3558918833732605,
+          "cache_hit": false
+        },
+        {
+          "id": "EXT-14",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "list",
+            "score": 0.0,
+            "detail": {
+              "completeness_rule": "exact_all",
+              "coverage": 0.0,
+              "hit": [],
+              "missing": [
+                "공동수급업체 구성원은 국가를 당사자로 하는 계약에 관한 법률 시행령 제12조 및 동법 시행규칙 제14조 규정에 저촉되지 않아야 함",
+                "공동수급체는 5개 이하로 구성하여야 하며, 구성원별 계약참여 최소지분율은 10% 이상"
+              ],
+              "extra": [],
+              "n_missing": 2,
+              "n_extra": 0,
+              "fail_reason": "missing",
+              "note": "빠뜨림과 덧붙임은 별도 집계 — 합산 금지(3-4-4). 둘 다 없어야 통과"
+            }
+          },
+          "format_status": {
+            "passed": false,
+            "violations": [
+              "list 답변은 structured_answer 가 배열이어야 함(output contract)"
+            ]
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 1,
+            "n_fact_bundles": 1,
+            "n_matched_facts": 0,
+            "n_missing_facts": 1,
+            "n_missing_evidence": 1,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "critical_abstain"
+          },
+          "final_status": "FAIL-format+content",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.6026939954608679,
+          "cache_hit": false
+        },
+        {
+          "id": "EXT-05",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "value",
+            "score": 0.0,
+            "detail": {
+              "why": "amount_mismatch(정답 6758571493 vs 답변 [1, 4])",
+              "gold": "6,758,571,493원(부가가치세 등 제반 비용 포함)",
+              "pred": "'예산'를 어느 문서에서 확인할까요? 문서 ID(예: RFP-000001), 발주기관명 또는 사업명을 알려주시면 찾아드릴게요."
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 1,
+            "n_fact_bundles": 1,
+            "n_matched_facts": 0,
+            "n_missing_facts": 1,
+            "n_missing_evidence": 1,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "over_refusal"
+          },
+          "final_status": "FAIL-content",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 1.4964700676500797,
+          "cache_hit": false
+        },
+        {
+          "id": "QA-005",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "comparison",
+            "score": 1.0,
+            "detail": {
+              "cells": 4,
+              "matched_cells": [
+                {
+                  "document_id": "RFP-000014",
+                  "field": "예산"
+                },
+                {
+                  "document_id": "RFP-000020",
+                  "field": "예산"
+                },
+                {
+                  "document_id": "RFP-000014",
+                  "field": "사업기간"
+                },
+                {
+                  "document_id": "RFP-000020",
+                  "field": "사업기간"
+                }
+              ],
+              "missing_cells": [],
+              "wrong_cells": [],
+              "extra_document_cells": [],
+              "extra_field_cells": [],
+              "n_extra": 0,
+              "denominator": 4,
+              "cell_accuracy": 1.0,
+              "conclusion_at_risk": false,
+              "note": "우열 판단은 채점 대상 아님(2-8-4) — 지정 항목 값 일치까지만. 추가 칸은 분모에 포함한다(묻지 않은 문서·필드를 붙이면 감점)."
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=추출테이블_비교조립 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=추출테이블_비교조립 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=추출테이블_비교조립 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": true,
+            "score": 1.0,
+            "n_citations": 4,
+            "precision_unit": "ref_no",
+            "n_gold_locations": 4,
+            "n_gold_evidence": 4,
+            "n_fact_bundles": 4,
+            "n_matched_facts": 4,
+            "n_missing_facts": 0,
+            "n_missing_evidence": 0,
+            "n_wrong_citations": 0,
+            "wrong_citations": [],
+            "search_used": false,
+            "fact_keys": [
+              [
+                "fact",
+                "RFP-000014",
+                "예산"
+              ],
+              [
+                "fact",
+                "RFP-000014",
+                "사업기간"
+              ],
+              [
+                "fact",
+                "RFP-000020",
+                "예산"
+              ],
+              [
+                "fact",
+                "RFP-000020",
+                "사업기간"
+              ]
+            ],
+            "by_field": {
+              "예산": {
+                "matched": 2,
+                "total": 2
+              },
+              "사업기간": {
+                "matched": 2,
+                "total": 2
+              }
+            }
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": false,
+            "abstention_kind": "ok"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 2.5296700187027454,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-019",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 3,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000032",
+                "RFP-000039",
+                "RFP-000073"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 6,
+            "n_fact_bundles": 6,
+            "n_matched_facts": 0,
+            "n_missing_facts": 6,
+            "n_missing_evidence": 6,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "critical_abstain"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.36341510713100433,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-009",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 63,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000002",
+                "RFP-000003",
+                "RFP-000005",
+                "RFP-000007",
+                "RFP-000008",
+                "RFP-000009",
+                "RFP-000012",
+                "RFP-000013",
+                "RFP-000014",
+                "RFP-000015",
+                "RFP-000016",
+                "RFP-000018",
+                "RFP-000019",
+                "RFP-000020",
+                "RFP-000022",
+                "RFP-000028",
+                "RFP-000030",
+                "RFP-000032",
+                "RFP-000034",
+                "RFP-000037",
+                "RFP-000038",
+                "RFP-000039",
+                "RFP-000040",
+                "RFP-000041",
+                "RFP-000043",
+                "RFP-000044",
+                "RFP-000045",
+                "RFP-000046",
+                "RFP-000047",
+                "RFP-000049",
+                "RFP-000050",
+                "RFP-000052",
+                "RFP-000054",
+                "RFP-000056",
+                "RFP-000057",
+                "RFP-000058",
+                "RFP-000059",
+                "RFP-000061",
+                "RFP-000062",
+                "RFP-000064",
+                "RFP-000065",
+                "RFP-000066",
+                "RFP-000068",
+                "RFP-000069",
+                "RFP-000070",
+                "RFP-000072",
+                "RFP-000073",
+                "RFP-000075",
+                "RFP-000077",
+                "RFP-000078",
+                "RFP-000080",
+                "RFP-000082",
+                "RFP-000087",
+                "RFP-000089",
+                "RFP-000090",
+                "RFP-000091",
+                "RFP-000093",
+                "RFP-000094",
+                "RFP-000096",
+                "RFP-000097",
+                "RFP-000098",
+                "RFP-000099",
+                "RFP-000100"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 63,
+            "n_fact_bundles": 63,
+            "n_matched_facts": 0,
+            "n_missing_facts": 63,
+            "n_missing_evidence": 63,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "over_refusal"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 1.1092948261648417,
+          "cache_hit": false
+        },
+        {
+          "id": "EXT-03",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "list",
+            "score": 0.0,
+            "detail": {
+              "completeness_rule": "exact_all",
+              "coverage": 0.5,
+              "hit": [
+                "공동수급체는 5개 이하로 구성하여야 하며, 구성원별 계약참여 최소지분율은 10% 이상"
+              ],
+              "missing": [
+                "공동수급업체 구성원은 국가를 당사자로 하는 계약에 관한 법률 시행령 제12조 및 동법 시행규칙 제14조 규정에 저촉되지 않아야 함"
+              ],
+              "extra": [],
+              "n_missing": 1,
+              "n_extra": 0,
+              "fail_reason": "missing",
+              "note": "빠뜨림과 덧붙임은 별도 집계 — 합산 금지(3-4-4). 둘 다 없어야 통과"
+            }
+          },
+          "format_status": {
+            "passed": false,
+            "violations": [
+              "list 답변은 structured_answer 가 배열이어야 함(output contract)"
+            ]
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=추출테이블_값조회 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=추출테이블_값조회 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=추출테이블_값조회 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": true,
+            "score": 1.0,
+            "n_citations": 1,
+            "precision_unit": "ref_no",
+            "n_gold_locations": 1,
+            "n_gold_evidence": 1,
+            "n_fact_bundles": 1,
+            "n_matched_facts": 1,
+            "n_missing_facts": 0,
+            "n_missing_evidence": 0,
+            "n_wrong_citations": 0,
+            "wrong_citations": [],
+            "search_used": false,
+            "fact_keys": [
+              [
+                "loc",
+                "RFP-000003",
+                "('RFP-000003', '4. 안내 사항', '4. 안내 사항 · 문단 1-33')"
+              ]
+            ]
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": false,
+            "abstention_kind": "ok"
+          },
+          "final_status": "FAIL-format+content",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.9653149172663689,
+          "cache_hit": false
+        },
+        {
+          "id": "EXT-15",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "value",
+            "score": 1.0,
+            "detail": {
+              "why": "clarification_accepted(정답 자체가 되묻기 — unspecified_type)",
+              "gold": "국민연금공단이 발주한 사업이 여러 건(RFP-000021 2024년 이러닝시스템 운영 용역, RFP-000022 사업장 사회보험료 지원 고시 개정에 따른 정보시스템 보완 등)이라 어떤 사업을 말씀하시는지 특정할 수 없습니다. 사업명을 함께 알려주시겠어요?",
+              "pred": "'예산'를 물으신 조건에 해당하는 문서가 여러 건입니다. 어느 문서인지 알려주시겠어요?\n- RFP-000021 (국민연금공단 / 2024년 이러닝시스템 운영 용역)\n- RFP-000022 (국민연금공단 / 사업장 사회보험료 지원 고시 개정에 따른 정보시스템 보완 개발)"
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 2,
+            "n_fact_bundles": 2,
+            "n_matched_facts": 0,
+            "n_missing_facts": 2,
+            "n_missing_evidence": 2,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "clarification_ok"
+          },
+          "final_status": "PASS",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.8897671941667795,
+          "cache_hit": false
+        },
+        {
+          "id": "QA-002",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "summary",
+            "score": 0.0,
+            "detail": {
+              "applicable": true,
+              "covered": [],
+              "missing": [
+                "강소형 스마트시티 공모 선정 성과 전개",
+                "시설물 영상 운영관리 기법 필요",
+                "AI 영상분석 플랫폼 도입 필요",
+                "사고 예방 및 증거 채증",
+                "연계 사업 데이터 제공",
+                "통합관제 연동으로 영상감시 정확도 향상"
+              ]
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": true,
+              "stage": "retrieval_k",
+              "recall_at_k": 1.0,
+              "recall_all": true,
+              "precision_at_k": 0.2,
+              "mrr": 1.0,
+              "failure_kind": "none",
+              "n_gold": 1,
+              "k": 5,
+              "precision_unit": "ref_no",
+              "by_k": {
+                "3": {
+                  "recall_at_k": 1.0,
+                  "precision_at_k": 0.3333333333333333,
+                  "mrr": 1.0
+                },
+                "5": {
+                  "recall_at_k": 1.0,
+                  "precision_at_k": 0.2,
+                  "mrr": 1.0
+                }
+              },
+              "n_gold_total": 1,
+              "n_gold_in_pool": 1,
+              "n_gold_in_context": 1
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "failure_kind": "none",
+              "reason": "재정렬 미적용 — 응답에 reranked 가 없음",
+              "n_gold_total": 1,
+              "n_gold_in_pool": 1,
+              "n_gold_in_context": 1
+            },
+            {
+              "applicable": true,
+              "stage": "context_k",
+              "recall_at_k": 1.0,
+              "recall_all": true,
+              "precision_at_k": 0.3333333333333333,
+              "mrr": 1.0,
+              "failure_kind": "none",
+              "n_gold": 1,
+              "k": 5,
+              "precision_unit": "ref_no",
+              "n_gold_total": 1,
+              "n_gold_in_pool": 1,
+              "n_gold_in_context": 1
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": true,
+            "score": 1.0,
+            "n_citations": 1,
+            "precision_unit": "ref_no",
+            "n_gold_locations": 1,
+            "n_gold_evidence": 1,
+            "n_fact_bundles": 1,
+            "n_matched_facts": 1,
+            "n_missing_facts": 0,
+            "n_missing_evidence": 0,
+            "n_wrong_citations": 0,
+            "wrong_citations": [],
+            "search_used": true,
+            "fact_keys": [
+              [
+                "loc",
+                "RFP-000065",
+                "('RFP-000065', '1. 추진배경', '1. 추진배경 · 문단 1-6')"
+              ]
+            ]
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": false,
+            "abstention_kind": "ok"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 1.901854993775487,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-020",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 1.0,
+            "detail": {
+              "gold_n": 0,
+              "pred_n": 0,
+              "missing": [],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "zero_hit_case": true
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": false,
+            "reason": "정답 근거 없음 — citation 채점 대상 아님",
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "critical_abstain"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.30576810240745544,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-002",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 73,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000002",
+                "RFP-000003",
+                "RFP-000005",
+                "RFP-000007",
+                "RFP-000008",
+                "RFP-000009",
+                "RFP-000012",
+                "RFP-000013",
+                "RFP-000014",
+                "RFP-000015",
+                "RFP-000016",
+                "RFP-000018",
+                "RFP-000019",
+                "RFP-000020",
+                "RFP-000022",
+                "RFP-000023",
+                "RFP-000024",
+                "RFP-000026",
+                "RFP-000028",
+                "RFP-000030",
+                "RFP-000031",
+                "RFP-000032",
+                "RFP-000034",
+                "RFP-000037",
+                "RFP-000038",
+                "RFP-000039",
+                "RFP-000040",
+                "RFP-000041",
+                "RFP-000043",
+                "RFP-000044",
+                "RFP-000045",
+                "RFP-000046",
+                "RFP-000047",
+                "RFP-000048",
+                "RFP-000049",
+                "RFP-000050",
+                "RFP-000052",
+                "RFP-000054",
+                "RFP-000056",
+                "RFP-000057",
+                "RFP-000058",
+                "RFP-000059",
+                "RFP-000061",
+                "RFP-000062",
+                "RFP-000064",
+                "RFP-000065",
+                "RFP-000066",
+                "RFP-000067",
+                "RFP-000068",
+                "RFP-000069",
+                "RFP-000070",
+                "RFP-000072",
+                "RFP-000073",
+                "RFP-000074",
+                "RFP-000075",
+                "RFP-000077",
+                "RFP-000078",
+                "RFP-000080",
+                "RFP-000082",
+                "RFP-000083",
+                "RFP-000085",
+                "RFP-000087",
+                "RFP-000089",
+                "RFP-000090",
+                "RFP-000091",
+                "RFP-000093",
+                "RFP-000094",
+                "RFP-000095",
+                "RFP-000096",
+                "RFP-000097",
+                "RFP-000098",
+                "RFP-000099",
+                "RFP-000100"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 73,
+            "n_fact_bundles": 73,
+            "n_matched_facts": 0,
+            "n_missing_facts": 73,
+            "n_missing_evidence": 73,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "over_refusal"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 1.1707639787346125,
+          "cache_hit": false
+        },
+        {
+          "id": "EXT-10",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "value",
+            "score": 0.0,
+            "detail": {
+              "why": "field_absent_rejected(기권·빈 답은 미기재 정답이 아니다)",
+              "gold": "이 문서에는 공동수급(컨소시엄) 요건 항목이 별도로 명시되어 있지 않습니다.",
+              "pred": "'컨소시엄 요건'를 물으신 조건에 해당하는 문서가 여러 건입니다. 어느 문서인지 알려주시겠어요?\n- RFP-000021 (국민연금공단 / 2024년 이러닝시스템 운영 용역)\n- RFP-000022 (국민연금공단 / 사업장 사회보험료 지원 고시 개정에 따른 정보시스템 보완 개발)"
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 1,
+            "n_fact_bundles": 1,
+            "n_matched_facts": 0,
+            "n_missing_facts": 1,
+            "n_missing_evidence": 1,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "critical_abstain"
+          },
+          "final_status": "FAIL-content",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.44226297177374363,
+          "cache_hit": false
+        },
+        {
+          "id": "EXT-12",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "list",
+            "score": 0.0,
+            "detail": {
+              "completeness_rule": "exact_all",
+              "coverage": 1.0,
+              "hit": [
+                "소프트웨어사업자 신고필증 사본",
+                "지방세, 국세 완납증명서",
+                "입찰이행보증보험증권",
+                "제안서 제출 공문",
+                "사업자등록증 사본",
+                "입찰참가신청서",
+                "법인등기부등본",
+                "대표자 위임장",
+                "용역실적증명서",
+                "제안서 원본",
+                "인감증명서",
+                "가격제안서",
+                "사용인감계",
+                "청렴서약서"
+              ],
+              "missing": [],
+              "extra": [
+                "(원본대조필)",
+                "(개인사업자인 경우 주민등록등본)",
+                "(세부내역서 첨부하여 밀봉 및 봉인부분 날인)",
+                "(입찰금액의 5%)",
+                "(대리 등록시)",
+                "계약서 사본 1부.",
+                "(용역실적증명서에는 용역의 주요내용이 반드시 기재된 것에 한함)",
+                "제안관련 사업내용 문의사항"
+              ],
+              "n_missing": 0,
+              "n_extra": 8,
+              "fail_reason": "extra",
+              "note": "빠뜨림과 덧붙임은 별도 집계 — 합산 금지(3-4-4). 둘 다 없어야 통과"
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=추출테이블_값조회 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=추출테이블_값조회 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=추출테이블_값조회 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": true,
+            "score": 1.0,
+            "n_citations": 1,
+            "precision_unit": "ref_no",
+            "n_gold_locations": 1,
+            "n_gold_evidence": 1,
+            "n_fact_bundles": 1,
+            "n_matched_facts": 1,
+            "n_missing_facts": 0,
+            "n_missing_evidence": 0,
+            "n_wrong_citations": 0,
+            "wrong_citations": [],
+            "search_used": false,
+            "fact_keys": [
+              [
+                "loc",
+                "RFP-000030",
+                "('RFP-000030', '1. 입찰 참가등록 및 서류 제출', '1. 입찰 참가등록 및 서류 제출 · 문단 1-27')"
+              ]
+            ]
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": false,
+            "abstention_kind": "ok"
+          },
+          "final_status": "FAIL-content",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 3.7476210854947567,
+          "cache_hit": false
+        },
+        {
+          "id": "QA-007",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "summary",
+            "score": 0.0,
+            "detail": {
+              "applicable": true,
+              "covered": [],
+              "missing": [
+                "개발비 359백만원",
+                "H/W 484백만원(VAT 포함)"
+              ]
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 2,
+            "n_fact_bundles": 1,
+            "n_matched_facts": 0,
+            "n_missing_facts": 1,
+            "n_missing_evidence": 1,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "over_refusal"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.5328201223164797,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-021",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 14,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000024",
+                "RFP-000043",
+                "RFP-000046",
+                "RFP-000059",
+                "RFP-000064",
+                "RFP-000065",
+                "RFP-000077",
+                "RFP-000080",
+                "RFP-000090",
+                "RFP-000091",
+                "RFP-000093",
+                "RFP-000095",
+                "RFP-000096",
+                "RFP-000097"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 28,
+            "n_fact_bundles": 28,
+            "n_matched_facts": 0,
+            "n_missing_facts": 28,
+            "n_missing_evidence": 28,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "critical_abstain"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.6120230536907911,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-016",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 7,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000026",
+                "RFP-000031",
+                "RFP-000067",
+                "RFP-000074",
+                "RFP-000083",
+                "RFP-000085",
+                "RFP-000095"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 7,
+            "n_fact_bundles": 7,
+            "n_matched_facts": 0,
+            "n_missing_facts": 7,
+            "n_missing_evidence": 7,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "over_refusal"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.5120171699672937,
+          "cache_hit": false
+        },
+        {
+          "id": "EXT-08",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "list",
+            "score": 0.0,
+            "detail": {
+              "completeness_rule": "exact_all",
+              "coverage": 0.0,
+              "hit": [],
+              "missing": [
+                "전자조달시스템 이용이 곤란한 경우 전자우편이나 우편으로 제출",
+                "전자조달시스템(나라장터)을 통하여 전자적 방식으로 제출"
+              ],
+              "extra": [],
+              "n_missing": 2,
+              "n_extra": 0,
+              "fail_reason": "missing",
+              "note": "빠뜨림과 덧붙임은 별도 집계 — 합산 금지(3-4-4). 둘 다 없어야 통과"
+            }
+          },
+          "format_status": {
+            "passed": false,
+            "violations": [
+              "list 답변은 structured_answer 가 배열이어야 함(output contract)"
+            ]
+          },
+          "retrieval": [
+            {
+              "applicable": true,
+              "stage": "retrieval_k",
+              "recall_at_k": 0.0,
+              "recall_all": false,
+              "precision_at_k": 0.0,
+              "mrr": 0.0,
+              "failure_kind": "recall_failure",
+              "n_gold": 1,
+              "k": 5,
+              "precision_unit": "ref_no",
+              "by_k": {
+                "3": {
+                  "recall_at_k": 0.0,
+                  "precision_at_k": 0.0,
+                  "mrr": 0.0
+                },
+                "5": {
+                  "recall_at_k": 0.0,
+                  "precision_at_k": 0.0,
+                  "mrr": 0.0
+                }
+              },
+              "n_gold_total": 1,
+              "n_gold_in_pool": 0,
+              "n_gold_in_context": 0
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "failure_kind": "recall_failure",
+              "reason": "재정렬 미적용 — 응답에 reranked 가 없음",
+              "n_gold_total": 1,
+              "n_gold_in_pool": 0,
+              "n_gold_in_context": 0
+            },
+            {
+              "applicable": true,
+              "stage": "context_k",
+              "recall_at_k": 0.0,
+              "recall_all": false,
+              "precision_at_k": 0.0,
+              "mrr": 0.0,
+              "failure_kind": "recall_failure",
+              "n_gold": 1,
+              "k": 5,
+              "precision_unit": "ref_no",
+              "n_gold_total": 1,
+              "n_gold_in_pool": 0,
+              "n_gold_in_context": 0
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 1,
+            "n_fact_bundles": 1,
+            "n_matched_facts": 0,
+            "n_missing_facts": 1,
+            "n_missing_evidence": 1,
+            "n_wrong_citations": 0,
+            "search_used": true
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": false,
+            "abstention_kind": "ok"
+          },
+          "final_status": "FAIL-format+content",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.8444399572908878,
+          "cache_hit": false
+        },
+        {
+          "id": "EXT-04",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "value",
+            "score": 1.0,
+            "detail": {
+              "why": "normalized_exact",
+              "gold": "나. 사업기간 : 계약일로부터 6개월",
+              "pred": "계약일로부터 6개월"
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=추출테이블_값조회 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=추출테이블_값조회 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=추출테이블_값조회 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": true,
+            "score": 1.0,
+            "n_citations": 1,
+            "precision_unit": "ref_no",
+            "n_gold_locations": 1,
+            "n_gold_evidence": 1,
+            "n_fact_bundles": 1,
+            "n_matched_facts": 1,
+            "n_missing_facts": 0,
+            "n_missing_evidence": 0,
+            "n_wrong_citations": 0,
+            "wrong_citations": [],
+            "search_used": false,
+            "fact_keys": [
+              [
+                "loc",
+                "RFP-000019",
+                "('RFP-000019', 'Ⅰ. 사업개요', 'Ⅰ. 사업개요 · 문단 1-5')"
+              ]
+            ]
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": false,
+            "abstention_kind": "ok"
+          },
+          "final_status": "PASS",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.6141611374914646,
+          "cache_hit": false
+        },
+        {
+          "id": "QA-010",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "abstention",
+            "score": 0.0,
+            "detail": {
+              "abstention_kind": "hallucination"
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "정답 근거 없음(location 미기록) — 검색 지표 계산 불가"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "재정렬 미적용 — 응답에 reranked 가 없음"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "정답 근거 없음(location 미기록) — 검색 지표 계산 불가"
+            }
+          ],
+          "citation": {
+            "applicable": false,
+            "reason": "정답 근거 없음 — citation 채점 대상 아님",
+            "search_used": true
+          },
+          "abstention": {
+            "should_abstain": true,
+            "abstained": false,
+            "abstention_kind": "hallucination"
+          },
+          "final_status": "FAIL-content",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.6037328857928514,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-004",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 3,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000002",
+                "RFP-000005",
+                "RFP-000054"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 3,
+            "n_fact_bundles": 3,
+            "n_matched_facts": 0,
+            "n_missing_facts": 3,
+            "n_missing_evidence": 3,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "critical_abstain"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.35933777689933777,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-012",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 14,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000003",
+                "RFP-000026",
+                "RFP-000034",
+                "RFP-000049",
+                "RFP-000067",
+                "RFP-000070",
+                "RFP-000074",
+                "RFP-000083",
+                "RFP-000085",
+                "RFP-000093",
+                "RFP-000095",
+                "RFP-000096",
+                "RFP-000097",
+                "RFP-000099"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 14,
+            "n_fact_bundles": 14,
+            "n_matched_facts": 0,
+            "n_missing_facts": 14,
+            "n_missing_evidence": 14,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "over_refusal"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.3804829902946949,
+          "cache_hit": false
+        },
+        {
+          "id": "EXT-01",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "list",
+            "score": 0.0,
+            "detail": {
+              "completeness_rule": "exact_all",
+              "coverage": 0.42857142857142855,
+              "hit": [
+                "입찰공고일 전일부터 계약체결일까지 주된 영업소의 소재지가 부산광역시인 기업",
+                "공동수급(공동이행방식)은 허용하지 않음",
+                "하도급을 허용하지 않음"
+              ],
+              "missing": [
+                "지방자치단체를 당사자로 하는 계약에 관한 법률 시행령 제92조에 해당되지 않는 기업",
+                "대기업 및 중견기업 소프트웨어 사업자와 상호출자제한기업집단소속회사는 참여할 수 없음",
+                "나라장터에 소프트웨어사업자(업종코드 1468)로 입찰참가자격을 등록한 자",
+                "정보시스템개발서비스 직접생산확인증명서 소지 기업"
+              ],
+              "extra": [
+                "가.",
+                "지방자치단체를 당사자로 하는 계약에 관한 법률 시행령 제92조(부정당업자의 입찰참가자격 제한 기준 등)에 해당되지 않는 기업",
+                "나.",
+                "다.",
+                "국가종합전자조달시스템 입찰참가자격등록규정에 의하여 나라장터(G2B시스템)에 입찰서 제출마감일 전일까지 소프트웨어사업자[컴퓨터관련서비스사업(업종코드 1468)]으로 입찰참가자격을 등록한 자.",
+                "라.",
+                "소프트웨어산업 진흥법 제48조 및 중소소프트웨어사업자의 사업 참여 지원에 관한 지침 제2조, 제3조에 따라 대기업 및 중견기업 소프트웨어 사업자는 본 입찰에 참여할 수 없으며, ‘상호출자제한기업집단소속회사’는 입찰에 참여할 수 없음.",
+                "마.",
+                "중소기업제품 구매촉진 및 판로지원에 관한 법률 제9조 및 시행령 제10조 규정에 의한 정보시스템개발서비스(세부품명번호 8111159901)의 ‘직접생산확인증명서’(입찰마감 전일까지 발급된 것으로서 유효기간 내에 있어야 함) 소지 기업",
+                "사."
+              ],
+              "n_missing": 4,
+              "n_extra": 10,
+              "fail_reason": "missing",
+              "note": "빠뜨림과 덧붙임은 별도 집계 — 합산 금지(3-4-4). 둘 다 없어야 통과"
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=추출테이블_값조회 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=추출테이블_값조회 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=추출테이블_값조회 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": true,
+            "score": 1.0,
+            "n_citations": 1,
+            "precision_unit": "ref_no",
+            "n_gold_locations": 1,
+            "n_gold_evidence": 1,
+            "n_fact_bundles": 1,
+            "n_matched_facts": 1,
+            "n_missing_facts": 0,
+            "n_missing_evidence": 0,
+            "n_wrong_citations": 0,
+            "wrong_citations": [],
+            "search_used": false,
+            "fact_keys": [
+              [
+                "loc",
+                "RFP-000002",
+                "('RFP-000002', '2. 입찰참가자격', '2. 입찰참가자격 · 문단 1-7')"
+              ]
+            ]
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": false,
+            "abstention_kind": "ok"
+          },
+          "final_status": "FAIL-content",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 11.08558988198638,
+          "cache_hit": false
+        },
+        {
+          "id": "QA-009",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "abstention",
+            "score": 1.0,
+            "detail": {
+              "abstention_kind": "ok"
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": false,
+            "reason": "정답 근거 없음 — citation 채점 대상 아님",
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": true,
+            "abstained": true,
+            "abstention_kind": "ok"
+          },
+          "final_status": "PASS",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.3716649953275919,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-015",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 5,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000014",
+                "RFP-000026",
+                "RFP-000067",
+                "RFP-000083",
+                "RFP-000085"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 5,
+            "n_fact_bundles": 5,
+            "n_matched_facts": 0,
+            "n_missing_facts": 5,
+            "n_missing_evidence": 5,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "critical_abstain"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.47022290527820587,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-010",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 69,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000002",
+                "RFP-000003",
+                "RFP-000005",
+                "RFP-000007",
+                "RFP-000008",
+                "RFP-000009",
+                "RFP-000012",
+                "RFP-000013",
+                "RFP-000014",
+                "RFP-000015",
+                "RFP-000016",
+                "RFP-000018",
+                "RFP-000019",
+                "RFP-000020",
+                "RFP-000022",
+                "RFP-000023",
+                "RFP-000024",
+                "RFP-000028",
+                "RFP-000030",
+                "RFP-000031",
+                "RFP-000032",
+                "RFP-000034",
+                "RFP-000037",
+                "RFP-000038",
+                "RFP-000039",
+                "RFP-000040",
+                "RFP-000041",
+                "RFP-000043",
+                "RFP-000044",
+                "RFP-000045",
+                "RFP-000046",
+                "RFP-000047",
+                "RFP-000048",
+                "RFP-000049",
+                "RFP-000050",
+                "RFP-000052",
+                "RFP-000054",
+                "RFP-000056",
+                "RFP-000057",
+                "RFP-000058",
+                "RFP-000059",
+                "RFP-000061",
+                "RFP-000062",
+                "RFP-000064",
+                "RFP-000065",
+                "RFP-000066",
+                "RFP-000068",
+                "RFP-000069",
+                "RFP-000070",
+                "RFP-000072",
+                "RFP-000073",
+                "RFP-000074",
+                "RFP-000075",
+                "RFP-000077",
+                "RFP-000078",
+                "RFP-000080",
+                "RFP-000082",
+                "RFP-000087",
+                "RFP-000089",
+                "RFP-000090",
+                "RFP-000091",
+                "RFP-000093",
+                "RFP-000094",
+                "RFP-000095",
+                "RFP-000096",
+                "RFP-000097",
+                "RFP-000098",
+                "RFP-000099",
+                "RFP-000100"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 69,
+            "n_fact_bundles": 69,
+            "n_matched_facts": 0,
+            "n_missing_facts": 69,
+            "n_missing_evidence": 69,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "over_refusal"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.9555451106280088,
+          "cache_hit": false
+        },
+        {
+          "id": "EXT-09",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "value",
+            "score": 0.0,
+            "detail": {
+              "why": "field_absent_rejected(기권·빈 답은 미기재 정답이 아니다)",
+              "gold": "이 문서에는 지역제한 항목이 별도로 명시되어 있지 않습니다.",
+              "pred": "'지역제한'를 어느 문서에서 확인할까요? 문서 ID(예: RFP-000001), 발주기관명 또는 사업명을 알려주시면 찾아드릴게요."
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 1,
+            "n_fact_bundles": 1,
+            "n_matched_facts": 0,
+            "n_missing_facts": 1,
+            "n_missing_evidence": 1,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "critical_abstain"
+          },
+          "final_status": "FAIL-content",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.3909599035978317,
+          "cache_hit": false
+        },
+        {
+          "id": "QA-006",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "comparison",
+            "score": 0.0,
+            "detail": {
+              "cells": 4,
+              "matched_cells": [],
+              "missing_cells": [
+                {
+                  "document_id": "RFP-000019",
+                  "field": "참가자격",
+                  "gold": "중소기업만 참여 가능(대기업·중견기업 제한), 소프트웨어사업자 신고(업종코드 1468), 직접생산확인증명서 소지"
+                },
+                {
+                  "document_id": "RFP-000022",
+                  "field": "참가자격",
+                  "gold": "중소기업·소상공인 확인서 소지, 소프트웨어사업자 신고(업종코드 1468), 직접생산확인증명서 소지"
+                },
+                {
+                  "document_id": "RFP-000019",
+                  "field": "컨소시엄요건",
+                  "gold": "나. 공동수급, 하도급 불허"
+                },
+                {
+                  "document_id": "RFP-000022",
+                  "field": "컨소시엄요건",
+                  "gold": "공동수급 허용(5개사 이하, 지분 10% 이상), 하도급 불허"
+                }
+              ],
+              "wrong_cells": [],
+              "extra_document_cells": [],
+              "extra_field_cells": [],
+              "n_extra": 0,
+              "denominator": 4,
+              "cell_accuracy": 0.0,
+              "conclusion_at_risk": true,
+              "note": "우열 판단은 채점 대상 아님(2-8-4) — 지정 항목 값 일치까지만. 추가 칸은 분모에 포함한다(묻지 않은 문서·필드를 붙이면 감점).",
+              "pred_errors": [
+                "응답표 문서 ID 'clarification_needed' — RFP-000000(6자리) 형식 아님",
+                "응답표 문서 ID 'candidates' — RFP-000000(6자리) 형식 아님",
+                "응답표 문서 ID 'candidate_labels' — RFP-000000(6자리) 형식 아님",
+                "응답표 문서 ID 'unknown_orgs' — RFP-000000(6자리) 형식 아님",
+                "응답표 문서 ID 'resolution_method' — RFP-000000(6자리) 형식 아님"
+              ],
+              "structure_errors": [
+                "응답표 'clarification_needed' 의 값이 dict 아님(bool) — {항목: 값} 형태여야 함",
+                "응답표 'candidates' 의 값이 dict 아님(list) — {항목: 값} 형태여야 함",
+                "응답표 'candidate_labels' 의 값이 dict 아님(list) — {항목: 값} 형태여야 함",
+                "응답표 'unknown_orgs' 의 값이 dict 아님(list) — {항목: 값} 형태여야 함",
+                "응답표 'resolution_method' 의 값이 dict 아님(str) — {항목: 값} 형태여야 함"
+              ]
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 4,
+            "n_fact_bundles": 4,
+            "n_matched_facts": 0,
+            "n_missing_facts": 4,
+            "n_missing_evidence": 4,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "over_refusal"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.4402920603752136,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-018",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 4,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000026",
+                "RFP-000067",
+                "RFP-000083",
+                "RFP-000085"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 8,
+            "n_fact_bundles": 8,
+            "n_matched_facts": 0,
+            "n_missing_facts": 8,
+            "n_missing_evidence": 8,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "critical_abstain"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.48047490417957306,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-005",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 45,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000002",
+                "RFP-000005",
+                "RFP-000007",
+                "RFP-000008",
+                "RFP-000009",
+                "RFP-000013",
+                "RFP-000014",
+                "RFP-000015",
+                "RFP-000016",
+                "RFP-000018",
+                "RFP-000020",
+                "RFP-000022",
+                "RFP-000028",
+                "RFP-000030",
+                "RFP-000031",
+                "RFP-000032",
+                "RFP-000037",
+                "RFP-000038",
+                "RFP-000039",
+                "RFP-000040",
+                "RFP-000041",
+                "RFP-000044",
+                "RFP-000045",
+                "RFP-000047",
+                "RFP-000050",
+                "RFP-000052",
+                "RFP-000054",
+                "RFP-000056",
+                "RFP-000057",
+                "RFP-000058",
+                "RFP-000061",
+                "RFP-000062",
+                "RFP-000065",
+                "RFP-000066",
+                "RFP-000068",
+                "RFP-000069",
+                "RFP-000072",
+                "RFP-000073",
+                "RFP-000080",
+                "RFP-000082",
+                "RFP-000087",
+                "RFP-000091",
+                "RFP-000094",
+                "RFP-000098",
+                "RFP-000100"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 45,
+            "n_fact_bundles": 45,
+            "n_matched_facts": 0,
+            "n_missing_facts": 45,
+            "n_missing_evidence": 45,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "over_refusal"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.7847878150641918,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-022",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 1,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000067"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 2,
+            "n_fact_bundles": 2,
+            "n_matched_facts": 0,
+            "n_missing_facts": 2,
+            "n_missing_evidence": 2,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "critical_abstain"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.3378998953849077,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-011",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 70,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000003",
+                "RFP-000007",
+                "RFP-000008",
+                "RFP-000009",
+                "RFP-000012",
+                "RFP-000013",
+                "RFP-000014",
+                "RFP-000015",
+                "RFP-000016",
+                "RFP-000018",
+                "RFP-000019",
+                "RFP-000020",
+                "RFP-000022",
+                "RFP-000023",
+                "RFP-000024",
+                "RFP-000026",
+                "RFP-000028",
+                "RFP-000030",
+                "RFP-000031",
+                "RFP-000032",
+                "RFP-000034",
+                "RFP-000037",
+                "RFP-000038",
+                "RFP-000039",
+                "RFP-000040",
+                "RFP-000041",
+                "RFP-000043",
+                "RFP-000044",
+                "RFP-000045",
+                "RFP-000046",
+                "RFP-000047",
+                "RFP-000048",
+                "RFP-000049",
+                "RFP-000050",
+                "RFP-000052",
+                "RFP-000056",
+                "RFP-000057",
+                "RFP-000058",
+                "RFP-000059",
+                "RFP-000061",
+                "RFP-000062",
+                "RFP-000064",
+                "RFP-000065",
+                "RFP-000066",
+                "RFP-000067",
+                "RFP-000068",
+                "RFP-000069",
+                "RFP-000070",
+                "RFP-000072",
+                "RFP-000073",
+                "RFP-000074",
+                "RFP-000075",
+                "RFP-000077",
+                "RFP-000078",
+                "RFP-000080",
+                "RFP-000082",
+                "RFP-000083",
+                "RFP-000085",
+                "RFP-000087",
+                "RFP-000089",
+                "RFP-000090",
+                "RFP-000091",
+                "RFP-000093",
+                "RFP-000094",
+                "RFP-000095",
+                "RFP-000096",
+                "RFP-000097",
+                "RFP-000098",
+                "RFP-000099",
+                "RFP-000100"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 70,
+            "n_fact_bundles": 70,
+            "n_matched_facts": 0,
+            "n_missing_facts": 70,
+            "n_missing_evidence": 70,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "critical_abstain"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.7942500524222851,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-023",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 20,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000005",
+                "RFP-000012",
+                "RFP-000016",
+                "RFP-000019",
+                "RFP-000024",
+                "RFP-000030",
+                "RFP-000044",
+                "RFP-000049",
+                "RFP-000050",
+                "RFP-000054",
+                "RFP-000058",
+                "RFP-000059",
+                "RFP-000061",
+                "RFP-000065",
+                "RFP-000066",
+                "RFP-000069",
+                "RFP-000075",
+                "RFP-000080",
+                "RFP-000091",
+                "RFP-000094"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 40,
+            "n_fact_bundles": 40,
+            "n_matched_facts": 0,
+            "n_missing_facts": 40,
+            "n_missing_evidence": 40,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "critical_abstain"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.7187568116933107,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-013",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 10,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000012",
+                "RFP-000015",
+                "RFP-000016",
+                "RFP-000026",
+                "RFP-000031",
+                "RFP-000056",
+                "RFP-000067",
+                "RFP-000075",
+                "RFP-000083",
+                "RFP-000085"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 10,
+            "n_fact_bundles": 10,
+            "n_matched_facts": 0,
+            "n_missing_facts": 10,
+            "n_missing_evidence": 10,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "critical_abstain"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.36610197275877,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-008",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 68,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000002",
+                "RFP-000003",
+                "RFP-000005",
+                "RFP-000007",
+                "RFP-000008",
+                "RFP-000009",
+                "RFP-000012",
+                "RFP-000013",
+                "RFP-000015",
+                "RFP-000016",
+                "RFP-000018",
+                "RFP-000019",
+                "RFP-000020",
+                "RFP-000022",
+                "RFP-000023",
+                "RFP-000024",
+                "RFP-000028",
+                "RFP-000030",
+                "RFP-000031",
+                "RFP-000032",
+                "RFP-000034",
+                "RFP-000037",
+                "RFP-000038",
+                "RFP-000039",
+                "RFP-000040",
+                "RFP-000041",
+                "RFP-000043",
+                "RFP-000044",
+                "RFP-000045",
+                "RFP-000046",
+                "RFP-000047",
+                "RFP-000048",
+                "RFP-000049",
+                "RFP-000050",
+                "RFP-000052",
+                "RFP-000054",
+                "RFP-000056",
+                "RFP-000057",
+                "RFP-000058",
+                "RFP-000059",
+                "RFP-000061",
+                "RFP-000062",
+                "RFP-000064",
+                "RFP-000065",
+                "RFP-000066",
+                "RFP-000068",
+                "RFP-000069",
+                "RFP-000070",
+                "RFP-000072",
+                "RFP-000073",
+                "RFP-000074",
+                "RFP-000075",
+                "RFP-000077",
+                "RFP-000078",
+                "RFP-000080",
+                "RFP-000082",
+                "RFP-000087",
+                "RFP-000089",
+                "RFP-000090",
+                "RFP-000091",
+                "RFP-000093",
+                "RFP-000094",
+                "RFP-000095",
+                "RFP-000096",
+                "RFP-000097",
+                "RFP-000098",
+                "RFP-000099",
+                "RFP-000100"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 68,
+            "n_fact_bundles": 68,
+            "n_matched_facts": 0,
+            "n_missing_facts": 68,
+            "n_missing_evidence": 68,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "critical_abstain"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.9202838409692049,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-006",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 48,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000002",
+                "RFP-000003",
+                "RFP-000005",
+                "RFP-000007",
+                "RFP-000008",
+                "RFP-000009",
+                "RFP-000013",
+                "RFP-000014",
+                "RFP-000018",
+                "RFP-000019",
+                "RFP-000020",
+                "RFP-000022",
+                "RFP-000023",
+                "RFP-000028",
+                "RFP-000030",
+                "RFP-000032",
+                "RFP-000034",
+                "RFP-000037",
+                "RFP-000038",
+                "RFP-000040",
+                "RFP-000041",
+                "RFP-000044",
+                "RFP-000045",
+                "RFP-000047",
+                "RFP-000048",
+                "RFP-000049",
+                "RFP-000050",
+                "RFP-000052",
+                "RFP-000054",
+                "RFP-000057",
+                "RFP-000058",
+                "RFP-000061",
+                "RFP-000062",
+                "RFP-000066",
+                "RFP-000068",
+                "RFP-000069",
+                "RFP-000070",
+                "RFP-000072",
+                "RFP-000073",
+                "RFP-000074",
+                "RFP-000078",
+                "RFP-000082",
+                "RFP-000087",
+                "RFP-000089",
+                "RFP-000094",
+                "RFP-000098",
+                "RFP-000099",
+                "RFP-000100"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 48,
+            "n_fact_bundles": 48,
+            "n_matched_facts": 0,
+            "n_missing_facts": 48,
+            "n_missing_evidence": 48,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "critical_abstain"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.7478408515453339,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-025",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 1.0,
+            "detail": {
+              "gold_n": 0,
+              "pred_n": 0,
+              "missing": [],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "zero_hit_case": true
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": false,
+            "reason": "정답 근거 없음 — citation 채점 대상 아님",
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "critical_abstain"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.39524491876363754,
+          "cache_hit": false
+        },
+        {
+          "id": "SEL-024",
+          "schema_version": "v1",
+          "mode": "development",
+          "provider": "stub",
+          "judge_results": [
+            {
+              "metric": "judge_faithfulness",
+              "raw": "stub: 경계 포함 판정(의미비교 아님)",
+              "parsed": {
+                "verdict": false,
+                "score": 0.0,
+                "reason": "stub: 경계 포함 판정(의미비교 아님)",
+                "_judge": "stub/dev"
+              },
+              "verdict": false,
+              "score": 0.0,
+              "reason": "stub: 경계 포함 판정(의미비교 아님)"
+            }
+          ],
+          "task_score": {
+            "kind": "document_set",
+            "score": 0.0,
+            "detail": {
+              "gold_n": 2,
+              "pred_n": 0,
+              "missing": [
+                "RFP-000005",
+                "RFP-000054"
+              ],
+              "extra": [],
+              "answer_source": "table",
+              "circularity_warning": true,
+              "recall": 0.0,
+              "precision": 0.0
+            }
+          },
+          "format_status": {
+            "passed": true,
+            "violations": []
+          },
+          "retrieval": [
+            {
+              "applicable": false,
+              "stage": "retrieval_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "reranker_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            },
+            {
+              "applicable": false,
+              "stage": "context_k",
+              "reason": "route=애매_되묻기 — 검색을 사용하지 않은 문항(추출표·identity 경로)"
+            }
+          ],
+          "citation": {
+            "applicable": true,
+            "matched": false,
+            "score": 0.0,
+            "n_citations": 0,
+            "precision_unit": "ref_no",
+            "reason": "citation 없음(출처 미표기)",
+            "n_gold_evidence": 4,
+            "n_fact_bundles": 4,
+            "n_matched_facts": 0,
+            "n_missing_facts": 4,
+            "n_missing_evidence": 4,
+            "n_wrong_citations": 0,
+            "search_used": false
+          },
+          "abstention": {
+            "should_abstain": false,
+            "abstained": true,
+            "abstention_kind": "critical_abstain"
+          },
+          "final_status": "PENDING_THRESHOLD",
+          "provenance": {
+            "corpus": "v2",
+            "preprocess": "v2",
+            "table": "v3",
+            "index": "v2",
+            "evalset": "v2",
+            "scorer": "v2"
+          },
+          "runtime_ms": 0.4094671458005905,
+          "cache_hit": false
+        }
+      ]
+    }
+  ],
+  "message": "4층 완료 (50문항, mode=development)",
+  "exit_code": 1,
+  "summary": {
+    "n_items": 50,
+    "overall_score": 0.1343,
+    "main": {
+      "by_task_type": {
+        "extraction": {
+          "n": 15,
+          "score": 0.1333,
+          "pp_per_item": 6.67,
+          "reliable": true,
+          "warning": null
+        },
+        "qa": {
+          "n": 10,
+          "score": 0.2714,
+          "pp_per_item": 10.0,
+          "reliable": true,
+          "warning": null
+        },
+        "selection": {
+          "n": 25,
+          "score": 0.08,
+          "pp_per_item": 4.0,
+          "reliable": true,
+          "warning": null
+        }
+      },
+      "primary": {
+        "selection": {
+          "metric": "완결성(누락 없이 다 찾았는가) — recall 가중 점수",
+          "value": 0.08,
+          "n": 25,
+          "must_read_with": "extraction.overall_accuracy (순환 경보)",
+          "extraction_accuracy": null
+        },
+        "extraction": {
+          "metric": "값 정확도 + critical 필드 정답률",
+          "value": 0.1333,
+          "n": 15,
+          "critical_field_score": 0.0
+        },
+        "qa": {
+          "metric": "내용 점수(task content score) — 검색 재현율(context_k)과 짝으로 읽을 것(D7)",
+          "value": 0.2714,
+          "n": 10,
+          "context_recall": 0.75,
+          "faithfulness_note": "충실성은 별도 축(report.faithfulness)이며 실심판을 돌린 실행에서만 값이 있다"
+        }
+      },
+      "integrated_score": null,
+      "integrated_note": "통합 점수 산출 방식은 확정(2-16) — 가중치는 1-2 업무빈도·위험 기준. 다만 gate.task_weight 값이 아직 없어 계산하지 않는다. 감으로 채운 가중치는 근거 없는 우선순위 선언과 같다."
+    },
+    "severity": {
+      "by_field_tag": {
+        "None": {
+          "n": 8,
+          "score": 0.25,
+          "pp_per_item": 12.5,
+          "reliable": true,
+          "warning": null
+        },
+        "critical": {
+          "n": 24,
+          "score": 0.0833,
+          "pp_per_item": 4.17,
+          "reliable": true,
+          "warning": null
+        },
+        "major": {
+          "n": 14,
+          "score": 0.1429,
+          "pp_per_item": 7.14,
+          "reliable": true,
+          "warning": null
+        },
+        "minor": {
+          "n": 4,
+          "score": 0.1786,
+          "pp_per_item": 25.0,
+          "reliable": false,
+          "warning": "칸당 문항 4개 — 숫자로 말하지 말 것(3-12)"
+        }
+      },
+      "gate": {
+        "critical": {
+          "status": "FAIL",
+          "score": 0.0833,
+          "threshold": 0.85,
+          "n": 24,
+          "reliable": true
+        }
+      },
+      "note": "critical 필드의 기권은 감점이 아니라 정상 동작일 수 있다(1-5) — abstention 리포트와 함께 볼 것"
+    },
+    "severity_weighted_score": 0.1025,
+    "severity_weighted_note": "가중 평균(가중치 출처: gate.field_tag_weight) — 사용된 field_tag: ['critical', 'major', 'minor'], n=42, field_tag 없어 제외된 문항 8건",
+    "by_field_tag": {
+      "None": {
+        "n": 8,
+        "score": 0.25,
+        "pp_per_item": 12.5,
+        "reliable": true,
+        "warning": null
+      },
+      "critical": {
+        "n": 24,
+        "score": 0.0833,
+        "pp_per_item": 4.17,
+        "reliable": true,
+        "warning": null
+      },
+      "major": {
+        "n": 14,
+        "score": 0.1429,
+        "pp_per_item": 7.14,
+        "reliable": true,
+        "warning": null
+      },
+      "minor": {
+        "n": 4,
+        "score": 0.1786,
+        "pp_per_item": 25.0,
+        "reliable": false,
+        "warning": "칸당 문항 4개 — 숫자로 말하지 말 것(3-12)"
+      }
+    },
+    "abstention": {
+      "counts": {
+        "critical_abstain": 21,
+        "over_refusal": 15,
+        "ok": 12,
+        "clarification_ok": 1,
+        "hallucination": 1
+      },
+      "hallucination_rate": 0.02,
+      "over_refusal_rate": 0.3,
+      "critical_abstain_count": 21,
+      "clarification_count": 1,
+      "note": "critical_abstain 은 1-5 기준 정상 동작일 수 있음 — 과잉 거절과 합산 금지. clarification_ok(모호한 문항에 대한 정당한 되묻기)도 과잉 거절과 별도 집계"
+    },
+    "format": {
+      "by_final_status": {
+        "FAIL-content": 11,
+        "FAIL-format+content": 4,
+        "PENDING_THRESHOLD": 32,
+        "PASS": 3
+      },
+      "format_failure_rate": 0.08,
+      "note": "FAIL-format* 은 내용과 무관하게 output contract 위반으로 떨어진 문항"
+    },
+    "retrieval": {
+      "retrieval_k": {
+        "n": 4,
+        "recall@k": 0.75,
+        "recall_all_rate": 0.75,
+        "precision@k": 0.15000000000000002,
+        "mrr": 0.3833333333333333,
+        "failure_breakdown": {
+          "none": 3,
+          "rank_failure": 0,
+          "recall_failure": 1
+        },
+        "by_k": {
+          "3": {
+            "recall@k": 0.5,
+            "precision@k": 0.1667,
+            "mrr@k": 0.3333
+          },
+          "5": {
+            "recall@k": 0.75,
+            "precision@k": 0.15,
+            "mrr@k": 0.3833
+          }
+        }
+      },
+      "reranker_k": {
+        "n": 0
+      },
+      "context_k": {
+        "n": 4,
+        "recall@k": 0.75,
+        "recall_all_rate": 0.75,
+        "precision@k": 0.18333333333333335,
+        "mrr": 0.3833333333333333,
+        "failure_breakdown": {
+          "none": 3,
+          "rank_failure": 0,
+          "recall_failure": 1
+        }
+      },
+      "failure_rate": {
+        "recall_failure": 0.25,
+        "rank_failure": 0.0
+      },
+      "prescription_hint": "재현율 실패 우세 → 임베딩 교체·하이브리드·파싱 개선",
+      "note": "★최종 k는 미확정 — 세 단계를 각각 비교하고, 이태민의 실제 구조가 들어온 뒤 확정한다."
+    },
+    "citation": {
+      "n": 46,
+      "citation_accuracy": 0.1957,
+      "no_citation_rate": 0.7826,
+      "partial_missing_rate": 0.0217,
+      "wrong_citation_rate": 0.0652,
+      "n_gold_evidence_total": 746,
+      "n_fact_bundles_total": 743,
+      "n_matched_facts_total": 12,
+      "n_missing_facts_total": 731,
+      "n_wrong_citations_total": 4,
+      "note": "3-4-3 — 정답 위치 vs 인용 좌표. 안 붙임/일부 누락/틀리게 붙임을 분리 집계. check_format의 FAIL 대상 아님(진단 지표)."
+    },
+    "extraction": {},
+    "doc_selection": {
+      "n": 1,
+      "doc_selection_accuracy": 1.0,
+      "error_kinds": {
+        "correct": 1
+      },
+      "note": "1단계에서 놓친 문서는 복구가 안 된다 — 이 값이 추출형 성능의 상한(4-9-6)"
+    },
+    "failures": {
+      "n_items": 50,
+      "system_error_zero": 0,
+      "system_error_ids": [],
+      "content_zero": 43,
+      "content_zero_ids": [
+        "EXT-01",
+        "EXT-02",
+        "EXT-03",
+        "EXT-05",
+        "EXT-06",
+        "EXT-07",
+        "EXT-08",
+        "EXT-09",
+        "EXT-10",
+        "EXT-11",
+        "EXT-12",
+        "EXT-13",
+        "EXT-14",
+        "QA-001",
+        "QA-002",
+        "QA-003",
+        "QA-006",
+        "QA-007",
+        "QA-008",
+        "QA-010",
+        "SEL-001",
+        "SEL-002",
+        "SEL-003",
+        "SEL-004",
+        "SEL-005",
+        "SEL-006",
+        "SEL-007",
+        "SEL-008",
+        "SEL-009",
+        "SEL-010",
+        "SEL-011",
+        "SEL-012",
+        "SEL-013",
+        "SEL-014",
+        "SEL-015",
+        "SEL-016",
+        "SEL-017",
+        "SEL-018",
+        "SEL-019",
+        "SEL-021",
+        "SEL-022",
+        "SEL-023",
+        "SEL-024"
+      ],
+      "system_error_rate": 0.0,
+      "note": "system_error_zero=실행 실패로 인한 0점(인프라), content_zero=모델이 틀린 0점. 둘 다 분모에는 남는다 — 빼면 실패할수록 점수가 오른다(4-5)."
+    },
+    "missing_predictions": [],
+    "judge": {
+      "kind": "stub",
+      "score_source": "stub",
+      "provider": "none",
+      "model": "stub",
+      "family": "none",
+      "family_normalized": null,
+      "tier": "dev",
+      "usable_for_final": false,
+      "note": "★StubJudge — 경계 포함 문자열 매처. 의미 비교가 아니며 최종 점수 근거로 쓸 수 없다(tier=final 가드가 별도로 막는다).",
+      "final_readiness": {
+        "ready": false,
+        "mode": "development",
+        "judge_kind": "stub",
+        "generator_family": null,
+        "judge_family": null,
+        "checks": {
+          "mode_is_final": false,
+          "judge_is_not_stub": false,
+          "judge_is_not_mock": true,
+          "provider_present": false,
+          "judge_model_recorded": false,
+          "judge_family_recorded": false,
+          "judge_tier_is_final": false,
+          "temperature_is_zero": true,
+          "generator_family_recorded": false,
+          "families_differ": true,
+          "human_verification_exists": false,
+          "agreement_meets_threshold": false,
+          "verification_is_blind": false,
+          "prompt_versions_recorded": false,
+          "prompt_files_exist": true,
+          "prompt_hashes_recorded": true
+        },
+        "problems": [
+          "실행 모드가 final 이 아니다(mode=development) — 최종 점수는 final 실행에서만 낸다",
+          "⓪ StubJudge — 경계 포함 문자열 매처이며 의미 비교가 아니다",
+          "⓪ provider 미주입 — 호출할 모델이 없다",
+          "⓪ 심판 model='stub' — 실제 모델명이 기록되지 않았다",
+          "⓪ 심판 family='none' — 계열이 기록되지 않았다",
+          "④ 심판 tier=dev — final 실행에는 tier=final 이어야 한다",
+          "② 생성 모델 계열(family)이 기록되지 않았다 — 심판과 같은 계열인지 확인할 수 없다. --generator-family 로 지정하라",
+          "③ 사람 채점 대조 기록 없음 — 검증 전 심판은 채점이 아니다(3-9)",
+          "⑤ 심판 프롬프트 버전 미기록: (비어 있음)"
+        ]
+      }
+    },
+    "faithfulness": {
+      "applicable": false,
+      "n": 50,
+      "reason": "심판이 stub — 충실성은 의미 판정이라 문자열 매처나 더미 응답으로 대체할 수 없다"
+    },
+    "score_breakdown": {
+      "deterministic": {
+        "note": "규칙 기반 채점(문자열·금액·좌표·집합 비교) — 심판 없이 재현 가능",
+        "by_task_type": {
+          "extraction": 0.1333,
+          "selection": 0.08
+        }
+      },
+      "provisional_stub": {
+        "applicable": true,
+        "note": "StubJudge 문자열 비교가 섞인 임시 점수 — 목록형(judge_list_item)·요약형(judge_checkpoint) 매칭이 의미 비교가 아니다. 잠정값이다.",
+        "affected_answer_types": [
+          "list",
+          "summary"
+        ]
+      },
+      "real_judge_faithfulness": {
+        "applicable": false,
+        "n": 50,
+        "reason": "심판이 stub — 충실성은 의미 판정이라 문자열 매처나 더미 응답으로 대체할 수 없다"
+      },
+      "final_overall": null,
+      "provisional_real_judge": {
+        "applicable": false,
+        "value": null,
+        "note": "해당 없음"
+      },
+      "final_overall_note": "★통합 점수를 내지 않는다(null). 심판 종류=stub, 최종 준비=False. 미충족: 실행 모드가 final 이 아니다(mode=development) — 최종 점수는 final 실행에서만 낸다; ⓪ StubJudge — 경계 포함 문자열 매처이며 의미 비교가 아니다; ⓪ provider 미주입 — 호출할 모델이 없다"
+    }
+  }
+}
