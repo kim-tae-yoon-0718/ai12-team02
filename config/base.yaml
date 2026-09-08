@@ -250,6 +250,8 @@ schema_version: "1-12-2/v3"   # 확정 2026-09-01 — extraction_metadata.json�
 # ⑧ 실행 시점 정보 (4-10-2)
 # ─────────────────────────────
 reference_datetime_source: "external"  # 확정 — 코드가 현재 시각을 직접 읽지 않고 외부 주입
+deadline_urgent_days: null             # 실험/운영 옵션 — null이면 임박 필터 off.
+                                       # 3/7/14처럼 기준 시각부터 N일 이내만 남김.
 reference_datetime: "2024-06-01"       # 확정 2026-08-26 (박예진 1-9 실측) +
                                        #   2026-08-27 임현진(2-6-2) 공식 확정 — 값 일치 확인
                                        #   ⭐now 금지. 평가셋이 저절로 틀려짐 (1-9 ④)
