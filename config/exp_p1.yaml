@@ -1,0 +1,2 @@
+prompt_generate: "generate_v4.txt"
+changed: "prompt_generate v3→v4, 근거-내용 일치 확인·항목 누락 방지 규칙 추가"
