@@ -1,0 +1,7 @@
+# 실사용 대비 실험 — reference_clock_experiment.resolve_reference_datetime()만 이 키를 본다.
+# 공식 reference_datetime_from_config(4-10-2 확정)는 이 키를 모르고, 여전히
+# reference_datetime_source: "external"만 받는다. 이 config는 run_eval.py 등 공식
+# 평가 경로에서 쓰지 않는다 — 실사용(라이브) 진입점을 만들 때 참고용.
+reference_datetime_source: external
+reference_datetime: "2024-06-01"
+experimental_reference_datetime_source: now
