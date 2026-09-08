@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -194,14 +195,53 @@ def clean_value_text(raw: Any) -> str:
     return text or str(raw).strip()
 
 
+_PAREN_ONLY_RE = re.compile(r"^[（(][^（()]*[）)]$")
+_SUBENUM_RE = re.compile(r"^\s*[가-힣]\s*[)]\s*")   # '가)', '나)' — 상위 항목 아래 세부
+
+
+def _tidy_list_items(items: list[str], mode: str) -> list[str]:
+    """추출표 목록형 값에서 **문서 서식 흔적**을 정리한다 (내용은 안 바꾼다).
+
+    mode:
+      off   — 원본 그대로 (현행)
+      basic — ① 순번 토큰 단독("가.") 제거 ② 괄호 부연 단독은 앞 항목에 병합
+              ③ '또는'/'및' 로 끝난 항목은 다음 항목과 이어붙임
+      full  — basic + ④ 상위 항목 아래 'X)' 세부 항목은 상위에 흡수
+    """
+    if mode == "off" or not items:
+        return items
+    out: list[str] = []
+    for it in items:
+        s = _ENUM_PREFIX_RE.sub("", str(it)).strip()
+        if not s:                                   # ① 순번 토큰만 있던 원소
+            continue
+        if out and _PAREN_ONLY_RE.match(s):         # ② 앞 항목에서 떨어진 괄호 부연
+            out[-1] = f"{out[-1]} {s}"
+            continue
+        if mode == "full" and out and _SUBENUM_RE.match(str(it)):   # ④ 세부 항목
+            out[-1] = f"{out[-1]} — {s}"
+            continue
+        if out and re.search(r"(또는|및)\s*$", out[-1]):            # ③ 이어지는 항목
+            out[-1] = f"{out[-1]} {s}"
+            continue
+        out.append(s)
+    return out
+
+
 def as_list_value(row: dict) -> list[str] | None:
     """추출표 값이 목록형이면 문자열 배열로. 아니면 None.
 
     공식 추출표는 목록형 필드(필수 제출 서류 등)의 answer_normalized 를 JSON 배열
-    문자열로 담는다. 응답 계약상 목록형은 structured_answer 가 배열이어야 한다."""
+    문자열로 담는다. 응답 계약상 목록형은 structured_answer 가 배열이어야 한다.
+    EXT_LIST_TIDY 환경변수(off|basic|full)로 서식 흔적 정리를 켠다 — 실험용."""
+    tidy = os.environ.get("EXT_LIST_TIDY", "off").lower()
+
+    def _finish(items: list[str] | None) -> list[str] | None:
+        return _tidy_list_items(items, tidy) if items else items
+
     norm = row.get("answer_normalized")
     if isinstance(norm, list):
-        return [str(x) for x in norm]
+        return _finish([str(x) for x in norm])
     if isinstance(norm, str):
         t = norm.strip()
         if t.startswith("[") and t.endswith("]"):
@@ -210,12 +250,12 @@ def as_list_value(row: dict) -> list[str] | None:
             except json.JSONDecodeError:
                 return None
             if isinstance(parsed, list):
-                return [str(x) for x in parsed]
+                return _finish([str(x) for x in parsed])
     raw = row.get("answer_raw")
     if isinstance(raw, str) and "\n" in raw.strip():
         parts = [p.strip() for p in raw.split("\n") if p.strip()]
         if len(parts) >= 2:
-            return parts
+            return _finish(parts)
     return None
 
 
