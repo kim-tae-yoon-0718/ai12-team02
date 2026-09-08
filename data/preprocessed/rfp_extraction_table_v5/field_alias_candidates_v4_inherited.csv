@@ -1,4 +1,4 @@
-"document_id","field_name","matched_expression","source_type","location","heading","basis","confidence"
+﻿"document_id","field_name","matched_expression","source_type","location","heading","basis","confidence"
 "RFP-000048","과업 범위","구축 범위","body_sentence","을지대학교_을지대학교 비교과시스템 개발.md#L306","2. 구축 범위","공식 원문의 Markdown 제목/표 왼쪽 항목 칸을 먼저 수집하고 발주 사업의 기존 12필드 역할을 직접 확인함","source_reviewed_new_alias"
 "RFP-000100","과업 범위","구축범위","front_matter","한영대학_한영대학교 특성화 맞춤형 교육환경 구축 - 트랙운영 학사정보.md#L86","3. 구축범위","공식 원문의 Markdown 제목/표 왼쪽 항목 칸을 먼저 수집하고 발주 사업의 기존 12필드 역할을 직접 확인함","source_reviewed_new_alias"
 "RFP-000054","사업 개요","과업명","body_table","재단법인 광주연구원_광주정책연구아카이브(GPA) 시스템 개발.md#L5","과업명 광주정책연구아카이브(GPA) 시스템 개발","공식 원문의 Markdown 제목/표 왼쪽 항목 칸을 먼저 수집하고 발주 사업의 기존 12필드 역할을 직접 확인함","source_reviewed_new_alias"
