@@ -6,7 +6,7 @@ import pandas as pd
 선별형 문항 배분을 위한, 데이터 밀집도 확인
 """
 RAG_ROOT = "/srv/rfp"
-EXTRACTION_CSV = f"{RAG_ROOT}/shared_data/processed/rfp_extraction_table_v4/extraction_table_v4.csv"
+EXTRACTION_CSV = f"{RAG_ROOT}/shared_data/processed/rfp_extraction_table_v5/extraction_table_v5.csv"
 OUT_PATH = f"{RAG_ROOT}/evalset/v1/_work/selection_pools.json"
 
 # 수정: 중복만 제외. practice 문서도 제외하지 않음

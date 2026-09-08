@@ -7,4 +7,4 @@ enforce_gates: true       # 게이트 위반 시 exit 1
 ci_subset_size: 20
 
 provenance:
-  scorer: v2              # 채점기 버전 — 실사용값(HR 원본의 v1 은 낡은 표기)
+  scorer: v3              # 채점기 버전 — GPT-5 temperature 호환 수정

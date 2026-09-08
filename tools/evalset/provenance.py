@@ -16,12 +16,12 @@ SRV = Path("/srv/rfp")
 OFFICIAL_INPUTS = {
     "registry_v2": SRV / "shared_data/processed/document_registry_v2/document_registry_v2.json",
     "identity_v2": SRV / "shared_data/processed/document_registry_v2/document_identity_v2.csv",
-    "extraction_table_v4": SRV / "shared_data/processed/rfp_extraction_table_v4/extraction_table_v4.json",
-    "extraction_metadata": SRV / "shared_data/processed/rfp_extraction_table_v4/extraction_metadata.json",
+    "extraction_table_v5": SRV / "shared_data/processed/rfp_extraction_table_v5/extraction_table_v5.json",
+    "extraction_metadata": SRV / "shared_data/processed/rfp_extraction_table_v5/extraction_metadata.json",
     "chunks_v3": SRV / "shared_data/processed/chunks_v3/chunks.jsonl",
     "chunks_v3_version": SRV / "shared_data/processed/chunks_v3/VERSION.txt",
     "index_v2_tag": SRV / "shared_data/processed/index_v2/index_tag.json",
-    "official_items_v2": SRV / "evalset/v2/items.jsonl",
+    "official_items_v3": SRV / "evalset/v3/items.jsonl",
 }
 
 

@@ -27,12 +27,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # 공식 자료 위치는 conftest 의 공용 함수 하나로 정한다(파일마다 다른 기준 금지).
 from conftest import resolve_official_extraction_dir  # noqa: E402
 
-EXTRACTION_DIR = resolve_official_extraction_dir("v4")
+EXTRACTION_DIR = resolve_official_extraction_dir("v5")
 
 # 자료별로 "왜 없는지"를 남긴다 — 뭉뚱그린 skip 사유는 원인을 숨긴다.
 _MISSING = [
     name for name, ok in (
-        ("공식 추출표 v4(저장소 data/preprocessed 또는 서버 공용 경로)",
+        ("공식 추출표 v5(저장소 data/preprocessed 또는 서버 공용 경로)",
          EXTRACTION_DIR is not None),
         (f"identity({IDENTITY_CSV})", IDENTITY_CSV.exists()),
         (f"공식 청크({CHUNKS_DIR})", CHUNKS_DIR.exists()),
@@ -57,9 +57,9 @@ pytestmark = pytest.mark.skipif(
 )
 
 OFFICIAL_CFG = {
-    "top_k": 5, "corpus": "v2", "preprocess": "v2", "table": "v4",
+    "top_k": 5, "corpus": "v2", "preprocess": "v2", "table": "v5",
     "document_registry_version": "v2", "chunking_version": "v3",
-    "extraction_version": "v4", "schema_version": "1-12-2/v3",
+    "extraction_version": "v5", "schema_version": "1-12-2/v3",
     "routing_method": "rule_based", "routing_fallback": "qa",
     "reference_datetime_source": "external", "reference_datetime": "2024-06-01",
     "deadline_filter_field": "bid_deadline",
@@ -79,7 +79,7 @@ OFFICIAL_CFG = {
 def official_table():
     from table_query import load_extraction_table
     return load_extraction_table(
-        EXTRACTION_DIR / "extraction_table_v4.json", cfg=OFFICIAL_CFG,
+        EXTRACTION_DIR / "extraction_table_v5.json", cfg=OFFICIAL_CFG,
         metadata_path=EXTRACTION_DIR / "extraction_metadata.json", official=True)
 
 
@@ -104,10 +104,10 @@ class TestOfficialExtractionTable:
         assert len(combos) == 1200
 
     def test_declared_versions(self):
-        doc = json.loads((EXTRACTION_DIR / "extraction_table_v4.json").read_text(
+        doc = json.loads((EXTRACTION_DIR / "extraction_table_v5.json").read_text(
             encoding="utf-8"))
         assert doc["schema_version"] == "1-12-2/v3"
-        assert doc["extraction_version"] == "v4"
+        assert doc["extraction_version"] == "v5"
         assert doc["corpus_version"] == "v2"
         assert doc["registry_version"] == "v2"
 
@@ -119,12 +119,12 @@ class TestOfficialExtractionTable:
         assert meta["field_count"] == 12
 
     def test_stale_version_is_blocked(self):
-        """폴더·파일 이름만 v4인 것을 인정하지 않는다."""
+        """폴더·파일 이름만 v5인 것을 인정하지 않는다."""
         from table_query import load_extraction_table, ExtractionTableFormatError
         stale = dict(OFFICIAL_CFG)
         stale["extraction_version"] = "v2"
         with pytest.raises(ExtractionTableFormatError):
-            load_extraction_table(EXTRACTION_DIR / "extraction_table_v4.json",
+            load_extraction_table(EXTRACTION_DIR / "extraction_table_v5.json",
                                   cfg=stale, official=True)
 
     def test_rfp_000028_conflict_keeps_both_locations(self, official_table):

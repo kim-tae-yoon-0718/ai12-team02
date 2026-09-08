@@ -26,13 +26,13 @@ corpus: v2            # 확정 2026-08-30 (박예진) — shared_data/processed/
                       #   ⚠️ interim/md(미가공)와 다름. 전처리 완료 후 산출물만
                       #   "코퍼스"로 취급 (2026-08-27 박예진 확정)
 preprocess: v2        # 확정 2026-08-31 (박예진) — v1에서 승격
-table: v4                     # 확정 2026-09-06 — rfp_extraction_table_v4.
+table: v5                     # 확정 2026-09-08 — rfp_extraction_table_v5.
                               #   schema 1-12-2/v3, 1,200행·100문서×12필드, 검수 대기 0
                               #   상태 5종: value_present(896)/field_absent(254)/
                               #   external_reference(47)/not_disclosed(2)/conflict(1)/
                               #   extraction_failed(0)
-                              #   v3 대비 RFP-000067·RFP-000081의 컨소시엄 요건 2행을
-                              #   field_absent에서 value_present로 원문 근거에 맞게 정정
+                              #   v4의 1,200행 구조·상태는 유지하고, 추출형 7문항과 연결된
+                              #   6개 행의 누락 정보·목록 경계·정리값을 원문에 맞게 정정
                               #   공식 이름표: extraction_metadata.json (VERSION.txt 아님)
 index: v2             # 확정 2026-09-02 — shared_data/processed/index_v2 공식 공개.
                       #   chunks_v3(검색대상 14,828청크·98문서) + document_registry_v2 +
@@ -41,10 +41,10 @@ index: v2             # 확정 2026-09-02 — shared_data/processed/index_v2 공
                       #   차단한다(vector_store.validate_index_tag). v1은 삭제하지 않고 보존.
 index_build_timestamp: null   # auto — 인덱스 생성 시각. 4-9-2 꼬리표, 5명 병렬 작업
                               #   버전 구분용. reference_datetime과 무관(별개 값)
-evalset: v2           # 확정 2026-09-06 — data/evalsets/final/v2/VERSION.txt
-                      #   (evalset v2 / corpus v2 / chunking v3). 연습 문항 8개는
+evalset: v3           # 확정 2026-09-08 — data/evalsets/final/v3/VERSION.txt
+                      #   (evalset v3 / corpus v2 / chunking v3). 연습 문항 8개는
                       #   /srv/rfp/evalset/practice_items.jsonl
-scorer: v2            # 확정 2026-09-06 — src/grader 채점기 v2
+scorer: v3            # 확정 2026-09-08 — GPT-5 temperature 거부 시 인자를 빼고 1회 재시도
 
 # ─────────────────────────────
 # ② 청킹 (4-7, 4-7-1) — 박예진 담당
@@ -223,7 +223,7 @@ track_document_version: true  # 확정 — 모든 청크·벡터에 document_id,
                               #   processed_sha256(전처리 md 해시), sidecar_sha256
                               #   (위치정보 해시) 저장. 같은 document_id에 버전/해시
                               #   섞이면 인덱싱 중단
-extraction_version: "v4"      # 확정 2026-09-06 — rfp_extraction_table_v4 기준.
+extraction_version: "v5"      # 확정 2026-09-08 — rfp_extraction_table_v5 기준.
                               #   ①의 table과 항상 같아야 함.
                               #   ★뜻: "지금 구조화 조회에 쓰는 추출표 버전".
                               #     인덱스를 만들 당시의 계보와는 다른 개념이다 —
@@ -256,7 +256,7 @@ reference_datetime: "2024-06-01"       # 확정 2026-08-26 (박예진 1-9 실측
 # ⭐ 2026-09-02 (4-4 확정) 마감일 자료 출처를 identity_v2로 통일.
 #    - 마감일 값·근거 위치 : document_registry_v2/document_identity_v2.csv (identity_v2)
 #    - 일반 QA 원문 근거   : chunks_v3
-#    - 나머지 12필드       : rfp_extraction_table_v4
+#    - 나머지 12필드       : rfp_extraction_table_v5
 #    원본 shared_data/raw/data_list.csv를 실행 경로가 직접 읽던 코드는 폐기했다.
 identity_source: "identity_v2"          # 확정 2026-09-02 — 마감일·발주기관·사업명의 유일 출처
 deadline_filter_field: "bid_deadline"   # 확정 2026-09-02 — identity_v2의 실제 컬럼명 그대로

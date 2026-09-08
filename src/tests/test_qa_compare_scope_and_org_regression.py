@@ -279,15 +279,15 @@ _IDENTITY_CSV = _PROCESSED / "document_registry_v2" / "document_identity_v2.csv"
 from conftest import (resolve_official_extraction_dir,      # noqa: E402
                       resolve_official_evalset_items)
 
-_EXTRACTION_DIR = resolve_official_extraction_dir("v4")
+_EXTRACTION_DIR = resolve_official_extraction_dir("v5")
 _CHUNKS_DIR = _PROCESSED / "chunks_v3"
 _PRACTICE_ITEMS = _RAG_ROOT / "evalset" / "practice_items.jsonl"
-_OFFICIAL_ITEMS = resolve_official_evalset_items("v2")
+_OFFICIAL_ITEMS = resolve_official_evalset_items("v3")
 
 _MISSING_OFFICIAL = [
     name for name, ok in (
         ("identity", _IDENTITY_CSV.exists()),
-        ("추출표 v4", _EXTRACTION_DIR is not None),
+        ("추출표 v5", _EXTRACTION_DIR is not None),
         ("청크 v3", _CHUNKS_DIR.exists()),
     ) if not ok
 ]
@@ -298,8 +298,8 @@ official = pytest.mark.skipif(
 )
 
 _OFFICIAL_CFG = dict(
-    cfg(), corpus="v2", preprocess="v2", table="v4",
-    document_registry_version="v2", chunking_version="v3", extraction_version="v4",
+    cfg(), corpus="v2", preprocess="v2", table="v5",
+    document_registry_version="v2", chunking_version="v3", extraction_version="v5",
     schema_version="1-12-2/v3",
 )
 
@@ -322,7 +322,7 @@ def official_identity():
 def official_table():
     from table_query import load_extraction_table
     return load_extraction_table(
-        _EXTRACTION_DIR / "extraction_table_v4.json", cfg=_OFFICIAL_CFG,
+        _EXTRACTION_DIR / "extraction_table_v5.json", cfg=_OFFICIAL_CFG,
         metadata_path=_EXTRACTION_DIR / "extraction_metadata.json", official=True)
 
 

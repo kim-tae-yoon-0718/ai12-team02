@@ -1,0 +1,17 @@
+evalset: v3
+status: official
+supersedes: v2
+source_evalset: v2
+scorer: v3
+extraction_table: v5
+corpus: v2
+preprocess: v2
+chunking: v3
+registry: v2
+identity: v2
+index: v2
+reference_time: 2024-06-01
+items: 50 (selection 25 / extraction 15 / qa 10)
+evalset_sha256: 88b28b480ddfa0ad37b25db5b656f2dd94900eb8b477eafda9587d9065223197
+source_base_dev_commit: 15867c007c14b8aeb0de4029f1532e84f8a2915b
+promoted: 2026-09-08
