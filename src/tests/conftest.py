@@ -29,7 +29,7 @@ OFFICIAL_RAG_ROOT = Path(os.environ.get("RAG_ROOT_OFFICIAL", "/srv/rfp"))
 OFFICIAL_PROCESSED = OFFICIAL_RAG_ROOT / "shared_data" / "processed"
 
 
-def resolve_official_extraction_dir(version: str = "v4") -> Path | None:
+def resolve_official_extraction_dir(version: str = "v5") -> Path | None:
     """공식 추출표 폴더 — ① 저장소 data/preprocessed ② 서버 공용 경로."""
     for d in (REPO_ROOT / "data" / "preprocessed" / f"rfp_extraction_table_{version}",
               OFFICIAL_PROCESSED / f"rfp_extraction_table_{version}"):
@@ -38,7 +38,7 @@ def resolve_official_extraction_dir(version: str = "v4") -> Path | None:
     return None
 
 
-def resolve_official_evalset_items(version: str = "v2") -> Path | None:
+def resolve_official_evalset_items(version: str = "v3") -> Path | None:
     """공식 평가셋 items.jsonl — ① 저장소 data/evalsets/final ② 서버 공용 경로."""
     for p in (REPO_ROOT / "data" / "evalsets" / "final" / version / "items.jsonl",
               OFFICIAL_RAG_ROOT / "evalset" / version / "items.jsonl"):

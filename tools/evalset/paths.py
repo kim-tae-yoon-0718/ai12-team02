@@ -63,11 +63,11 @@ def official_paths(data_root_path: Path) -> dict[str, Path]:
     return {
         "registry": p / "document_registry_v2/document_registry_v2.json",
         "identity": p / "document_registry_v2/document_identity_v2.csv",
-        "table": p / "rfp_extraction_table_v4/extraction_table_v4.json",
+        "table": p / "rfp_extraction_table_v5/extraction_table_v5.json",
         "chunks": p / "chunks_v3/chunks.jsonl",
         "corpus": p / "corpus_v2",
         "index": p / "index_v2",
-        "official_items": data_root_path / "evalset/v1/items.jsonl",
+        "official_items": data_root_path / "evalset/v3/items.jsonl",
         "practice_items": data_root_path / "evalset/practice_items.jsonl",
         "data_list_csv": data_root_path / "shared_data/raw/data_list.csv",
     }

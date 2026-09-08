@@ -1,0 +1,12 @@
+{
+  "source_evalset": "v2",
+  "source_sha256": "0cf0868aaa1466b91fee79cba9ac7eb0fe935b32254a9e6b8272d3ca4bbeb007",
+  "released_evalset": "v3",
+  "released_sha256": "88b28b480ddfa0ad37b25db5b656f2dd94900eb8b477eafda9587d9065223197",
+  "item_count": 50,
+  "question_changes": 0,
+  "answer_changes": 0,
+  "evidence_source_changes": 719,
+  "from": "extraction_table_v4",
+  "to": "extraction_table_v5"
+}

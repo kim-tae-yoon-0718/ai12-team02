@@ -1,0 +1,27 @@
+{
+  "schema_version": "1-12-2/v3",
+  "extraction_version": "v5",
+  "supersedes": "v4",
+  "status": "official",
+  "corpus_version": "v2",
+  "registry_version": "v2",
+  "row_count": 1200,
+  "document_count": 100,
+  "field_count": 12,
+  "source_table_sha256": "44c973d79d7fe4d7b5693fdad070572e846c11a15b8bf8bcaca66c4e16d2a1df",
+  "table_sha256": "b6082b9bee4ab71b0260d0912f5ac71ea2ccea5fcf9f61390792579b11a5070e",
+  "generator": "tools/evalset/build_extraction_table_v5.py",
+  "decisions": "tools/evalset/extraction_table_v5_decisions.json",
+  "changed_rows": 6,
+  "affected_evalset_items": [
+    "EXT-01",
+    "EXT-02",
+    "EXT-03",
+    "EXT-06",
+    "EXT-08",
+    "EXT-12",
+    "EXT-14"
+  ],
+  "released_at": "2026-09-08",
+  "note": "원문 값은 보존하고 6개 행의 누락 정보·목록 경계·정리값만 바로잡았다."
+}

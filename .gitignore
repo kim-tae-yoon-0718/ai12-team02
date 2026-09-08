@@ -244,6 +244,8 @@ data/evalsets/*
 data/preprocessed/*
 !data/preprocessed/rfp_extraction_table_v4/
 !data/preprocessed/rfp_extraction_table_v4/**
+!data/preprocessed/rfp_extraction_table_v5/
+!data/preprocessed/rfp_extraction_table_v5/**
 
 # 벡터 DB / 인덱스
 vectorstore/

@@ -363,7 +363,7 @@ class TestOfficialCombinationBoots:
         from config import load_config
         from answer_pipeline import build_runtime, add_common_args
         cfg = load_config(None)
-        assert cfg["extraction_version"] == "v4"
+        assert cfg["extraction_version"] == "v5"
         assert cfg["index_source_extraction_version"] == "v3"
 
         parser = argparse.ArgumentParser()
@@ -373,12 +373,12 @@ class TestOfficialCombinationBoots:
         assert len(rt["table"]) == 1200
 
     def test_11_official_input_tests_actually_run(self):
-        """공식 입력 테스트가 저장소 v4 를 찾아 skip 되지 않는지."""
+        """공식 입력 테스트가 저장소 v5 를 찾아 skip 되지 않는지."""
         import importlib
         mod = importlib.import_module("test_official_inputs")
         assert mod.EXTRACTION_DIR is not None
         assert mod.EXTRACTION_DIR == REPO_ROOT / "data" / "preprocessed" / \
-            "rfp_extraction_table_v4"
+            "rfp_extraction_table_v5"
         assert mod._MISSING == [], f"skip 사유가 남아 있다: {mod._MISSING}"
         assert mod.pytestmark.args[0] is False
 
@@ -389,19 +389,25 @@ class TestOfficialCombinationBoots:
 
 class TestFixedAssetsUnchanged:
     def test_12_evalset_and_table_fingerprints(self):
-        expected = {
+        preserved = {
             "data/evalsets/final/v2/items.jsonl":
                 "0cf0868aaa1466b91fee79cba9ac7eb0fe935b32254a9e6b8272d3ca4bbeb007",
             "data/preprocessed/rfp_extraction_table_v4/extraction_table_v4.json":
                 "44c973d79d7fe4d7b5693fdad070572e846c11a15b8bf8bcaca66c4e16d2a1df",
         }
-        for rel, want in expected.items():
+        released = {
+            "data/evalsets/final/v3/items.jsonl":
+                "88b28b480ddfa0ad37b25db5b656f2dd94900eb8b477eafda9587d9065223197",
+            "data/preprocessed/rfp_extraction_table_v5/extraction_table_v5.json":
+                "b6082b9bee4ab71b0260d0912f5ac71ea2ccea5fcf9f61390792579b11a5070e",
+        }
+        for rel, want in {**preserved, **released}.items():
             p = REPO_ROOT / rel
             assert p.exists(), f"{rel} 가 없습니다"
             assert _sha256(p) == want, f"{rel} 지문이 바뀌었습니다 — 고정 자료 수정 금지"
 
     def test_12b_evalset_has_exactly_50_items(self):
-        p = REPO_ROOT / "data" / "evalsets" / "final" / "v2" / "items.jsonl"
+        p = REPO_ROOT / "data" / "evalsets" / "final" / "v3" / "items.jsonl"
         assert sum(1 for line in p.read_text(encoding="utf-8").splitlines()
                    if line.strip()) == 50
 

@@ -147,8 +147,8 @@ def test_missing_versions_fall_back_to_unknown_without_dropping_fields(tmp_path:
     # (index_v2 = chunks_v3 + text-embedding-3-small). 이 단언은 "설정 기본값이
     # provenance 로 그대로 전달된다"를 검사하는 것이며 강도는 그대로다.
     assert prov["index"] == "v2"    # config/grader.yaml 기본값 (실사용 index_v2)
-    assert prov["table"] == "v4"    # config/grader.yaml — 실사용값 rfp_extraction_table_v4
-    assert prov["scorer"] == "v2"   # config/grader.yaml — 채점 오류 수정 버전
+    assert prov["table"] == "v5"    # config/grader.yaml — 실사용값 rfp_extraction_table_v5
+    assert prov["scorer"] == "v3"   # config/grader.yaml — GPT-5 temperature 호환 버전
 
     for row in per_item:
         assert set(row["provenance"]) == EXPECTED_FIELDS
