@@ -15,7 +15,6 @@ import sys
 from pathlib import Path
 import gradio as gr
 
-
 _CUSTOM_CSS = """
 /* 1) 폰트 (경기서체) */
 @font-face {
@@ -41,15 +40,15 @@ html, body, .gradio-container, .gradio-container .main, .app {
 
 /* 3) 팔레트 */
 .gradio-container {
-    --body-text-color: #2E2A24;          
-    --background-fill-primary: #F7F5EF; 
+    --body-text-color: #2E2A24;            
+    --background-fill-primary: #F7F5EF;    
     --background-fill-secondary: #EEF2E8; 
     --border-color-primary: #DDE3D4;
     --input-border-color: #C7CFBA;
     --input-text-color: #2E2A24;
     --input-placeholder-color: #8A9179;
 
-    --button-primary-background-fill: #55643F; 
+    --button-primary-background-fill: #55643F;     
     --button-primary-text-color: #FFFFFF;
     --button-primary-background-fill-hover: #445133;
     --button-primary-text-color-hover: #FFFFFF;
@@ -63,7 +62,7 @@ html, body, .gradio-container, .gradio-container .main, .app {
 .block:not(.hide-container) {
     background: #F7F5EF !important;
     border: 1px solid #DDE3D4 !important;
-    border-radius: 12px !important;
+    border-radius: 14px !important;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12) !important;
 }
 
@@ -87,14 +86,14 @@ html, body, .gradio-container, .gradio-container .main, .app {
 /* 7) 챗 말풍선 */
 .message.bot {
     background: #FFFFFF !important;
-    color: #657652 !important;
+    color: #2E2A24 !important;
 }
 .message.user {
-    background: #E3EAD9 !important;
-    color: #657652 !important;
+    background: #F4D188 !important;
+    color: #2E2A24 !important;
 }
 
-/* 8) 제목·부제 */
+/* 8) 제목 */
 #app-title h2 {
     font-family: 'Gyeonggi', sans-serif;
     font-weight: 500;
@@ -126,9 +125,15 @@ _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "src" / "scripts"))
 
 from answer_pipeline import (
-    build_runtime, answer, answer_to_response, SessionState,
-    load_config, EmbeddingClient, GenerationClient
+    build_runtime,
+    answer,
+    answer_to_response,
+    SessionState,
+    load_config,
+    EmbeddingClient,
+    GenerationClient,
 )
+
 
 # runtime (시작 시 1회 로드)
 # Gradio는 argparse로 args 생성 못함
@@ -151,8 +156,12 @@ def _args() -> argparse.Namespace:
 
 _ARGS = _args()
 _CFG = load_config(_ARGS.experiment_config)
-_RT = build_runtime(_ARGS, _CFG)    # {"store", "table", "identity", "locator", "registry_scope", ...}
-_cache: dict = {}            # 클라이언트 팩토리: 세션 동안 클라이언트 1개 사용 (CLI main() 캐시 그대로)
+_RT = build_runtime(
+    _ARGS, _CFG
+)  # {"store", "table", "identity", "locator", "registry_scope", ...}
+_cache: dict = (
+    {}
+)  # 클라이언트 팩토리: 세션 동안 클라이언트 1개 사용 (CLI main() 캐시 그대로)
 
 
 def _embed() -> EmbeddingClient:
@@ -211,17 +220,24 @@ def respond(message: str, history: list, session: SessionState | None):
         return "질문을 입력해 주세요.", "", session
 
     if session is None:
-        session = SessionState()    # 대화 첫 턴에만 생성
+        session = SessionState()  # 대화 첫 턴에만 생성
     try:
         result = answer(
-            message, _RT["store"], _embed, _generate,
-            _RT["table"], _CFG,
-            identity=_RT["identity"], session=session,
-            locator=_RT["locator"], registry_scope=_RT["registry_scope"],
+            message,
+            _RT["store"],
+            _embed,
+            _generate,
+            _RT["table"],
+            _CFG,
+            identity=_RT["identity"],
+            session=session,
+            locator=_RT["locator"],
+            registry_scope=_RT["registry_scope"],
         )
         resp = answer_to_response(message, result)
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         return f"오류 발생: {type(e).__name__}", "", session
 
@@ -233,25 +249,29 @@ def respond(message: str, history: list, session: SessionState | None):
 
 # UI
 def build_ui() -> gr.Blocks:
-    with gr.Blocks(title="입찰메이트 RAG 데모", css=_CUSTOM_CSS) as demo:
+    with gr.Blocks(title="입찰메이트 RAG 데모") as demo:
         gr.Markdown("## 입찰메이트 — RFP 입찰 컨설팅 RAG (데모)", elem_id="app-title")
 
-        session_state = gr.State(None)    # 대화별 SessionState 저장
+        session_state = gr.State(None)  # 대화별 SessionState 저장
         with gr.Row():
             with gr.Column(scale=3):
                 chatbot = gr.Chatbot(height=480)
                 msg = gr.Textbox(
-                    placeholder="질문을 작성해 주세요",
-                    label="질문", elem_id="question-box",
+                    placeholder="예: 오늘 등록된 사업 찾아줘",
+                    label="질문",
+                    elem_id="question-box",
                 )
             with gr.Column(scale=2):
                 gr.Markdown("### 근거 (Sources)")
                 sources_box = gr.Markdown(
-                    "_질문에 대한 근거는 여기 표시됩니다._", elem_id="sources-panel",
+                    "_질문에 대한 근거는 여기 표시됩니다._",
+                    elem_id="sources-panel",
                 )
 
         def submit(message, chat_history, session):
-            answer_text, sources_md, new_session = respond(message, chat_history, session)
+            answer_text, sources_md, new_session = respond(
+                message, chat_history, session
+            )
             chat_history = (chat_history or []) + [
                 {"role": "user", "content": message},
                 {"role": "assistant", "content": answer_text},
@@ -273,4 +293,4 @@ if __name__ == "__main__":
 
     ui = build_ui()
     _ASSETS = str(Path(__file__).resolve().parent / "assets")
-    ui.launch(share=False, allowed_paths=[_ASSETS])
+    ui.launch(share=False, allowed_paths=[_ASSETS], css=_CUSTOM_CSS)
