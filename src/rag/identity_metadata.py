@@ -20,7 +20,7 @@ from __future__ import annotations
 import csv
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -406,6 +406,20 @@ def is_before_deadline(
     if rec.bid_deadline is None:
         return None, "마감일 미상(identity_v2 bid_deadline 값 없음)"
     return (rec.bid_deadline >= reference_datetime), ""
+
+
+def urgent_deadline_documents(
+    index: IdentityIndex, reference_datetime: datetime, urgent_days: int,
+) -> list[tuple[str, datetime]]:
+    """마감이 아직 안 지났고 기준 시각부터 urgent_days일 이내인 문서를
+    마감일 오름차순으로 반환한다(대화 시작 시 안내용, 1회성 배너 등에서 사용)."""
+    urgent_until = reference_datetime + timedelta(days=urgent_days)
+    found = [
+        (doc_id, deadline)
+        for doc_id, deadline in index.deadline_map().items()
+        if deadline is not None and reference_datetime <= deadline <= urgent_until
+    ]
+    return sorted(found, key=lambda pair: pair[1])
 
 
 def reference_datetime_from_config(cfg: dict[str, Any]) -> datetime:

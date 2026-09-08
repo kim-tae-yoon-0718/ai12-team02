@@ -50,6 +50,13 @@ def _validate_config(cfg: dict[str, Any]) -> None:
     top_k = cfg.get("top_k")
     if not isinstance(top_k, int) or isinstance(top_k, bool) or top_k <= 0:
         raise RuntimeError(f"top_k는 양의 정수여야 합니다. 현재 값: {top_k!r}")
+    urgent_days = cfg.get("deadline_urgent_days")
+    if urgent_days is not None and (
+        not isinstance(urgent_days, int) or isinstance(urgent_days, bool) or urgent_days < 0
+    ):
+        raise RuntimeError(
+            f"deadline_urgent_days는 0 이상의 정수 또는 null이어야 합니다. 현재 값: {urgent_days!r}"
+        )
 
 
 def load_config(experiment_config_path: str | None = None) -> dict[str, Any]:

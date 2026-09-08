@@ -25,7 +25,7 @@ import json
 import re
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
@@ -46,18 +46,21 @@ from router import route, RouteResult, NO_SEARCH_SYSTEM_HELP  # noqa: E402
 from table_query import (  # noqa: E402
     load_extraction_table, parse_conditions, run_conditions_query, QueryResult,
     parse_selection, run_selection_query, is_selection_question,
+    ConditionQuery, SelectionParse, operator_kind,
     names_specific_document,
     detect_field, detect_fields, needs_explanation, lookup_field, FIELD_KEYWORDS,
     detect_deadline_question, detect_deadline_eligibility_question, needs_deadline_data,
     classify_region_restriction, classify_consortium, NON_VALUE_STATUS,
     KIND_SEMANTIC,
 )
+from planner import ExecutionPlan, parse_plan  # noqa: E402
 from document_registry import (  # noqa: E402
     RegistryScope, load_registry_scope, DocumentRegistryError,
 )
 from identity_metadata import (  # noqa: E402
     IdentityIndex, load_identity, is_before_deadline, deadline_citation,
     deadline_evidence, reference_datetime_from_config, DEADLINE_COLUMN,
+    urgent_deadline_documents,
 )
 from doc_resolver import (  # noqa: E402
     DocumentResolution, resolve_document, resolve_documents_for_compare,
@@ -108,6 +111,8 @@ _ANAPHORA_MARKERS_DOC = "그 사업 / 이 사업 / 거기 / 그거"
 @dataclass
 class SessionState:
     active_document_id: str | None = None
+    # 대화(세션) 시작 시 한 번만 마감 임박 배너를 띄우기 위한 플래그.
+    urgent_banner_shown: bool = False
 
 
 @dataclass
@@ -132,6 +137,9 @@ class Answer:
     citations: list[dict] = field(default_factory=list)
     selected_document_ids: list[str] = field(default_factory=list)
     failure: str | None = None
+    # 채점기 응답 계약(answer_to_response)엔 포함하지 않는다 — 세션 시작 안내용
+    # 부가 정보이지 채점 대상 답변이 아니다. 실제 서비스 UI가 직접 이 필드를 읽는다.
+    session_banner: str | None = None
     # 어떤 공식 자료를 실제로 썼는지(버전 포함) — 답변 근거의 출처 추적용
     used_sources: list[dict] = field(default_factory=list)
     # 결함 1-4 — citations 를 어떻게 골랐는지(모델 선언·미지 ID 등) 진단용
@@ -213,7 +221,19 @@ def as_list_value(row: dict) -> list[str] | None:
                 return [str(x) for x in parsed]
     raw = row.get("answer_raw")
     if isinstance(raw, str) and "\n" in raw.strip():
-        parts = [p.strip() for p in raw.split("\n") if p.strip()]
+        parts: list[str] = []
+        enum_only = re.compile(r"^(?:[가-힣]|\d{1,2}|[①-⑳])\s*[.)]$")
+        enum_prefix = re.compile(r"^(?:[가-힣]|\d{1,2}|[①-⑳])\s*[.)]\s*")
+        for line in raw.splitlines():
+            line = re.sub(r"\s+", " ", line).strip()
+            if not line or enum_only.fullmatch(line):
+                continue
+            line = enum_prefix.sub("", line)
+            # 원문 줄바꿈으로 쪼개진 괄호·보충 설명은 별도 목록 항목이 아니다.
+            if parts and (line.startswith("(") or line.startswith("계약서")):
+                parts[-1] = f"{parts[-1]} {line}".strip()
+            else:
+                parts.append(line)
         if len(parts) >= 2:
             return parts
     return None
@@ -970,6 +990,23 @@ def _merge_structured(structured: list[StructuredEvidence],
 # 선별형
 # ---------------------------------------------------------------------------
 
+def urgent_deadline_banner(identity: IdentityIndex | None, cfg: dict[str, Any]) -> str | None:
+    """세션 시작 시 한 번 보여줄 마감 임박 공고 안내. 해당 없으면 None.
+
+    `deadline_urgent_days`가 설정돼 있을 때만 동작한다 — select 경로의
+    `apply_deadline_filter`와 달리 라우팅과 무관하게, 대화 시작 자체에 붙는다."""
+    urgent_days = cfg.get("deadline_urgent_days")
+    if identity is None or urgent_days is None:
+        return None
+    ref = reference_datetime_from_config(cfg)
+    urgent = urgent_deadline_documents(identity, ref, urgent_days)
+    if not urgent:
+        return None
+    lines = [f"마감이 {urgent_days}일 이내로 임박한 공고 {len(urgent)}건입니다:"]
+    lines += [f"- {doc_id} (마감: {deadline:%Y-%m-%d})" for doc_id, deadline in urgent]
+    return "\n".join(lines)
+
+
 def apply_deadline_filter(
     doc_ids: list[str], identity: IdentityIndex | None, cfg: dict[str, Any],
 ) -> tuple[list[str], list[str], str | None]:
@@ -979,9 +1016,16 @@ def apply_deadline_filter(
         return doc_ids, [], None
 
     ref = reference_datetime_from_config(cfg)
+    urgent_days = cfg.get("deadline_urgent_days")
+    urgent_until = (ref + timedelta(days=urgent_days)
+                    if urgent_days is not None else None)
     missing_policy = cfg.get("deadline_missing_policy", "show_as_unknown")
     kept, unknown_notes = [], []
     for doc_id in doc_ids:
+        if urgent_until is not None:
+            deadline = identity.deadline(doc_id)
+            if deadline is not None and not (ref <= deadline <= urgent_until):
+                continue
         ok, note = is_before_deadline(doc_id, identity, ref)
         if ok is False:
             continue
@@ -991,6 +1035,8 @@ def apply_deadline_filter(
 
     disclosure = (cfg.get("deadline_filter_disclosure_message")
                   if cfg.get("deadline_filter_disclosure") else None)
+    if urgent_days is not None and disclosure:
+        disclosure += f" (마감 임박 기준: 기준 시각부터 {urgent_days}일 이내)"
     return kept, unknown_notes, disclosure
 
 
@@ -998,6 +1044,7 @@ def apply_deadline_filter(
 # structured_answer)은 절대 자르지 않는다** — 화면 표시 제한과 실제 결과 제한은
 # 서로 다른 값이다. None 이면 전부 표시한다.
 SELECT_DISPLAY_LIMIT_DEFAULT: int | None = None
+SELECT_OUTPUT_STYLE_DEFAULT = "raw"
 UNDETERMINED_DISPLAY_LIMIT = 15
 
 # 선별 결과의 성격 — 진단 기록(condition_query.selection_diagnostics)에 남긴다.
@@ -1110,13 +1157,17 @@ def answer_select_by_table(
     citations: list[dict] = []
     lines: list[str] = []
     display_limit = cfg.get("select_display_limit", SELECT_DISPLAY_LIMIT_DEFAULT)
+    output_style = cfg.get("select_output_style", SELECT_OUTPUT_STYLE_DEFAULT)
     for doc_id in doc_ids:
         cells = []
         for cq in parse.conditions:
             ev = build_field_evidence(table, doc_id, cq.field, cfg, locator=locator)
             citations.extend(ev.citations)
             cells.append(_condition_cell(ev, cq))
-        lines.append(f"- {doc_id} — " + " / ".join(cells))
+        if output_style == "phrased":
+            lines.append(f"- {doc_id}: " + ", ".join(cells))
+        else:
+            lines.append(f"- {doc_id} — " + " / ".join(cells))
 
     shown = lines if display_limit is None else lines[:display_limit]
     cond_text = " AND ".join(c.describe() for c in parse.conditions)
@@ -1268,10 +1319,11 @@ def answer_extract_by_table(
     session: SessionState | None = None,
     identity: IdentityIndex | None = None,
     locator: ChunkLocator | None = None,
+    planned_fields: list[str] | None = None,
 ) -> Answer:
     """12필드 추출형. 마감일은 12필드 밖이라 identity_v2 전용 분기로 처리."""
     active = session.active_document_id if session else None
-    fields = _requested_fields(question)
+    fields = planned_fields if planned_fields is not None else _requested_fields(question)
 
     # 마감일 하나만 묻는 기존 출력은 보존한다. 함께 물은 다른 필드를 삼키지 않는다.
     if fields == [_DEADLINE_FIELD] and not needs_explanation(question):
@@ -1541,6 +1593,31 @@ def answer(
     registry_scope: RegistryScope | None = None,
 ) -> Answer:
     r: RouteResult = route(question, cfg)
+    planned_fields: list[str] | None = None
+    planned_task: str | None = None
+    select_parse: SelectionParse | None = None
+    if cfg.get("planning_method") == "llm":
+        raw_plan = get_gen_client().plan(question)
+        try:
+            execution_plan = parse_plan(raw_plan)
+        except (ValueError, json.JSONDecodeError):
+            execution_plan = None
+        if execution_plan is not None:
+            planned_task = execution_plan.task_type
+            if execution_plan.task_type == "select":
+                select_parse = SelectionParse(
+                    conditions=[ConditionQuery(
+                        field=c["field"], operator=c["operator"],
+                        value=c.get("value"), negated=bool(c.get("negated", False)),
+                        raw_text=json.dumps(c, ensure_ascii=False),
+                        kind=operator_kind(c["operator"]),
+                    ) for c in execution_plan.conditions],
+                    has_request_marker=True,
+                    has_plural_marker=True,
+                )
+            elif execution_plan.task_type == "extract":
+                planned_fields = list(execution_plan.fields)
+            r = RouteResult(execution_plan.task_type, "llm_plan")
 
     # 라우터는 identity 없이 잠정 판단을 한다. 여기서 identity(기관명·사업명)를 넣어
     # **같은 함수**로 최종 판단을 한 번 더 한다 — 라우터와 실행부에 서로 다른 규칙을
@@ -1550,9 +1627,8 @@ def answer(
     #    건너뛰어서, "○○재단 ○○사업의 필수 제출 서류 목록을 알려줘"가 선별형으로
     #    빠지고 조건을 모르겠다며 되물었다(실제 재현). 이제 복수 표현과 무관하게
     #    문서 특정을 먼저 보고, 명시적인 전체 범위 표현이 있을 때만 무시한다.
-    select_parse = None
     if r.task_type == "select":
-        parse = parse_selection(question)
+        parse = select_parse if select_parse is not None else parse_selection(question)
         if not is_selection_question(question, parse, identity=identity):
             # ⚠️ 기관·사업명이 **여러 문서**에 걸리는데 조건까지 읽혔다면, 그건
             #    "그 기관 안에서 조건에 맞는 걸 골라 달라"는 요청이다. 이번 범위에서
@@ -1594,7 +1670,8 @@ def answer(
         elif r.task_type == "extract":
             result = answer_extract_by_table(
                 question, table, store, get_embed_client, get_gen_client, cfg,
-                session=session, identity=identity, locator=locator)
+            session=session, identity=identity, locator=locator,
+            planned_fields=planned_fields)
         elif r.task_type == "compare":
             result = answer_compare_by_table(question, table, cfg, identity=identity,
                                              locator=locator)
@@ -1616,6 +1693,9 @@ def answer(
     result.task_type = r.task_type
     result.route_matched_rule = r.matched_rule
     result.route_is_fallback = r.is_fallback
+    if session is not None and not session.urgent_banner_shown:
+        result.session_banner = urgent_deadline_banner(identity, cfg)
+        session.urgent_banner_shown = True
     return result
 
 

@@ -183,6 +183,33 @@ class GenerationClient:
         """문항 시작 시 호출 — 이전 문항 사용량이 다음 문항으로 복사되지 않게."""
         self.usage = Usage()
 
+    def plan(self, question: str) -> str:
+        """Return a JSON execution plan for the opt-in Stage1 experiment."""
+        prompt = _load_system_prompt_template(self.cfg.get("prompt_plan", "plan_v1.txt"))
+        messages = [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": question},
+        ]
+        kwargs = build_request_kwargs(self.cfg, self.model, messages)
+        self.last_request_kwargs = {k: v for k, v in kwargs.items() if k != "messages"}
+        resp = self.client.chat.completions.create(**kwargs)
+        if resp.usage:
+            cached = 0
+            details = getattr(resp.usage, "prompt_tokens_details", None)
+            if details is not None:
+                cached = getattr(details, "cached_tokens", 0) or 0
+            self.usage.add_generation(
+                prompt_tokens=resp.usage.prompt_tokens,
+                completion_tokens=resp.usage.completion_tokens,
+                cached_tokens=cached,
+            )
+        if not resp.choices:
+            raise GenerationResponseError("계획 응답에 후보가 없습니다.")
+        content = getattr(resp.choices[0].message, "content", None) or ""
+        if not isinstance(content, str) or not content.strip():
+            raise GenerationResponseError("계획 응답이 비어 있습니다.")
+        return content.strip()
+
     def build_messages(
         self, question: str, context_chunks: list[str],
         structured_context: str | None = None,
