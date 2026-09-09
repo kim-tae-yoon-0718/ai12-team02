@@ -4,7 +4,7 @@ RAG - 데모용 프로토타입 UI
 구조: src/scripts/answer_pipeline.py 의
     build_runtime()/answer()/answer_to_response() 사용
     1. 첫 시작(build_runtime 1회) -> 2. 대화 세션 유지 -> 3. 화면 표시
-실행: python demo/app.py
+실행: python3 demo/app.py
 """
 
 # pip install gradio openai
@@ -12,9 +12,32 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from datetime import timedelta
 from pathlib import Path
 import gradio as gr
 
+# src/scripts 에 __init__이 없으므로, 직접 경로 지정
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT / "src" / "scripts"))
+
+from answer_pipeline import (
+    build_runtime,
+    answer,
+    answer_to_response,
+    SessionState,
+    load_config,
+    EmbeddingClient,
+    GenerationClient,
+)
+
+# 기능 추가 - 고객 회사 정보 및 추천 공고
+sys.path.insert(0, str(_ROOT / "tools" / "company_match"))
+sys.path.insert(0, str(_ROOT / "src" / "rag"))
+
+import company_match as C
+from identity_metadata import reference_datetime_from_config
+
+# 데모 테마 커스텀
 _CUSTOM_CSS = """
 /* 1) 폰트 (경기서체) */
 @font-face {
@@ -101,38 +124,86 @@ html, body, .gradio-container, .gradio-container .main, .app {
     letter-spacing: -0.01em;
 }
 
-/* 근거 (Sources) */
+/* 9) 근거 (Sources) */
 .hide-container .md h3,
 .hide-container .md p {
     color: #F7F5EF !important;
 }
 
-/* 9) 여백 */
+/* 10-1) 기능 선택 — 선택된 탭 글씨·밑줄을 버터색으로  */
+button.selected,
+.tab-nav button.selected,
+.tabs button.selected {
+    color: #F4D188 !important;
+    border-bottom-color: #F4D188 !important;
+}
+.tab-nav button,
+.tabs button {
+    color: #D6DEC8 !important;   /* 비선택 탭 = 연한 글씨*/
+}
+
+/* 10-2) 탭 밑줄(선택 표시) — border 외 다른 방식으로 그려지는 경우까지 덮는다 */
+.tab-nav button.selected::after,
+.tabs button.selected::after,
+button.selected::after {
+    background: #F4D188 !important;
+    background-color: #F4D188 !important;
+    border-color: #F4D188 !important;
+}
+.tab-nav > button.selected,
+.tabs > button.selected {
+    border-bottom: 2px solid #F4D188 !important;
+    box-shadow: inset 0 -2px 0 0 #F4D188 !important;
+}
+
+/* 10-3) 탭 밑줄 — 어떤 방식으로 그려지든 덮도록 넓게 (border/box-shadow/가상요소) */
+[class*="tab"] button.selected,
+[class*="tab"] button[aria-selected="true"] {
+    color: #F4D188 !important;
+    border-bottom-color: #F4D188 !important;
+    box-shadow: inset 0 -3px 0 0 #F4D188 !important;
+}
+[class*="tab"] button.selected::after,
+[class*="tab"] button[aria-selected="true"]::after,
+[class*="tab"] button.selected::before,
+[class*="tab"] button[aria-selected="true"]::before {
+    background: #F4D188 !important;
+    background-color: #F4D188 !important;
+    border-color: #F4D188 !important;
+}
+
+/* 10-4) 오른쪽 결과 영역(진녹 배경 위 마크다운) — 밝은 글씨 */
+#cm-priority, #cm-priority *,
+#cm-review, #cm-review *,
+#cm-urgent, #cm-urgent * {
+    color: #F7F5EF !important;
+}
+#cm-priority h3, #cm-review h3, #cm-urgent h3 {
+    color: #F4D188 !important;   /* 결과 소제목은 버터색으로 강조 */
+}
+
+/* 11) 여백 */
 .gradio-container {
     padding: 28px !important;
 }
 
-/* 10) 본문 폰트 */
+/* 12-1) 본문 폰트 */
 .gradio-container, .gradio-container * {
     font-family: 'Gyeonggi', sans-serif !important;
     font-weight: 300;
 }
+
+/* 12-2) 폰트 미적용 요소(폼 라벨·버튼·라디오 등)까지 강제 */
+.gradio-container label,
+.gradio-container button,
+.gradio-container input,
+.gradio-container textarea,
+.gradio-container span,
+.gradio-container p,
+.gradio-container div {
+    font-family: 'Gyeonggi', sans-serif !important;
+}
 """
-
-
-# src/scripts 에 __init__이 없으므로, 직접 경로 지정
-_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_ROOT / "src" / "scripts"))
-
-from answer_pipeline import (
-    build_runtime,
-    answer,
-    answer_to_response,
-    SessionState,
-    load_config,
-    EmbeddingClient,
-    GenerationClient,
-)
 
 
 # runtime (시작 시 1회 로드)
@@ -214,6 +285,145 @@ def _decorate(resp: dict) -> str:
         return raw
 
 
+# 회사매칭: 회사 입력 정보 + 공고 마감일 임박, print만 Markdown 문자열로 대체
+def _doc_label(document_id: str, identity) -> str:
+    record = identity.get(document_id) if identity is not None else None
+    if record is None or not record.project_name:
+        return document_id
+    return f"{document_id} · {record.project_name}"
+
+
+def _location(location) -> str:
+    if isinstance(location, str):
+        return location
+    if not isinstance(location, str):
+        return ""
+    heading = str(location.get("heading") or "").strip()
+    line = location.get("line_start") or location.get("line")
+    if heading and line:
+        return f"{heading} (line{line})"
+
+
+def _candidate(item: dict, identity) -> str:
+    """후보 1건을 Markdown 불릿으로, (원본 _print_candidate와 로직 동일)"""
+    lines = [f"- **{_doc_label(item['document_id'], identity)}**"]
+    for field_name in C.MATCHED_FIELDS:
+        detail = item["reasons"][field_name]
+        if detail["status"] not in {
+            C.FIELD_CONFIRMED,
+            C.FIELD_REVIEW,
+            C.FIELD_CONTRADICTION,
+        }:
+            continue
+        lines.append(f"- {field_name}: {detail['status']} - {detail['reason']}")
+        if detail["status"] == C.FIELD_REVIEW and detail["evidence"]:
+            lines.append(f"- 원문 근거: {detail['evidence'][:200]}")
+            location = _location(detail["location"])
+            if location:
+                lines.append(f"- 위치: {location}")
+    return "\n".join(lines)
+
+
+def _recommendations(
+    company_name: str, results: list[dict], identity, top_n: int = 5
+) -> tuple[str, str]:
+    """(우선 검토 후보) | (사람 확인 필요 후보) 반환"""
+    priority = [i for i in results if i["verdict"] == C.VERDICT_PRIORITY]
+    review = [i for i in results if i["verdict"] == C.VERDICT_REVIEW]
+    excluded = [i for i in results if i["verdict"] == C.VERDICT_EXCLUDED]
+
+    head = [f"### {company_name} · 우선 검토 후보 {min(len(priority), top_n)}건"]
+    if not priority:
+        head.append("명시적 조건 일치한 후보 없음")
+    else:
+        head.extend(_candidate(item, identity) for item in priority[:top_n])
+    priority_md = "\n".join(head)
+
+    body = [f"### 육안 확인이 필요 {min(len(review), top_n)}건"]
+    if not review:
+        body.append("_육안 확인 후보 없음")
+    else:
+        body.extend(_candidate(item, identity) for item in review[:top_n])
+    body.append("")
+    body.append(f"명시적 조건 불일치 -> 제외: {len(excluded)}건")
+    body.append("* 추천도 실수 할 수 있음. 육안 확인 팔요")
+    review_md = "\n".join(body)
+
+    return priority_md, review_md
+
+
+def _urgent(
+    results: list[dict], identity, cfg: dict, top_n: int = 5, urgent_days: int = 14
+) -> str:
+    """후보('제외'는 제외) 중 마감 임박 공고. (원본 print_urgent_candidates와 로직 동일)"""
+    if identity is None:
+        return "_마감 정보를 확인할 수 없습니다._"
+    candidate_ids = {
+        item["document_id"] for item in results if item["verdict"] != C.VERDICT_EXCLUDED
+    }
+    reference = reference_datetime_from_config(cfg)
+    end = reference + timedelta(days=urgent_days)
+    urgent = sorted(
+        (
+            (document_id, record.bid_deadline)
+            for document_id, record in identity.records.items()
+            if document_id in candidate_ids
+            and record.bid_deadline is not None
+            and reference <= record.bid_deadline <= end
+        ),
+        key=lambda item: (item[1], item[0]),
+    )[:top_n]
+    lines = [f"### 후보 중 {urgent_days}일 안에 마감하는 공고 {len(urgent)}건"]
+    if not urgent:
+        lines.append("_해당 공고가 없습니다._")
+    else:
+        lines.extend(
+            f"- {_doc_label(document_id, identity)} · {deadline:%Y-%m-%d}"
+            for document_id, deadline in urgent
+        )
+    return "\n".join(lines)
+
+
+def on_match(
+    company_name: str,
+    region: str,
+    fields_str: str,
+    certs_str: str,
+    consortium_choice: str,
+):
+    """폼(회사 정보) 제출 -> 프로필 구성 -> 매칭 -> 3개의 md(우선 검토 후보, 육안 확인 후보, 마감 임박) 반환"""
+    if not company_name.strip() or not region.strip():
+        return "회사 이름과 지역 설정은 필수입니다.", "", ""
+
+    profile = C.CompanyProfile(
+        company_name=company_name.strip(),
+        region=region.strip(),
+        business_fields=[s.strip() for s in fields_str.split(".") if s.strip()],
+        certifications=[s.strip() for s in certs_str.split(".") if s.strip()],
+        consortium_needed={"예": True, "아니오": False, "모름": None}.get(
+            consortium_choice
+        ),
+    )
+    eligible_ids = (
+        set(_RT["registry_scope"].eligible_ids)
+        if _RT["registry_scope"] is not None
+        else None
+    )
+    try:
+        results = C.match_company(profile, _RT["table"], eligible_ids)
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        return f"매칭 중 오류가 발생했습니다.: {type(e).__name__}", "", ""
+
+    priority_md, review_md = _recommendations(
+        company_name.strip(), results, _RT["identity"]
+    )
+    urgent_md = _urgent(results, _RT["identity"], _CFG)
+    return priority_md, review_md, urgent_md
+
+
 # 채팅 세션 기억 유지
 def respond(message: str, history: list, session: SessionState | None):
     if not message or not message.strip():
@@ -253,20 +463,54 @@ def build_ui() -> gr.Blocks:
         gr.Markdown("## 입찰메이트 — RFP 입찰 컨설팅 RAG (데모)", elem_id="app-title")
 
         session_state = gr.State(None)  # 대화별 SessionState 저장
-        with gr.Row():
-            with gr.Column(scale=3):
-                chatbot = gr.Chatbot(height=480)
-                msg = gr.Textbox(
-                    placeholder="예: 오늘 등록된 사업 찾아줘",
-                    label="질문",
-                    elem_id="question-box",
-                )
-            with gr.Column(scale=2):
-                gr.Markdown("### 근거 (Sources)")
-                sources_box = gr.Markdown(
-                    "_질문에 대한 근거는 여기 표시됩니다._",
-                    elem_id="sources-panel",
-                )
+
+        with gr.Tabs():
+            with gr.Tab("질문하기"):
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        chatbot = gr.Chatbot(height=480)
+                        msg = gr.Textbox(
+                            placeholder="예: 오늘 등록된 사업 찾아줘",
+                            label="질문",
+                            elem_id="question-box",
+                        )
+                    with gr.Column(scale=2):
+                        gr.Markdown("### 근거 (Sources)")
+                        sources_box = gr.Markdown(
+                            "_질문에 대한 근거는 여기 표시됩니다._",
+                            elem_id="sources-panel",
+                        )
+
+            with gr.Tab("회사 매칭"):
+                gr.Markdown("회사 정보를 입력하면 알맞은 입찰 공고를 추천합니다.")
+                with gr.Row():
+                    with gr.Column(scale=2):
+                        cm_name = gr.Textbox(label="회사 이름")
+                        cm_region = gr.Textbox(label="지역")
+                        cm_fields = gr.Textbox(
+                            label="사업분야",
+                            placeholder="에: 소프트웨어, 시스템구축",
+                        )
+                        cm_certs = gr.Textbox(
+                            label="보유 자격·신고증",
+                            placeholder="에: 정보통신공사업",
+                        )
+                        cm_consortium = gr.Radio(
+                            ["예", "아니오", "모름"],
+                            value="모름",
+                            label="공동수급 여부",
+                        )
+                        cm_btn = gr.Button("공고 매칭", variant="primary")
+                    with gr.Column(scale=3):
+                        cm_priority = gr.Markdown(
+                            "_우선 검토 후보_",
+                            elem_id="cm-priority",
+                        )
+                        cm_review = gr.Markdown(
+                            "_육안 확인 필요 후보_",
+                            elem_id="cm-review",
+                        )
+                        cm_urgent = gr.Markdown("_마감 임박 공고_", elem_id="cm-urgent")
 
         def submit(message, chat_history, session):
             answer_text, sources_md, new_session = respond(
@@ -282,6 +526,12 @@ def build_ui() -> gr.Blocks:
             submit,
             inputs=[msg, chatbot, session_state],
             outputs=[chatbot, sources_box, session_state, msg],
+        )
+
+        cm_btn.click(
+            on_match,
+            inputs=[cm_name, cm_region, cm_fields, cm_certs, cm_consortium],
+            outputs=[cm_priority, cm_review, cm_urgent],
         )
 
         return demo
