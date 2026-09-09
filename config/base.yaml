@@ -141,6 +141,10 @@ active_doc_state: true        # 확정 — 대화 이력 대신 활성 문서 ID
 # ④-1 3단계 공식 실행 — 규칙 고속 경로 + 2단계-3차 LLM 안전망
 # ─────────────────────────────
 stage3_rule_fast_path_enabled: true
+# 회사 정보 기반 참여 후보 추천 화면. true면 추천 화면을 먼저 보여주고,
+# false면 회사 정보를 묻지 않고 기존 3단계 질의응답으로 바로 이동한다.
+# 평가용 run_eval 경로는 이 값을 읽지 않으므로 50문항 기준선에는 영향이 없다.
+company_recommendation_enabled: true
 stage2_agent_model: "gpt-5-mini"
 stage2_agent_prompt: "stage2_agent_reflection_v1.txt"
 stage2_agent_max_completion_tokens: 16384

@@ -279,3 +279,6 @@ node_modules/
 package-lock.json
 .package-lock.json
 .openai_key
+
+# 로컬에서 사용자가 입력한 회사 정보. 공식 평가·추출 자료와 분리하고 커밋하지 않는다.
+data/company_profiles/
