@@ -654,10 +654,23 @@ def build_field_evidence(
             citations=cites, abstained=abstain, structured=structured, used_source=used,
         )
 
-    # 공백뿐인 원문은 빈 값이다. 숫자 0은 정상 값이므로 truthiness로 고르지 않는다.
+    # answer_normalized 는 추출표가 최종 답변용으로 검수해 둔 값이고,
+    # answer_raw 는 출처 감사·문맥 확인용 원문이다. 예전에는 raw 가 존재하면
+    # normalized 를 무시해 오탈자·조판 문구·불필요한 하위 항목이 최종 답에 섞였다.
+    # 최종 출력은 normalized 를 우선하고, 그것이 비어 있을 때만 raw 로 되돌아간다.
     raw_missing = _empty_value(value_raw)
-    display = clean_value_text(value_norm if raw_missing else value_raw)
-    if not display or (raw_missing and _empty_value(value_norm)):
+    normalized_missing = _empty_value(value_norm)
+    # 0은 과거 truthiness 결함으로 사라졌던 확정값이다. raw가 명시적인 0인데
+    # normalized가 다른 값이면 자료 불일치 상황에서 0을 결측으로 오해하지 않는다.
+    explicit_raw_zero = (
+        (isinstance(value_raw, (int, float)) and value_raw == 0)
+        or (isinstance(value_raw, str)
+            and re.fullmatch(r"0(?:\.0+)?(?:\s*원)?", value_raw.strip()) is not None)
+    )
+    display_source = (
+        value_raw if normalized_missing or explicit_raw_zero else value_norm)
+    display = clean_value_text(display_source)
+    if not display or (raw_missing and normalized_missing):
         return StructuredEvidence(
             kind="field", document_id=document_id, field_name=field_name,
             status="extraction_failed", answer_text="값 있음으로 표시됐지만 실제 값이 비어 있어 확인할 수 없습니다.",
@@ -1754,6 +1767,47 @@ def _stage2_observation(
             "citation": citation,
             "content": content,
         })
+    # 표 조회는 답 본문을 evidence에 한 번만 싣되, 제어기가 "빈 결과"로
+    # 오인하지 않도록 최상위에 값이 아니라 *완성 상태*를 명시한다.
+    # 원문 검색은 큰 청크를 중복하지 않기 위해 기존처럼 evidence만 사용한다.
+    structured_result: dict[str, Any] | None = None
+    answer_text = ""
+    if plan.action == "table_lookup":
+        status_rows = [
+            item for item in (result.condition_query or [])
+            if isinstance(item, dict) and item.get("field")
+        ]
+        field_statuses = {
+            str(item["field"]): str(item.get("status") or "")
+            for item in status_rows
+        }
+        final_statuses = {"value_present", "field_absent"}
+        complete = (
+            not result.abstained
+            and set(plan.requested_fields) == set(field_statuses)
+            and all(status in final_statuses for status in field_statuses.values())
+        )
+        structured_result = {
+            "result_status": "complete" if complete else "incomplete",
+            "field_statuses": field_statuses,
+            "value_policy": "answer_normalized_first_raw_fallback",
+        }
+        answer_text = (
+            f"추출표 조회 {'완료' if complete else '미완료'}: "
+            f"{len(field_statuses)}/{len(plan.requested_fields)}개 필드"
+        )
+    elif plan.action == "table_compare":
+        structured_result = {
+            "result_status": "complete" if not result.abstained else "incomplete",
+            "document_count": len(result.selected_document_ids),
+            "field_count": len(plan.requested_fields),
+            "value_policy": "answer_normalized_first_raw_fallback",
+        }
+        answer_text = (
+            f"추출표 비교 {'완료' if not result.abstained else '미완료'}: "
+            f"{len(result.selected_document_ids)}개 문서 × "
+            f"{len(plan.requested_fields)}개 필드"
+        )
     return {
         "observation_id": observation_id,
         "tool": plan.action,
@@ -1761,10 +1815,10 @@ def _stage2_observation(
         "document_ids": list(result.selected_document_ids),
         "requested_fields": list(plan.requested_fields),
         "answer_mode_requested": plan.answer_mode,
-        # Evidence content is the single textual observation. The previous
-        # payload repeated the same chunks in three different fields.
-        "answer_text": "",
-        "structured_result": None,
+        # 실제 값·원문은 evidence에 한 번만 둔다. answer_text와
+        # structured_result는 제어기가 결과 존재·완성도를 판단할 작은 계약이다.
+        "answer_text": answer_text,
+        "structured_result": structured_result,
         "abstained": result.abstained,
         "evidence": evidence,
     }
@@ -1798,18 +1852,42 @@ def _deterministic_list_units(structured: dict[str, Any]) -> list[str]:
     contains numbered top-level items and lettered children, only the numbered
     items are returned; children are not promoted into extra top-level answers.
     """
-    raw = str(structured.get("answer_raw") or "").strip()
-    raw_lines = [line.strip() for line in raw.splitlines() if line.strip()]
-    numbered = [line for line in raw_lines if _TOP_LEVEL_NUMBERED_ITEM.match(line)]
-    has_children = any(_LOWER_LEVEL_KOREAN_ITEM.match(line) for line in raw_lines)
-    if len(numbered) >= 2 and has_children:
-        candidates = numbered
-    elif raw_lines:
-        candidates = raw_lines
+    # items는 answer_normalized에서 복원한 최종 답변용 목록이다. 원문 줄은
+    # 검수된 목록이 없을 때만 쓰는 안전망이다.
+    items = structured.get("items")
+    normalized_items = (
+        [str(item).strip() for item in items if str(item).strip()]
+        if isinstance(items, list) else []
+    )
+    if normalized_items:
+        # normalized 목록에 원문의 하위 조판 항목(가/나)이 그대로 남아 있는
+        # 구버전 자료도 있다. raw의 명시적 번호 계층만 경계 정보로 사용해
+        # 하위 항목을 새 최상위 정답으로 승격하지 않는다. 문장 의미는 해석하지 않는다.
+        raw = str(structured.get("answer_raw") or "").strip()
+        raw_lines = [line.strip() for line in raw.splitlines() if line.strip()]
+        has_numbered_hierarchy = (
+            len([line for line in raw_lines
+                 if _TOP_LEVEL_NUMBERED_ITEM.match(line)]) >= 2
+            and any(_LOWER_LEVEL_KOREAN_ITEM.match(line) for line in raw_lines)
+        )
+        normalized_top_level = [
+            item for item in normalized_items
+            if _TOP_LEVEL_NUMBERED_ITEM.match(item)
+        ]
+        candidates = (
+            normalized_top_level
+            if has_numbered_hierarchy and len(normalized_top_level) >= 2
+            else normalized_items
+        )
     else:
-        items = structured.get("items")
-        candidates = ([str(item).strip() for item in items]
-                      if isinstance(items, list) else [])
+        raw = str(structured.get("answer_raw") or "").strip()
+        raw_lines = [line.strip() for line in raw.splitlines() if line.strip()]
+        numbered = [line for line in raw_lines if _TOP_LEVEL_NUMBERED_ITEM.match(line)]
+        has_children = any(_LOWER_LEVEL_KOREAN_ITEM.match(line) for line in raw_lines)
+        if len(numbered) >= 2 and has_children:
+            candidates = numbered
+        else:
+            candidates = raw_lines
 
     units: list[str] = []
     for item in candidates:
@@ -1943,9 +2021,10 @@ def _stage2_deterministic_extraction(
                 rendered.append(
                     f"이 문서에는 {field_name} 항목이 별도로 명시되어 있지 않습니다.")
             else:
-                raw = value.get("answer_raw")
                 normalized = value.get("answer_normalized")
-                display = clean_value_text(raw if not _empty_value(raw) else normalized)
+                raw = value.get("answer_raw")
+                display = clean_value_text(
+                    raw if _empty_value(normalized) else normalized)
                 if not display:
                     return None
                 rendered.append(display if len(field_values) == 1
@@ -2302,6 +2381,38 @@ def answer_stage2_structgpt(
         raise
 
     while len(decisions) <= max_tool_calls + 1:
+        # 특정 문서의 공식 필드를 표에서 모두 찾았고 상태도 확정됐다면,
+        # 자연어를 다시 해석하지 않고 검수된 normalized 값으로 즉시 조립한다.
+        # 불완전·상충·검수 대기 상태는 이 계약을 통과하지 못해 기존 LLM 루프로 간다.
+        if (records and cfg.get("stage2_deterministic_extraction_assembly", False)):
+            public, _answer = records[-1]
+            if public.get("tool") == "table_lookup":
+                tool_input = public.get("tool_input") or {}
+                automatic = Stage2Decision(
+                    action="finalize",
+                    task_type=initial_task_type or str(tool_input.get("task_type") or "extract"),
+                    document_scope=str(tool_input.get("document_scope") or "specific_documents"),
+                    result_assessment="sufficient",
+                    document_ids=list(public.get("document_ids") or []),
+                    requested_fields=list(public.get("requested_fields") or []),
+                    condition_logic=str(tool_input.get("condition_logic") or "AND"),
+                    conditions=list(tool_input.get("conditions") or []),
+                    search_query="",
+                    answer_mode=initial_answer_mode or str(
+                        public.get("answer_mode_requested") or "value"),
+                    decision_note="완전한 추출표 계약을 normalized 값으로 결정적 조립",
+                    used_observation_ids=[str(public["observation_id"])],
+                    used_evidence_ids=[
+                        str(item["evidence_id"])
+                        for item in public.get("evidence", [])
+                    ],
+                )
+                deterministic = _stage2_deterministic_extraction(automatic, records)
+                if deterministic is not None:
+                    decisions.append(automatic.as_dict())
+                    return finish(
+                        deterministic,
+                        "stage2_structgpt:complete_table_contract")
         public_observations = [public for public, _ in records]
         try:
             if preset_decision is not None:
