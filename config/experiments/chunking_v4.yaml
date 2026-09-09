@@ -1,0 +1,7 @@
+# 청크 v4 생성용 고정 전제. location 참조 파일은 실행 환경마다 경로가 달라
+# build_chunks.py의 --verify-location으로 명시한다.
+table: v5
+extraction_version: v5
+schema_version: "1-12-2/v3"
+chunking_version: v4
+
