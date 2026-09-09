@@ -50,6 +50,29 @@ REQUIRED_KEYS = [
     "table_format", "table_empty_cell",
 ]
 
+# 추출표 메타데이터가 '무엇을' 증언해야 하는가 — 키 이름이 아니라 목적으로 요구한다.
+#
+# ⚠️ 이름만 보는 검사는 추출표 v5 를 막았다. v5 는 같은 목적을 다른 키로 적는다
+#    (released_at / corpus_version / source_table_sha256 / decisions). 게다가 v3·v4 의
+#    corpus_dir 은 /srv/rfp 절대경로, calibration_csv 는 /home/spai1205 절대경로라
+#    규약 §2-3(절대경로 하드코딩 금지)에 어긋난다 — v5 형식이 규약에 더 맞다.
+#    데이터가 옳고 검사의 전제가 낡았던 경우다.
+#
+# 각 목적은 대안 중 **한 묶음**이 다 채워지면 통과한다. 어느 묶음도 못 채우면 중단.
+# 키를 지우지 않는다 — 예전 형식(v3·v4)도 그대로 통과해야 chunks_v3 을 재현할 수 있다.
+PROVENANCE_REQUIREMENTS = (
+    ("생성 시각", (("generated_at",), ("released_at",))),
+    ("생성 코드", (("generator",),)),
+    # ⚠️ v5 형식(corpus_version+registry_version)에서는 바로 위 want 대조와 겹쳐
+    #    실효가 없다 — 거기서 이미 값이 있고 cfg 와 같아야 통과하기 때문이다.
+    #    그래도 목적 목록의 완결성을 위해 남긴다. 이 목록이 사실상 "추출표
+    #    메타데이터가 무엇을 증언해야 하는가"의 문서 역할을 한다.
+    ("입력 자산", (("corpus_dir", "registry_dir"),
+                   ("corpus_version", "registry_version"))),
+    ("무결성 지문", (("rules_sha256",), ("source_table_sha256",), ("table_sha256",))),
+    ("결정 근거", (("decisions_file",), ("decisions",))),
+)
+
 
 def _coerce(value: str):
     """YAML 스칼라를 파이썬 값으로. 최소 구현."""
@@ -252,10 +275,12 @@ def load_extraction_metadata(table_dir: Path, cfg: dict):
             die(f"추출표 메타데이터의 {k} 가 비었거나 잘못됐습니다: {meta.get(k)}")
 
     # 생성 근거가 비어 있으면 어느 코드·입력으로 만든 표인지 되짚을 수 없다.
-    for k in ("generated_at", "generator", "corpus_dir", "registry_dir",
-              "rules_sha256", "decisions_file"):
-        if not meta.get(k):
-            die(f"추출표 메타데이터에 {k} 가 없습니다. 공식 산출물로 쓸 수 없습니다.")
+    # 목적별 허용 키는 PROVENANCE_REQUIREMENTS 참조 — 이름이 아니라 목적을 요구한다.
+    for purpose, alternatives in PROVENANCE_REQUIREMENTS:
+        if not any(all(meta.get(k) for k in group) for group in alternatives):
+            names = " 또는 ".join("+".join(g) for g in alternatives)
+            die(f"추출표 메타데이터에 '{purpose}' 를 적은 키가 없습니다 "
+                f"(허용: {names}). 공식 산출물로 쓸 수 없습니다.")
 
     return meta
 

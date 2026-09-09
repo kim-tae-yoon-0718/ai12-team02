@@ -45,7 +45,8 @@ def build_fixture(root: Path, *, rows=None, field_count=None,
                   extraction_version="v3", schema_version="1-12-2/v3",
                   corpus_version="v2", registry_version="v2",
                   drop_metadata=False, chunk_size=1500,
-                  cfg_schema_version="1-12-2/v3"):
+                  cfg_schema_version="1-12-2/v3",
+                  meta_drop=(), meta_extra=None):
     """가짜 코퍼스·등록부·추출표를 만든다. 인자로 특정 결함을 주입한다."""
     proc = root / "shared_data" / "processed"
     md = proc / "corpus_v2" / "md"
@@ -121,7 +122,9 @@ def build_fixture(root: Path, *, rows=None, field_count=None,
         w.writerows(table)
 
     if not drop_metadata:
-        (tbl_dir / "extraction_metadata.json").write_text(json.dumps({
+        # 기본은 v3·v4 형식(생성 근거를 corpus_dir·rules_sha256·decisions_file 로 적는다).
+        # meta_drop 으로 키를 빼고 meta_extra 로 덮어써서 v5 형식이나 결측을 만든다.
+        meta = {
             "schema_version": schema_version, "extraction_version": extraction_version,
             "corpus_version": corpus_version, "registry_version": registry_version,
             "row_count": len(table),
@@ -130,8 +133,12 @@ def build_fixture(root: Path, *, rows=None, field_count=None,
             "generated_at": "2026-09-01T04:34:32+00:00",
             "generator": "build_extraction_table.py",
             "corpus_dir": "/x/corpus_v2", "registry_dir": "/x/document_registry_v2",
-            "rules_sha256": "be3a" * 16, "decisions_file": "semantic_decisions_v3.csv"},
-            ensure_ascii=False), encoding="utf-8")
+            "rules_sha256": "be3a" * 16, "decisions_file": "semantic_decisions_v3.csv"}
+        for k in meta_drop:
+            meta.pop(k, None)
+        meta.update(meta_extra or {})
+        (tbl_dir / "extraction_metadata.json").write_text(
+            json.dumps(meta, ensure_ascii=False), encoding="utf-8")
 
     cfg_dir = root / "repo" / "config"
     cfg_dir.mkdir(parents=True, exist_ok=True)
@@ -308,6 +315,86 @@ def test_stop_on_wrong_corpus_or_registry_version():
             expect_stop(root, must_contain=key)
         finally:
             shutil.rmtree(root, ignore_errors=True)
+
+
+# ── 생성 근거(provenance) — 이름이 아니라 '목적'으로 요구한다
+#
+# 추출표 v5 는 v3·v4 와 같은 목적을 다른 키로 적는다. 이름만 보던 예전 검사는
+# 멀쩡한 v5 를 막았다. 아래 시험이 두 형식 모두 통과하는 것과, 목적별로 대안 키가
+# 전부 없을 때 중단하는 것을 고정한다.
+
+# v5 형식 — v3 형식의 생성 근거 키를 빼고 v5 키로 채운다.
+V5_DROP = ("generated_at", "corpus_dir", "registry_dir",
+           "rules_sha256", "decisions_file")
+V5_EXTRA = {
+    "released_at": "2026-09-08",
+    "source_table_sha256": "44c9" * 16,
+    "table_sha256": "b608" * 16,
+    "decisions": "tools/evalset/extraction_table_v5_decisions.json",
+}
+
+
+def test_metadata_accepts_v5_style_provenance():
+    """v5 형식(released_at·table_sha256·decisions)만으로도 통과해야 한다."""
+    root = with_fixture(meta_drop=V5_DROP, meta_extra=V5_EXTRA)
+    try:
+        r = run(root)
+        _check(r.returncode == 0,
+               f"v5 형식 생성 근거가 거부됐다\n{r.stderr[:400]}")
+        out = root / "shared_data" / "processed" / "chunks_v1" / "chunks.jsonl"
+        _check(out.exists(), "산출물이 생성되지 않았다")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_stop_when_provenance_time_missing():
+    root = with_fixture(meta_drop=V5_DROP, meta_extra={
+        k: v for k, v in V5_EXTRA.items() if k != "released_at"})
+    try:
+        expect_stop(root, must_contain="생성 시각")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_stop_when_provenance_generator_missing():
+    root = with_fixture(meta_drop=("generator",))
+    try:
+        expect_stop(root, must_contain="생성 코드")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_stop_when_provenance_inputs_missing():
+    """corpus_dir·registry_dir 과 corpus_version·registry_version 이 모두 없을 때.
+
+    ⚠️ 앞선 want 대조가 corpus_version 을 먼저 보므로 그쪽 문구로 먼저 죽을 수 있다.
+       여기서는 '중단한다'만 고정한다 — 어느 검사가 잡든 통과시키지 않는 것이 요점.
+    """
+    root = with_fixture(meta_drop=("corpus_dir", "registry_dir",
+                                   "corpus_version", "registry_version"))
+    try:
+        expect_stop(root)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_stop_when_provenance_digest_missing():
+    root = with_fixture(meta_drop=V5_DROP, meta_extra={
+        k: v for k, v in V5_EXTRA.items()
+        if k not in ("source_table_sha256", "table_sha256")})
+    try:
+        expect_stop(root, must_contain="무결성 지문")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_stop_when_provenance_decisions_missing():
+    root = with_fixture(meta_drop=V5_DROP, meta_extra={
+        k: v for k, v in V5_EXTRA.items() if k != "decisions"})
+    try:
+        expect_stop(root, must_contain="결정 근거")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 
 
 def test_stop_when_metadata_missing():
