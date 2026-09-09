@@ -1,0 +1,5 @@
+# chunks_v4 전용 인덱스. 현재 조회용 추출표 버전과 인덱스 계보를 섞지 않는다.
+chunking_version: v4
+index_source_extraction_version: v5
+index: v3
+
