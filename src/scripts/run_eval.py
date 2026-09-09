@@ -33,6 +33,8 @@ from config import load_config  # noqa: E402
 from git_info import get_git_info, warn_if_dirty  # noqa: E402
 from embedding_client import EmbeddingClient  # noqa: E402
 from generation_client import GenerationClient  # noqa: E402
+from stage1_planner import Stage1Planner  # noqa: E402
+from stage2_agent import Stage2Agent  # noqa: E402
 from pricing import Usage, compute_cost  # noqa: E402
 from answer_pipeline import (  # noqa: E402
     answer, answer_to_response, sanitize_error, SessionState,
@@ -142,6 +144,24 @@ def main() -> None:
             cache["gen"] = GenerationClient(cfg)
         return cache["gen"]
 
+    def get_stage1_planner() -> Stage1Planner:
+        if args.api_mode == "blocked":
+            raise ApiBlocked("stage1_planner")
+        if "planner" not in cache:
+            eligible = (rt["registry_scope"].eligible_ids
+                        if rt["registry_scope"] is not None else None)
+            cache["planner"] = Stage1Planner(cfg, rt["identity"], eligible)
+        return cache["planner"]
+
+    def get_stage2_agent() -> Stage2Agent:
+        if args.api_mode == "blocked":
+            raise ApiBlocked("stage2_agent")
+        if "agent2" not in cache:
+            eligible = (rt["registry_scope"].eligible_ids
+                        if rt["registry_scope"] is not None else None)
+            cache["agent2"] = Stage2Agent(cfg, rt["identity"], eligible)
+        return cache["agent2"]
+
     items = load_evalset(Path(args.evalset))
     print(f"평가 문항 {len(items)}개 로드 완료")
     if not items:
@@ -188,25 +208,29 @@ def main() -> None:
             session.active_document_id = item["active_document_id"]
 
         # ⭐ 문항 시작 — 이전 문항 사용량이 절대 넘어오지 않게 초기화
-        for key in ("gen", "embed"):
+        for key in ("planner", "agent2", "gen", "embed"):
             if key in cache:
                 cache[key].reset_usage()
 
         retries_used = 0
         result = None
+        stage3_fast_path = None
         last_error = None
         api_blocked_stage = None
         t0 = time.perf_counter()
         for attempt in range(args.max_item_retries + 1):
             if attempt:
                 retries_used += 1
-                for key in ("gen", "embed"):
+                for key in ("planner", "agent2", "gen", "embed"):
                     if key in cache:
                         cache[key].reset_usage()
             try:
                 result = answer(q, store, get_embed_client, get_gen_client,
                                 table, cfg, identity=identity, session=session,
-                                locator=locator, registry_scope=registry_scope)
+                                locator=locator, registry_scope=registry_scope,
+                                get_stage1_planner=get_stage1_planner,
+                                get_stage2_agent=get_stage2_agent)
+                stage3_fast_path = result.stage3_fast_path
                 last_error = None
             except ApiBlocked as e:
                 # ★차단 대역 — 유료 API 가 필요한 문항이다. 시스템 오류가 아니고,
@@ -233,7 +257,8 @@ def main() -> None:
         latency_ms = round((time.perf_counter() - t0) * 1000)
         total_retries += retries_used
 
-        item_usage = _merge_usage(cache.get("gen"), cache.get("embed"))
+        item_usage = _merge_usage(
+            cache.get("planner"), cache.get("agent2"), cache.get("gen"), cache.get("embed"))
         cost_usd, cost_detail = compute_cost(cfg, item_usage)
         for f in ("generation_requests", "generation_input_tokens",
                   "generation_cached_input_tokens", "generation_output_tokens",
@@ -250,6 +275,7 @@ def main() -> None:
                 "answer": None, "sources": [], "abstained": None,
                 "retrieved_chunk_ids": [], "retrieved_scores": [],
                 "condition_query": None, "condition_result_doc_ids": [],
+                "stage3_fast_path": stage3_fast_path,
                 "error_stage": ("api_blocked" if api_blocked_stage else "pipeline_call"),
                 "error": last_error,
                 "api_blocked": api_blocked_stage,
@@ -289,6 +315,8 @@ def main() -> None:
                 "retrieved_scores": result.retrieved_scores,
                 "condition_query": result.condition_query,
                 "condition_result_doc_ids": result.condition_result_doc_ids,
+                "execution_plan": result.execution_plan,
+                "stage3_fast_path": result.stage3_fast_path,
                 "citation_count": len(result.citations),
                 "citation_diagnostics": result.citation_diagnostics,
                 "error_stage": result.error_stage,
@@ -361,6 +389,44 @@ def main() -> None:
         # 실제로 실린 생성 프롬프트 파일 — 설정과 실행이 어긋나면 여기서 드러난다
         "prompt_generate_configured": cfg.get("prompt_generate"),
         "prompt_generate_loaded": getattr(cache.get("gen"), "prompt_file", None),
+        "stage1_planner_model": cfg.get("stage1_planner_model"),
+        "stage1_planner_prompt_configured": cfg.get("stage1_planner_prompt"),
+        "stage1_planner_prompt_loaded": getattr(cache.get("planner"), "prompt_file", None),
+        "stage2_agent_model": cfg.get("stage2_agent_model"),
+        "stage2_agent_prompt_configured": cfg.get("stage2_agent_prompt"),
+        "stage2_agent_prompt_loaded": getattr(cache.get("agent2"), "prompt_file", None),
+        "stage2_plan_verifier_enabled": cfg.get("stage2_plan_verifier_enabled", False),
+        "stage2_plan_verifier_model": cfg.get("stage2_plan_verifier_model"),
+        "stage2_plan_verifier_prompt_configured": cfg.get("stage2_plan_verifier_prompt"),
+        "stage2_plan_verifier_prompt_loaded": getattr(
+            cache.get("agent2"), "verifier_prompt_file", None),
+        "stage2_plan_verifier_calls": getattr(
+            cache.get("agent2"), "verifier_calls", 0),
+        "stage2_dual_interpretation_enabled": cfg.get(
+            "stage2_dual_interpretation_enabled", False),
+        "stage2_independent_model": cfg.get("stage2_independent_model"),
+        "stage2_independent_prompt_configured": cfg.get(
+            "stage2_independent_prompt"),
+        "stage2_independent_prompt_loaded": getattr(
+            cache.get("agent2"), "independent_prompt_file", None),
+        "stage2_independent_calls": getattr(
+            cache.get("agent2"), "independent_calls", 0),
+        "stage2_adjudicator_model": cfg.get("stage2_adjudicator_model"),
+        "stage2_adjudicator_prompt_configured": cfg.get(
+            "stage2_adjudicator_prompt"),
+        "stage2_adjudicator_prompt_loaded": getattr(
+            cache.get("agent2"), "adjudicator_prompt_file", None),
+        "stage2_adjudicator_calls": getattr(
+            cache.get("agent2"), "adjudicator_calls", 0),
+        "reflection_memory_enabled": cfg.get(
+            "reflection_memory_enabled", False),
+        "reflection_memory_records_configured": cfg.get(
+            "reflection_memory_records"),
+        "reflection_memory_record_count": len(getattr(
+            getattr(cache.get("agent2"), "reflection_memory", None),
+            "records", [])),
+        "reflection_memory_embedding_model": cfg.get(
+            "reflection_memory_embedding_model"),
         "total_questions": len(items),
         # ★평가셋에 선언된 유형 분포가 아니라 **모델이 예측한** 유형 분포다
         #   (record["actual_task_type"]). 이름이 task_type_distribution 이면
@@ -373,6 +439,55 @@ def main() -> None:
         "route_distribution": {
             r: sum(1 for d in details if d["route"] == r)
             for r in sorted({d["route"] for d in details if d["route"]})
+        },
+        "stage1_action_distribution": {
+            action: sum(1 for d in details
+                        if (d.get("execution_plan") or {}).get("action") == action)
+            for action in sorted({(d.get("execution_plan") or {}).get("action")
+                                  for d in details if d.get("execution_plan")})
+        },
+        "stage2_action_distribution": {
+            action: sum(
+                1 for d in details
+                for decision in (d.get("execution_plan") or {}).get("decisions", [])
+                if decision.get("action") == action
+            )
+            for action in sorted({
+                decision.get("action")
+                for d in details
+                for decision in (d.get("execution_plan") or {}).get("decisions", [])
+                if decision.get("action")
+            })
+        },
+        "stage2_total_tool_calls": sum(
+            int((d.get("execution_plan") or {}).get("tool_calls", 0)) for d in details),
+        "stage2_initial_agreement_count": sum(
+            1 for d in details
+            if (d.get("execution_plan") or {}).get(
+                "initial_structural_agreement") is True),
+        "stage2_initial_disagreement_count": sum(
+            1 for d in details
+            if (d.get("execution_plan") or {}).get(
+                "initial_structural_agreement") is False),
+        "reflection_memory_retrieved_item_count": sum(
+            1 for d in details
+            if (d.get("execution_plan") or {}).get("retrieved_memory_A")),
+        "stage3_rule_fast_path_enabled": cfg.get(
+            "stage3_rule_fast_path_enabled", False),
+        "stage3_fast_path_accepted_count": sum(
+            1 for d in details
+            if (d.get("stage3_fast_path") or {}).get("accepted") is True),
+        "stage3_fast_path_fallback_count": sum(
+            1 for d in details
+            if (d.get("stage3_fast_path") or {}).get("accepted") is False),
+        "stage3_fast_path_reason_distribution": {
+            reason: sum(
+                1 for d in details
+                if (d.get("stage3_fast_path") or {}).get("reason") == reason)
+            for reason in sorted({
+                (d.get("stage3_fast_path") or {}).get("reason")
+                for d in details if d.get("stage3_fast_path")
+            })
         },
         "abstain_count": abstain_count,
         "abstain_rate": abstain_count / len(items) if items else 0,

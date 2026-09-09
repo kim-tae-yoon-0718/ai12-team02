@@ -131,9 +131,52 @@ top_k: 5                      # 확정(잠정) 2026-08-27 — baseline 시작값
 hybrid_search: false          # 확정 — baseline은 벡터 단독.
                               #   투입은 1-14 표현 성격 + 3-2 recall 결과 확인 후
 hybrid_fusion: "rrf"          # 확정 — 결합은 RRF(순위 결합), 가중합 아님 (4-9-4)
-routing_method: "rule_based"  # 확정(잠정) — F-0 경로 분기. 1-2·1-18 도착 시 재검토 (4-10-1)
+routing_method: "llm_structgpt"  # 확정 2026-09-09 — 3단계 공식 경로.
+                                  #   완전 결정적인 질문은 아래 규칙 고속 경로로 처리하고,
+                                  #   불확실한 질문만 2단계 LLM 안전망으로 넘긴다.
 routing_fallback: "qa"        # 확정 — 분기 실패 시 QA형 + 재시도 (4-10-1)
 active_doc_state: true        # 확정 — 대화 이력 대신 활성 문서 ID 상태 유지 (4-14)
+
+# ─────────────────────────────
+# ④-1 3단계 공식 실행 — 규칙 고속 경로 + 2단계-3차 LLM 안전망
+# ─────────────────────────────
+stage3_rule_fast_path_enabled: true
+stage2_agent_model: "gpt-5-mini"
+stage2_agent_prompt: "stage2_agent_reflection_v1.txt"
+stage2_agent_max_completion_tokens: 16384
+stage2_agent_temperature: null
+stage2_agent_reasoning_effort: low
+stage2_agent_verbosity: low
+stage2_plan_verifier_enabled: false
+stage2_plan_verifier_model: "gpt-5-mini"
+stage2_plan_verifier_prompt: "stage2_plan_verifier_v1.txt"
+stage2_plan_verifier_max_completion_tokens: 8192
+stage2_plan_verifier_temperature: null
+stage2_plan_verifier_reasoning_effort: medium
+stage2_plan_verifier_verbosity: low
+stage2_dual_interpretation_enabled: true
+stage2_independent_model: "gpt-5-mini"
+stage2_independent_prompt: "stage2_independent_interpreter_v1.txt"
+stage2_independent_max_completion_tokens: 8192
+stage2_independent_temperature: null
+stage2_independent_reasoning_effort: low
+stage2_independent_verbosity: low
+stage2_adjudicator_model: "gpt-5-mini"
+stage2_adjudicator_prompt: "stage2_execution_adjudicator_reflection_v1.txt"
+stage2_adjudicator_max_completion_tokens: 8192
+stage2_adjudicator_temperature: null
+stage2_adjudicator_reasoning_effort: medium
+stage2_adjudicator_verbosity: low
+stage2_max_tool_calls: 3
+api_max_retries: 0
+reflection_memory_enabled: true
+reflection_memory_records: "data/experiments/reflection_reinterpretation/approved_memory_A.jsonl"
+reflection_memory_vectors: "data/experiments/reflection_reinterpretation/approved_memory_A_vectors.npy"
+reflection_memory_manifest: "data/experiments/reflection_reinterpretation/approved_memory_A_manifest.json"
+reflection_memory_embedding_model: "text-embedding-3-small"
+reflection_memory_top_k: 3
+reflection_memory_min_similarity: 0.58
+stage2_deterministic_extraction_assembly: true
 
 # ─────────────────────────────
 # ⑤ 생성 (4-12, 4-12-1) — 이태민 담당
