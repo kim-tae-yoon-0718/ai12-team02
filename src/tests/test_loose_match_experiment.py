@@ -68,6 +68,21 @@ class TestConsortiumEvaluator:
         status, _ = evaluate_consortium(True, row)
         assert status == "충족"
 
+    def test_conditional_allow_needs_verification_not_pass(self):
+        """조건부 허용은 조건 충족 여부를 대조한 적이 없으므로 '충족'으로
+        단정하면 조건을 못 채우는 회사도 적합으로 보인다(회귀: 코드리뷰 지적)."""
+        row = {"status": "value_present",
+              "answer_normalized": "공동이행 방식은 허용하나 분담이행 방식은 불가하다"}
+        status, _ = evaluate_consortium(True, row)
+        assert status == "확인 필요"
+
+    def test_deny_with_unknown_solo_capability_needs_verification(self):
+        """consortium_needed가 등록 안 된(None) 상태는 '회사가 단독 참여
+        가능한지 모른다'는 뜻이지 '가능하다'가 아니다(회귀: 코드리뷰 지적)."""
+        row = {"status": "value_present", "answer_normalized": "공동수급을 허용하지 않음"}
+        status, _ = evaluate_consortium(None, row)
+        assert status == "확인 필요"
+
 
 class TestConsortiumProfileStorage:
     def test_save_then_load_roundtrip(self, tmp_path):

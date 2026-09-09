@@ -39,8 +39,11 @@ python3 tools/evalset/new_document_candidates.py \
 
 - [ ] `<document_id>_candidate_decisions.csv`가 `--out` 폴더에 생김
 - [ ] 화면에 12개 필드 상태(`value_present`/`field_absent`/...)가 다 나옴
-- [ ] CSV 열어보면 `reviewer`/`source_review_method` 칸이 미리 채워져 있고
-      `source_review_completed`/`source_context_note`는 빈칸(사람이 채울 몫)
+- [ ] CSV 열어보면 `reviewer`/`source_review_method`/`source_review_completed`/
+      `source_context_note` 전부 빈칸(2026-09-09 수정 — 아직 사람이 검토하지
+      않은 후보에 검토자 이름을 미리 채워두면 검토 안 거친 자료에 검토 기록이
+      남은 것처럼 보인다. 실제 검토를 마친 뒤에만 `--reviewer`/`--review-method`
+      로 채운다)
 
 ---
 

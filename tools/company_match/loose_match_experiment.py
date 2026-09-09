@@ -94,12 +94,22 @@ def evaluate_consortium(consortium_needed: bool | None, row: dict | None) -> tup
         return "정보없음", "컨소시엄 요건 명시 없음"
     text = row.get("answer_normalized") or row.get("answer_raw") or ""
     policy = consortium_policy_kind(text)
-    if policy in ("allow", "conditional_allow"):
+    if policy == "allow":
         return "충족", f"컨소시엄 허용됨({policy}): {text[:150]}"
+    if policy == "conditional_allow":
+        # 조건부 허용은 그 조건(구성원 수·지역·업종 제한 등)을 회사 값과
+        # 대조해서 확인한 게 아니라 "조건이 있다"는 것만 안다 — 그대로
+        # '충족'으로 단정하면 조건을 못 채우는 회사도 적합으로 보일 수 있다
+        # (회사가 처음 만든 이후로 코드리뷰에서 지적된 문제).
+        return "확인 필요", f"컨소시엄 조건부 허용({policy}) — 조건 충족 여부 직접 확인 필요: {text[:150]}"
     if policy == "deny":
-        if consortium_needed:
+        if consortium_needed is True:
             return "부적합", f"이 사업은 컨소시엄을 허용하지 않음 — 회사는 컨소시엄 참여가 필요: {text[:150]}"
-        return "충족", f"단독 입찰만 가능한 사업이고 회사도 단독 참여 가능(등록값 기준): {text[:150]}"
+        if consortium_needed is False:
+            return "충족", f"단독 입찰만 가능한 사업이고 회사도 단독 참여 가능(등록값 기준): {text[:150]}"
+        # consortium_needed 미등록(None)은 "회사가 단독 참여 가능한지 모른다"는
+        # 뜻이지 "가능하다"가 아니다 — 모르는 걸 충족으로 단정하지 않는다.
+        return "확인 필요", f"단독 입찰만 가능한 사업 — 회사가 단독 참여 가능한지 등록된 정보 없음: {text[:150]}"
     if policy == "constraint":
         return "확인 필요", f"컨소시엄 구성에 조건이 있음 — 직접 확인 필요: {text[:150]}"
     return "확인 필요", f"컨소시엄 정책을 자동 분류 못함 — 직접 확인 필요: {text[:150]}"

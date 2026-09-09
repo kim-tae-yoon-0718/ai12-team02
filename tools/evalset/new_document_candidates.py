@@ -146,11 +146,13 @@ def main() -> int:
                     help="결과 폴더(기본: --md와 같은 폴더의 <document_id>_candidates/)")
     ap.add_argument("--registry-dir", default=None,
                     help="발주기관 이름 목록을 읽어올 기존 등록부 폴더(선택, PII 오탐 감소용)")
-    ap.add_argument("--reviewer", default="태윤님 측 LLM",
-                    help="검토 주체 — 기존 semantic_decisions_v4_inherited.csv와 같은 표기를 기본값으로 "
-                    "둔다. 12행 전체에 그대로 채워진다(빈 문자열이면 안 채움).")
-    ap.add_argument("--review-method", default="태윤님 측 LLM 원문 검수",
-                    help="검토 방법 — 위와 같은 이유로 기본값을 둔다.")
+    ap.add_argument("--reviewer", default="",
+                    help="검토 주체 — 기본값은 빈 문자열이다. 이 스크립트가 뽑은 후보는 "
+                    "아직 사람이 확인하지 않았으므로, 검토자를 미리 채워두면(예: "
+                    "'태윤님 측 LLM') 검토를 안 거친 자료에 검토 기록이 남는 것처럼 "
+                    "보인다(회귀: 코드리뷰 지적). 실제로 검토를 마친 뒤에만 이 옵션으로 채운다.")
+    ap.add_argument("--review-method", default="",
+                    help="검토 방법 — 위와 같은 이유로 기본값은 빈 문자열이다.")
     args = ap.parse_args()
 
     md_path = Path(args.md)

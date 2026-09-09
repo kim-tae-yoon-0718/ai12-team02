@@ -229,8 +229,11 @@ def as_list_value(row: dict) -> list[str] | None:
             if not line or enum_only.fullmatch(line):
                 continue
             line = enum_prefix.sub("", line)
-            # 원문 줄바꿈으로 쪼개진 괄호·보충 설명은 별도 목록 항목이 아니다.
-            if parts and (line.startswith("(") or line.startswith("계약서")):
+            # 원문 줄바꿈으로 쪼개진 괄호 보충 설명만 이어붙인다. 특정 낱말로
+            # 시작한다는 이유만으로 병합하면(예전엔 "계약서"도 포함) 그 낱말로
+            # 시작하는 진짜 별도 서류 항목("계약서 사본 1부" 등)이 앞 항목에
+            # 흡수돼 목록에서 사라진다 — 괄호처럼 명확한 문법 신호만 신뢰한다.
+            if parts and line.startswith("("):
                 parts[-1] = f"{parts[-1]} {line}".strip()
             else:
                 parts.append(line)
@@ -1112,6 +1115,7 @@ def answer_select_by_table(
     locator: ChunkLocator | None = None,
     registry_scope: RegistryScope | None = None,
     parse: Any = None,
+    plan_document_ids: list[str] | None = None,
 ) -> Answer:
     """선별형 — G-2(조건 질의) → K-2(코드 조립). 생성 단계 안 태움.
 
@@ -1141,6 +1145,12 @@ def answer_select_by_table(
         )
 
     scope_ids = registry_scope.eligible_ids if registry_scope is not None else None
+    if plan_document_ids:
+        # GPT 계획이 문서를 특정했으면("이 두 문서 중...") 그 범위 밖은 절대
+        # 보지 않는다 — 등록부 범위와는 교집합만 취한다(둘 다 안전장치라
+        # 어느 한쪽만 통과했다고 전체 문서를 뒤지면 안 된다).
+        scope_ids = (sorted(set(scope_ids) & set(plan_document_ids))
+                    if scope_ids is not None else sorted(set(plan_document_ids)))
     sel = run_selection_query(table, parse.conditions, allowed_document_ids=scope_ids)
 
     # --- 마감일 정책은 '전체 조건을 적용한 뒤' 걸린다 ---
@@ -1320,6 +1330,7 @@ def answer_extract_by_table(
     identity: IdentityIndex | None = None,
     locator: ChunkLocator | None = None,
     planned_fields: list[str] | None = None,
+    planned_document_ids: list[str] | None = None,
 ) -> Answer:
     """12필드 추출형. 마감일은 12필드 밖이라 identity_v2 전용 분기로 처리."""
     active = session.active_document_id if session else None
@@ -1364,7 +1375,13 @@ def answer_extract_by_table(
             "어느 항목을 확인하고 싶으신가요? (예: 예산, 지역제한, 사업기간, 참가자격 등)",
             "extract")
 
-    resolution = resolve_document(question, identity, active_document_id=active)
+    if planned_document_ids:
+        # GPT 계획이 문서를 이미 특정했으면(예: "이 두 문서 중...") 그대로
+        # 믿는다 — 질문 문장을 다시 파싱해 다른 문서로 재해석하지 않는다.
+        # (계획이 문서를 줬는데 실행이 무시하고 전체를 뒤지던 문제의 회귀)
+        resolution = DocumentResolution(document_id=planned_document_ids[0], method="llm_plan")
+    else:
+        resolution = resolve_document(question, identity, active_document_id=active)
     if resolution.document_id is None:
         if resolution.candidates:
             return _clarify(_ambiguous_text(f"'{field_name}'를 물으신 조건", resolution),
@@ -1420,15 +1437,22 @@ def answer_compare_by_table(
     question: str, table: list[dict], cfg: dict[str, Any],
     identity: IdentityIndex | None = None,
     locator: ChunkLocator | None = None,
+    planned_document_ids: list[str] | None = None,
+    planned_fields: list[str] | None = None,
 ) -> Answer:
     """비교형 — 필드×문서 구조로 코드가 조립. LLM이 값을 다시 쓰지 않는다."""
-    # 차단 판단이 실제 문서 확정 결과를 보도록 먼저 확정하고 그 결과를 넘긴다.
-    # (확정된 문서의 축약 사업명을 미확인 대상으로 오해해 정상 비교를 막던 회귀)
-    doc_ids, unknown_orgs = resolve_documents_for_compare(question, identity)
-    scope_issue = comparison_scope_issue(question, identity, resolved_doc_ids=doc_ids)
-    if scope_issue:
-        return _clarify(scope_issue, "compare")  # 비교 대상을 일부만 찾아 임의로 축소하지 않는다.
-    fields = _requested_fields(question)
+    if planned_document_ids:
+        # GPT 계획이 비교 대상 문서를 이미 특정했다(계획 검증 단계에서 비교는
+        # 최소 2건을 요구한다) — 질문 문장에서 다시 문서를 찾지 않는다.
+        doc_ids, unknown_orgs = list(planned_document_ids), []
+    else:
+        # 차단 판단이 실제 문서 확정 결과를 보도록 먼저 확정하고 그 결과를 넘긴다.
+        # (확정된 문서의 축약 사업명을 미확인 대상으로 오해해 정상 비교를 막던 회귀)
+        doc_ids, unknown_orgs = resolve_documents_for_compare(question, identity)
+        scope_issue = comparison_scope_issue(question, identity, resolved_doc_ids=doc_ids)
+        if scope_issue:
+            return _clarify(scope_issue, "compare")  # 비교 대상을 일부만 찾아 임의로 축소하지 않는다.
+    fields = planned_fields if planned_fields is not None else _requested_fields(question)
 
     if not fields:
         return _clarify(
@@ -1595,6 +1619,7 @@ def answer(
     r: RouteResult = route(question, cfg)
     planned_fields: list[str] | None = None
     planned_task: str | None = None
+    planned_document_ids: list[str] | None = None
     select_parse: SelectionParse | None = None
     if cfg.get("planning_method") == "llm":
         raw_plan = get_gen_client().plan(question)
@@ -1604,6 +1629,14 @@ def answer(
             execution_plan = None
         if execution_plan is not None:
             planned_task = execution_plan.task_type
+            # ⚠️ document_ids·fields는 계획 검증 단계(parse_plan)에서 형식만
+            # 검사하고 실제 실행에는 넘기지 않던 문제가 있었다 — "이 두 문서 중
+            # 예산 5억 이상만" 같은 질문에서 GPT가 문서를 좁혀 줬는데 실행은
+            # 그걸 무시하고 전체 문서를 다시 뒤질 수 있었다(회귀: 코드리뷰
+            # 지적). task_type과 무관하게 아래에서 각 실행 함수로 그대로
+            # 전달해서, 파싱만 하고 안 쓰는 값이 남지 않게 한다.
+            if execution_plan.document_ids:
+                planned_document_ids = list(execution_plan.document_ids)
             if execution_plan.task_type == "select":
                 select_parse = SelectionParse(
                     conditions=[ConditionQuery(
@@ -1615,7 +1648,7 @@ def answer(
                     has_request_marker=True,
                     has_plural_marker=True,
                 )
-            elif execution_plan.task_type == "extract":
+            elif execution_plan.task_type in ("extract", "compare"):
                 planned_fields = list(execution_plan.fields)
             r = RouteResult(execution_plan.task_type, "llm_plan")
 
@@ -1666,15 +1699,18 @@ def answer(
             result = answer_select_by_table(question, table, cfg, identity=identity,
                                             locator=locator,
                                             registry_scope=registry_scope,
-                                            parse=select_parse)
+                                            parse=select_parse,
+                                            plan_document_ids=planned_document_ids)
         elif r.task_type == "extract":
             result = answer_extract_by_table(
                 question, table, store, get_embed_client, get_gen_client, cfg,
             session=session, identity=identity, locator=locator,
-            planned_fields=planned_fields)
+            planned_fields=planned_fields, planned_document_ids=planned_document_ids)
         elif r.task_type == "compare":
             result = answer_compare_by_table(question, table, cfg, identity=identity,
-                                             locator=locator)
+                                             locator=locator,
+                                             planned_document_ids=planned_document_ids,
+                                             planned_fields=planned_fields)
         elif r.task_type == "qa":
             result = answer_qa(question, store, table, get_embed_client,
                                get_gen_client, cfg, session=session, identity=identity,
