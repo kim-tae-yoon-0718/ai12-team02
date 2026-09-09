@@ -2,12 +2,12 @@
 """기업 프로필 저장 + 자동 매칭 — "원래 기획" 되살리기, 1차 수직 슬라이스.
 
 회사 이름 하나로 프로필(지역·사업분야·자격증)을 저장해두고, 이미 만들어진
-`extraction_table_v4.csv`(12필드 구조화 추출표, 100건, 공식·읽기 전용)의
+`extraction_table_v5.csv`(12필드 구조화 추출표, 100건, 공식·읽기 전용)의
 지역제한·사업분야·참가 자격(면허·실적) 3필드와 코드로(= LLM 없이) 대조해서
 공고별 적합/부적합 + 근거를 보여준다. select/extract 라우트와 같은 "코드로
 찾는다" 원칙을 그대로 따른다.
 
-⚠️ 실제 공식 자료(data/preprocessed/rfp_extraction_table_v4/*)는 읽기만 한다.
+⚠️ 실제 공식 자료(data/preprocessed/rfp_extraction_table_v5/*)는 읽기만 한다.
 ⚠️ 이 도구가 만드는 회사 프로필 저장소(기본 data/company_profiles/)는 완전히
    새 자료다 — 다른 어떤 공식 산출물과도 안 겹친다.
 ⚠️ answer_pipeline.py 등 공식 실행 경로에는 연결돼 있지 않다(우리만 손으로 쓰는 도구).
@@ -41,7 +41,7 @@ from typing import Any
 
 DEFAULT_STORE_DIR = Path(__file__).resolve().parents[2] / "data" / "company_profiles"
 DEFAULT_EXTRACTION_TABLE = (Path(__file__).resolve().parents[2] / "data" / "preprocessed"
-                           / "rfp_extraction_table_v4" / "extraction_table_v4.csv")
+                           / "rfp_extraction_table_v5" / "extraction_table_v5.csv")
 
 REGION_FIELD = "지역제한"
 BUSINESS_FIELD = "사업분야"

@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """새 문서 1건에 대한 12필드 추출 후보 미리보기 — 사람이 정리하기 전 1차 스크리닝.
 
-select/extract 라우트는 LLM이 아니라 extraction_table_v4(구조화 추출표)를 코드로
+select/extract 라우트는 LLM이 아니라 extraction_table_v5(구조화 추출표)를 코드로
 조회한다. 그 표는 지금 공식 100건 고정이고(⭐ 확정), 새 문서를 넣으려면 결국
-사람이 문서를 읽고 12필드 값·근거 위치를 정리해 `semantic_decisions_v4.csv`와
-같은 형식의 결정 파일을 만들어야 한다.
+사람이 문서를 읽고 12필드 값·근거 위치를 정리해 `semantic_decisions_v4_inherited.csv`와
+같은 형식의 결정 파일을 만들어야 한다(v5는 v4의 결정 계약을 그대로 이어받았다).
 
 이 스크립트는 그 사람 작업을 대신하지 않는다. 대신 `build_extraction_table.py`가
 100건에 이미 쓰고 있는 같은 규칙 엔진(find_hits/decide/discover_aliases)을 새
 문서 1건에 돌려서 "규칙이 어디서 무엇을 찾았는지" 후보를 먼저 보여준다 —
 사람은 문서 전체를 처음부터 읽는 대신 이 후보를 확인·수정만 하면 된다.
 
-⚠️ 공식 산출물(extraction_table_v4, semantic_decisions_v4.csv, document_registry_v2)은
+⚠️ 공식 산출물(extraction_table_v5, semantic_decisions_v4_inherited.csv, document_registry_v2)은
    전혀 건드리지 않는다. 결과는 항상 --out 폴더의 별도 파일로만 나간다.
 
 사용:
@@ -35,12 +35,12 @@ sys.path.insert(0, str(HERE))
 import extraction_rules_v3 as R          # noqa: E402  (순수 규칙, 100건 표와 동일 모듈)
 import build_extraction_table as B       # noqa: E402  (규칙 엔진 재사용, 수정하지 않음)
 
-# 사람이 검토 후 채우는 칸 — semantic_decisions_v4.csv와 같은 계약을 쓴다.
+# 사람이 검토 후 채우는 칸 — semantic_decisions_v4_inherited.csv와 같은 계약을 쓴다.
 # 나중에 이 문서를 정식으로 편입하기로 하면 이 칸들만 채워서 그대로 결정
 # 파일로 합칠 수 있게 하기 위함(형식을 새로 만들지 않는다).
 #
 # 이 중 reviewer/source_review_method는 "누가 무슨 방법으로 검토하나"라는
-# 세션 전체에 동일한 값(예: 기존 semantic_decisions_v4.csv의 "태윤님 측 LLM" /
+# 세션 전체에 동일한 값(예: 기존 semantic_decisions_v4_inherited.csv의 "태윤님 측 LLM" /
 # "태윤님 측 LLM 원문 검수")이라 --reviewer/--review-method로 한 번에 채운다.
 # source_review_completed·source_context_note·discarded_*는 실제로 그 필드를
 # 검토했는지에 따라 필드마다 달라야 하므로 항상 사람이 직접 채운다(자동 채움 없음).
@@ -147,7 +147,7 @@ def main() -> int:
     ap.add_argument("--registry-dir", default=None,
                     help="발주기관 이름 목록을 읽어올 기존 등록부 폴더(선택, PII 오탐 감소용)")
     ap.add_argument("--reviewer", default="태윤님 측 LLM",
-                    help="검토 주체 — 기존 semantic_decisions_v4.csv와 같은 표기를 기본값으로 "
+                    help="검토 주체 — 기존 semantic_decisions_v4_inherited.csv와 같은 표기를 기본값으로 "
                     "둔다. 12행 전체에 그대로 채워진다(빈 문자열이면 안 채움).")
     ap.add_argument("--review-method", default="태윤님 측 LLM 원문 검수",
                     help="검토 방법 — 위와 같은 이유로 기본값을 둔다.")

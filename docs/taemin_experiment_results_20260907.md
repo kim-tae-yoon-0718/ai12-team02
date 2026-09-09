@@ -1,5 +1,13 @@
 # 이태민 RFP RAG 실험 결과
 
+> ⚠️ **2026-09-09 갱신 — 이 문서는 평가셋 v2·채점기 v2·추출표 v4 기준 결과다.**
+> dev가 `평가셋 v3`·`채점기 v3`·`추출표 v5`로 공식 승격되면서 `taemin-experiment`
+> 브랜치를 최신 dev 위로 rebase했다. 아래 결과·수치는 과거 실행 기록으로만
+> 보존하고, 수정하지 않는다(실제로 그렇게 실행됐기 때문). 새 공식 자료 기준
+> 재실행 명령은 이 문서 끝의 "다음 실행(v3 재실행)" 절을 본다 — 이 환경에는
+> 원격 서버(`/srv/rfp`)·API 키가 없어 이번 재적용 작업에서는 코드만 맞추고
+> 실제 재실행은 하지 않았다.
+
 > **한 줄 결론**
 > 현재 평가셋에서는 `top_k: 3`과 `gpt-5-mini` 조합이 가장 합리적인 기준값이다.
 > select `phrased`는 표시 형식 개선으로 채택 가능하며, token 상한 2048/8192와 nano는 뚜렷한 우위를 만들지 못했다.
@@ -216,14 +224,28 @@ flowchart LR
 
 다만 최종 모델·top-k 확정 전에는 채점기 v2로 `responses.jsonl`의 정답 정확도와 근거 회수율을 별도 계산해야 한다. 이번 비교의 기권율과 route 분포만으로 정확도를 확정할 수는 없다.
 
-## 다음 실행
+## 다음 실행 (v3 재실행 — 아직 미실행, 원격 서버에서 진행 필요)
+
+`taemin-experiment`를 최신 dev(`평가셋 v3`·`채점기 v3`·`추출표 v5`) 위로 rebase하면서
+아래 명령들의 `--evalset` 경로를 v2→v3로 갱신했다. 이 환경에는 원격 서버(`/srv/rfp`)
+접근권한도 API 키도 없어 실제 실행은 하지 못했다 — 아래 명령을 그대로 서버에서
+돌리면 된다.
+
+베이스라인 회귀 확인(50문항, top_k 5 기본값 — 기존 베이스라인과 점수 비교용):
+
+```bash
+python3 src/scripts/run_eval.py \
+	--evalset data/evalsets/final/v3/items.jsonl \
+	--out /srv/rfp/runs/taemin_baseline_v3_recheck \
+	--max-item-retries 1
+```
 
 Stage1 실험:
 
 ```bash
 python3 src/scripts/run_eval.py \
-	--evalset data/evalsets/final/v2/items.jsonl \
-	--out /srv/rfp/runs/taemin_stage1_planner \
+	--evalset data/evalsets/final/v3/items.jsonl \
+	--out /srv/rfp/runs/taemin_stage1_planner_v3 \
 	--experiment-config config/experiments/taemin_stage1_planner.yaml \
 	--max-item-retries 1
 ```
@@ -232,10 +254,10 @@ python3 src/scripts/run_eval.py \
 
 ```bash
 python3 src/scripts/run_eval.py \
-	--evalset data/evalsets/final/v2/items.jsonl \
-	--out /srv/rfp/runs/taemin_deadline_urgent_7 \
+	--evalset data/evalsets/final/v3/items.jsonl \
+	--out /srv/rfp/runs/taemin_deadline_urgent_7_v3 \
 	--experiment-config config/experiments/taemin_deadline_urgent_7_external.yaml \
 	--max-item-retries 1
 ```
 
-실행 전제: `RAG_ROOT=/srv/rfp`, 공식 `index_v2`·`chunks_v3`·`extraction_table_v4`·`identity_v2`, 그리고 API 키가 설정된 동일 터미널.
+실행 전제: `RAG_ROOT=/srv/rfp`, 공식 `index_v2`·`chunks_v3`·`extraction_table_v5`·`identity_v2`, 그리고 API 키가 설정된 동일 터미널. 채점기 재채점은 `채점기 v3`(`src/grader`)로 진행한다.

@@ -1,10 +1,15 @@
 # 2026-09-08 체크리스트 — 기업 프로필 매칭 + 세션 시작 흐름
 
 오늘 새로 만든 것들을 직접 손으로 돌려서 확인할 때 쓰는 체크리스트다. 전부
-새 파일이고 공식 산출물(`extraction_table_v4`, `document_registry_v2`,
-`semantic_decisions_v4.csv`)과 팀 확정 코드(`build_extraction_table.py`,
+새 파일이고 공식 산출물(`extraction_table_v5`, `document_registry_v2`,
+`semantic_decisions_v4_inherited.csv`)과 팀 확정 코드(`build_extraction_table.py`,
 `identity_metadata.py`, `answer_pipeline.py`)는 안 건드렸다 — import만 해서
 재사용.
+
+> 2026-09-09 갱신: dev가 `평가셋 v3`·`채점기 v3`·`추출표 v5`로 올라가면서
+> `taemin-experiment`를 최신 dev 위로 rebase했다. 아래 체크리스트는 이제
+> `extraction_table_v5` 기준으로 다시 읽는다 — 도구 동작(3필드 대조 로직)은
+> 바뀌지 않았고 읽는 표만 v4→v5로 바뀌었다.
 
 ## 0. 사전 준비
 
