@@ -11,6 +11,11 @@
     python build_chunks.py --config-override runs/yj001_I_chunk1500/config.yaml
     python build_chunks.py --only RFP-000001,RFP-000002      # 부분 갱신
     python build_chunks.py --tokenize                        # 토큰 길이 집계까지 (tiktoken)
+    python build_chunks.py --verify-location .../chunks_v3/chunks.jsonl
+                                                             # location 전수 대조 (불일치 시 중단)
+    python build_chunks.py --allow-unverified-location \
+        --unverified-location-reason "최초 기준본 생성"
+                                                             # 참조본이 없을 때만 명시적 예외
 
 산출물:  $RAG_ROOT/shared_data/processed/chunks_<chunking_version>/
     chunks.jsonl        청크 본문 + 메타데이터
@@ -47,6 +52,29 @@ REQUIRED_KEYS = [
     "table_chunk_threshold", "table_degraded_threshold",
     "table_format", "table_empty_cell",
 ]
+
+# 추출표 메타데이터가 '무엇을' 증언해야 하는가 — 키 이름이 아니라 목적으로 요구한다.
+#
+# ⚠️ 이름만 보는 검사는 추출표 v5 를 막았다. v5 는 같은 목적을 다른 키로 적는다
+#    (released_at / corpus_version / source_table_sha256 / decisions). 게다가 v3·v4 의
+#    corpus_dir 은 /srv/rfp 절대경로, calibration_csv 는 /home/spai1205 절대경로라
+#    규약 §2-3(절대경로 하드코딩 금지)에 어긋난다 — v5 형식이 규약에 더 맞다.
+#    데이터가 옳고 검사의 전제가 낡았던 경우다.
+#
+# 각 목적은 대안 중 **한 묶음**이 다 채워지면 통과한다. 어느 묶음도 못 채우면 중단.
+# 키를 지우지 않는다 — 예전 형식(v3·v4)도 그대로 통과해야 chunks_v3 을 재현할 수 있다.
+PROVENANCE_REQUIREMENTS = (
+    ("생성 시각", (("generated_at",), ("released_at",))),
+    ("생성 코드", (("generator",),)),
+    # ⚠️ v5 형식(corpus_version+registry_version)에서는 바로 위 want 대조와 겹쳐
+    #    실효가 없다 — 거기서 이미 값이 있고 cfg 와 같아야 통과하기 때문이다.
+    #    그래도 목적 목록의 완결성을 위해 남긴다. 이 목록이 사실상 "추출표
+    #    메타데이터가 무엇을 증언해야 하는가"의 문서 역할을 한다.
+    ("입력 자산", (("corpus_dir", "registry_dir"),
+                   ("corpus_version", "registry_version"))),
+    ("무결성 지문", (("rules_sha256",), ("source_table_sha256",), ("table_sha256",))),
+    ("결정 근거", (("decisions_file",), ("decisions",))),
+)
 
 
 def _coerce(value: str):
@@ -212,8 +240,17 @@ def load_extraction_metadata(table_dir: Path, cfg: dict):
     if cfg_ext is not None and str(cfg_ext) != str(cfg["table"]):
         die(f"base.yaml 안에서 충돌합니다 — table: {cfg['table']} / "
             f"extraction_version: {cfg_ext}. 두 값은 항상 같아야 합니다.")
+    # ⚠️ schema_version 은 필수다. 없으면 건너뛰지 않고 중단한다.
+    #    예전에는 cfg 에 없으면 이 대조를 건너뛰고, 대신 아래에서 schema 문자열이
+    #    '.../{table}' 로 끝나는지 봤다. 그 검사를 걷어냈으므로(추출표 v4 가 v3
+    #    스키마를 그대로 쓴다) 이 대조가 스키마를 지키는 유일한 자리다.
+    #    선택 항목으로 두면 schema_version 을 안 적은 설정에서 추출표 메타데이터의
+    #    스키마가 틀려도 아무도 못 막는다 — 폴더 이름만 보고 내용을 믿게 된다.
     cfg_schema = cfg.get("schema_version")
-    if cfg_schema is not None and str(cfg_schema) != str(meta.get("schema_version")):
+    if cfg_schema is None:
+        die("base.yaml 에 schema_version 이 없습니다. 추출표 메타데이터의 스키마를 "
+            "대조할 수 없으므로 중단합니다 (지어내지 않습니다).")
+    if str(cfg_schema) != str(meta.get("schema_version")):
         die(f"base.yaml 의 schema_version({cfg_schema})이 "
             f"extraction_metadata.json({meta.get('schema_version')})과 다릅니다.")
 
@@ -222,20 +259,31 @@ def load_extraction_metadata(table_dir: Path, cfg: dict):
         die("추출표 메타데이터의 버전이 설정과 다릅니다: " +
             " / ".join(f"{k}: {a} (기대 {b})" for k, (a, b) in bad.items()))
 
+    # 스키마 이름표는 있어야 한다. 다만 "스키마 문자열이 추출표 버전을 담는다"고
+    # 보면 안 된다.
+    # ⚠️ 예전에는 schema_version 이 '.../{table}' 로 끝나는지 봤다. v4 가 v3 스키마를
+    #    그대로 쓰면서(추출표 v4 는 RFP-000067·RFP-000081 두 행만 정정한 것이라
+    #    schema_version 이 "1-12-2/v3" 이다) 이 검사가 멀쩡한 조합을 막았다.
+    #    버전 고정은 이미 위에서 두 번 한다 — base.yaml 의 schema_version 과
+    #    메타데이터 대조, 그리고 want["extraction_version"] == cfg["table"] 대조.
+    #    (같은 유형의 이중 의미 문제를 팀이 extraction_version /
+    #     index_source_extraction_version 분리로 한 번 겪었다 — base.yaml 참조)
     schema = meta.get("schema_version")
-    if not schema or not str(schema).endswith("/" + str(cfg["table"])):
-        die(f"schema_version 이 추출표 버전과 맞지 않습니다: {schema} "
-            f"(기대 '.../{cfg['table']}')")
+    if not schema:
+        die("추출표 메타데이터에 schema_version 이 없습니다. "
+            "공식 산출물로 쓸 수 없습니다.")
 
     for k in ("row_count", "document_count", "field_count"):
         if not isinstance(meta.get(k), int) or meta[k] <= 0:
             die(f"추출표 메타데이터의 {k} 가 비었거나 잘못됐습니다: {meta.get(k)}")
 
     # 생성 근거가 비어 있으면 어느 코드·입력으로 만든 표인지 되짚을 수 없다.
-    for k in ("generated_at", "generator", "corpus_dir", "registry_dir",
-              "rules_sha256", "decisions_file"):
-        if not meta.get(k):
-            die(f"추출표 메타데이터에 {k} 가 없습니다. 공식 산출물로 쓸 수 없습니다.")
+    # 목적별 허용 키는 PROVENANCE_REQUIREMENTS 참조 — 이름이 아니라 목적을 요구한다.
+    for purpose, alternatives in PROVENANCE_REQUIREMENTS:
+        if not any(all(meta.get(k) for k in group) for group in alternatives):
+            names = " 또는 ".join("+".join(g) for g in alternatives)
+            die(f"추출표 메타데이터에 '{purpose}' 를 적은 키가 없습니다 "
+                f"(허용: {names}). 공식 산출물로 쓸 수 없습니다.")
 
     return meta
 
@@ -342,6 +390,198 @@ def sha256_of(path: Path) -> str:
         for block in iter(lambda: f.read(1 << 20), b""):
             h.update(block)
     return h.hexdigest()
+
+
+# ─────────────────────────────────────────────────────────────
+# location 전수 대조 (--verify-location)
+#
+# 팀 결정 2026-09-03 — 모든 청킹 실험은 평가셋 location 을 바꾸면 안 된다.
+# section_path·location_label 이 이전 버전과 달라지는 수정은 실험에 반영하지 않고
+# 한계점으로만 기록한다. 여기서 그 대조를 강제한다.
+# ─────────────────────────────────────────────────────────────
+
+MAX_CHUNK_IDS = 5             # 진단용으로 키마다 남길 chunk_id 개수
+MAX_MISMATCH_DETAILS = 200    # errors.jsonl 에 남길 상세 레코드 상한
+
+# 이 종류가 하나라도 나오면 산출물을 만들지 않는다.
+BLOCKING_KINDS = ("document_missing", "document_added",
+                  "location_missing", "location_added", "eligible_changed")
+
+
+def location_key(chunk: dict):
+    """대조 키 — (document_id, section_path, location_label).
+
+    ⚠️ chunk_id 는 못 쓴다. C-3 ① 의 순번은 문서 내 위치라서 청크 수가 하나만
+       달라져도 그 뒤가 전부 밀린다. chunk_size 를 바꾸는 실험에서는 항상 밀린다.
+       md_line_start/end 도 그룹의 첫·마지막 unit 에서 오므로 병합 양상이
+       바뀌면 같이 움직이고, 한 그룹을 쪼갠 조각들은 같은 줄 범위를 공유한다.
+    ⚠️ section_path 를 함께 잡는다. para_label 이 path[-1](마지막 절 이름)만
+       쓰므로 3.1 아래 '배점기준' 과 4.2 아래 '배점기준' 이 같은 라벨이 된다.
+       둘을 묶어야 키가 유일해지고, 라벨은 그대로인데 경로만 바뀐 변화도 잡힌다.
+    ⚠️ 문자열을 정규화하지 않는다. 헤딩이 없는 문서는 para_label 이 doc_title 을
+       쓰는데 그 값이 NFD 다(파일명 유래). 정규화 차이를 조용히 흡수하지 말고
+       location_missing + location_added 한 쌍으로 드러나게 둔다.
+    """
+    return (chunk["document_id"],
+            tuple(chunk.get("section_path") or []),
+            chunk.get("location_label"))
+
+
+def _sort_key(key):
+    """키에 None 이 섞여도 정렬이 죽지 않게."""
+    return (key[0], tuple(str(p) for p in key[1]), str(key[2]))
+
+
+def _add_to_index(index: dict, chunk: dict):
+    slot = index.setdefault(chunk["document_id"], {}).setdefault(
+        location_key(chunk), {"count": 0, "eligible": set(), "chunk_ids": []})
+    slot["count"] += 1
+    slot["eligible"].add(bool(chunk.get("retrieval_eligible")))
+    if len(slot["chunk_ids"]) < MAX_CHUNK_IDS:
+        slot["chunk_ids"].append(chunk.get("chunk_id"))
+
+
+def index_locations(chunks) -> dict:
+    """새 산출물을 대조용 투영으로 바꾼다. document_id -> {key: slot}"""
+    index = {}
+    for c in chunks:
+        _add_to_index(index, c)
+    return index
+
+
+def load_prev_locations(path: Path, cfg: dict, errors: list):
+    """이전 chunks.jsonl 에서 대조에 필요한 값만 뽑는다.
+
+    ⚠️ 통째로 리스트에 담지 않는다. chunks_v3 는 19,381 레코드에 content 와
+       search_text 가 들어 있어 전량 적재는 낭비다. 한 줄씩 읽어 투영만 남긴다.
+    """
+    if not path.exists():
+        die(f"--verify-location 참조 파일이 없습니다: {path}")
+
+    index, versions, corpora, total = {}, set(), set(), 0
+    try:
+        with path.open(encoding="utf-8") as f:
+            for lineno, line in enumerate(f, start=1):
+                if not line.strip():
+                    continue
+                try:
+                    c = json.loads(line)
+                except json.JSONDecodeError as e:
+                    die(f"--verify-location 참조 파일 {lineno}번째 줄을 읽지 "
+                        f"못했습니다: {e}")
+                for need in ("document_id", "section_path", "location_label"):
+                    if need not in c:
+                        die(f"--verify-location 참조 파일 {lineno}번째 줄에 {need} 가 "
+                            f"없습니다. 청크 산출물이 맞는지 확인하세요.")
+                _add_to_index(index, c)
+                versions.add(c.get("chunking_version"))
+                corpora.add(c.get("corpus_version"))
+                total += 1
+    except OSError as e:                                       # noqa: BLE001
+        die(f"--verify-location 참조 파일을 열지 못했습니다: {e}")
+
+    if total == 0:
+        die(f"--verify-location 참조 파일이 비어 있습니다: {path}")
+
+    if len(corpora) > 1:
+        die(f"참조 파일 안에서 corpus_version 이 갈립니다: "
+            f"{sorted(str(v) for v in corpora)}")
+    if len(versions) > 1:
+        die(f"참조 파일 안에서 chunking_version 이 갈립니다: "
+            f"{sorted(str(v) for v in versions)}")
+    prev_corpus = next(iter(corpora))
+    prev_version = next(iter(versions))
+
+    # 코퍼스가 다르면 문서 집합도 줄 번호도 달라 대조 자체가 성립하지 않는다.
+    if prev_corpus != cfg["corpus"]:
+        die(f"--verify-location 참조 파일의 corpus_version 이 다릅니다: "
+            f"{prev_corpus} (현재 설정 {cfg['corpus']}). "
+            f"코퍼스가 다르면 location 대조가 성립하지 않습니다.")
+
+    # 같은 버전을 참조한다는 것은 지금 덮어쓸 산출물과 대조한다는 뜻이다.
+    # 코드만 고친 재실행이면 정상이고, 실험이면 참조 경로를 잘못 준 것이다.
+    if prev_version == cfg["chunking_version"]:
+        errors.append({"level": "warn", "stage": "verify_location",
+                       "msg": f"참조 파일의 chunking_version 이 현재 설정과 같습니다 "
+                              f"({prev_version}). 지금 덮어쓸 산출물을 참조하고 "
+                              f"있는지 확인하세요.",
+                       "path": str(path)})
+
+    meta = {
+        "reference_file": str(path),
+        "reference_sha256": sha256_of(path),
+        "reference_chunking_version": prev_version,
+        "reference_corpus_version": prev_corpus,
+        "locations_prev": total,
+        "documents_prev": len(index),
+    }
+    return index, meta
+
+
+def compare_locations(prev: dict, new: dict, only, strict: bool):
+    """이전·새 투영을 전수 대조한다. (상세 레코드, 종류별 건수)를 돌려준다.
+
+    기본은 집합 비교다. 같은 라벨의 '개수'만 달라진 경우는 중단하지 않는다 —
+    split_by_paragraph 가 한 그룹을 여러 조각으로 나눠도 조각들이 그룹 전체의
+    para_start/para_end 를 그대로 받으므로, chunk_size 를 바꾸면 라벨 '값'은
+    하나도 안 바뀌고 개수만 늘어난다. 평가셋이 참조하는 좌표는 전부 남아 있다.
+    개수까지 강제하려면 --verify-location-strict 를 준다.
+    """
+    details, counts = [], Counter()
+
+    def scope_of(doc_id):
+        if only is None:
+            return "full"
+        return "regenerated" if doc_id in only else "kept"
+
+    def add(kind, level, doc_id, key, p, n, msg, **extra):
+        counts[kind] += 1
+        if len(details) >= MAX_MISMATCH_DETAILS:
+            return
+        rec = {"level": level, "stage": "verify_location", "kind": kind,
+               "document_id": doc_id, "scope": scope_of(doc_id)}
+        if key is not None:
+            rec["section_path"] = list(key[1])
+            rec["location_label"] = key[2]
+        rec.update({
+            "prev_count": p["count"] if p else 0,
+            "new_count": n["count"] if n else 0,
+            "prev_chunk_ids": p["chunk_ids"] if p else [],
+            "new_chunk_ids": n["chunk_ids"] if n else [],
+        })
+        rec.update(extra)
+        rec["msg"] = msg
+        details.append(rec)
+
+    prev_docs, new_docs = set(prev), set(new)
+    for doc_id in sorted(prev_docs - new_docs):
+        add("document_missing", "error", doc_id, None, None, None,
+            "이전 파일에 있던 문서가 새 산출물에 없습니다")
+    for doc_id in sorted(new_docs - prev_docs):
+        add("document_added", "error", doc_id, None, None, None,
+            "이전 파일에 없던 문서가 새 산출물에 있습니다")
+
+    for doc_id in sorted(prev_docs & new_docs):
+        p, n = prev[doc_id], new[doc_id]
+        for key in sorted(set(p) - set(n), key=_sort_key):
+            add("location_missing", "error", doc_id, key, p[key], None,
+                "이전 파일에 있던 location 이 새 산출물에 없습니다")
+        for key in sorted(set(n) - set(p), key=_sort_key):
+            add("location_added", "error", doc_id, key, None, n[key],
+                "이전 파일에 없던 location 이 새 산출물에 생겼습니다")
+        for key in sorted(set(p) & set(n), key=_sort_key):
+            if p[key]["eligible"] != n[key]["eligible"]:
+                add("eligible_changed", "error", doc_id, key, p[key], n[key],
+                    "같은 location 의 retrieval_eligible 이 달라졌습니다",
+                    prev_eligible=sorted(p[key]["eligible"]),
+                    new_eligible=sorted(n[key]["eligible"]))
+            if p[key]["count"] != n[key]["count"]:
+                add("count_changed", "error" if strict else "warn",
+                    doc_id, key, p[key], n[key],
+                    "같은 location 의 청크 개수가 달라졌습니다 "
+                    "(라벨 값은 그대로)")
+
+    return details, counts
 
 
 # ─────────────────────────────────────────────────────────────
@@ -683,6 +923,123 @@ def build_prefix(doc_title: str, path: tuple) -> str:
     return " > ".join([doc_title] + list(path))
 
 
+# ─────────────────────────────────────────────────────────────
+# 소실 헤딩 복원
+#
+# 실측(2026-09-04) — 헤딩 8,609개 중 4,080개가 어떤 청크의 section_path 에도
+# 들어가지 못하고 본문에도 남지 않는다. 같은 레벨의 형제 헤딩이 연달아 나오면
+# 뒤 헤딩이 앞 헤딩을 pop 하는데, 그 사이에 본문이 없으면 앞 헤딩의 텍스트는
+# 어디에도 남지 않는다.
+#     ### □ 사업명 : 통합 정보시스템 구축 사전 컨설팅   ← pop 당하고 소실
+#     ### □ 사업기간 : 계약체결일로부터 ~ …            ← pop 당하고 소실
+#     ### □ 사업예산 : 50,000,000                     ← 이것만 남아 뒤 표의 경로가 된다
+# 사업명·사업기간·사업예산 같은 핵심 메타데이터가 이렇게 사라진다.
+#
+# ⚠️ 복원은 '새 문단을 만들지 않는' 방식이어야 한다. 문단이 하나라도 늘면
+#    para_no 가 밀려 location_label 의 문단 번호가 전부 바뀌고, 평가셋 좌표가
+#    깨진다(팀 결정 2026-09-03).
+#      - 뒤가 문단이면 : 그 문단 앞에 빈 줄 없이 이어 붙인다 → 문단 수 불변
+#      - 뒤가 표면     : 그 표 청크의 search_text 앞에만 넣는다 → content(HTML) 무변경
+#    실측상 표가 먼저 오는 1,105건 중 1,102건은 헤딩 텍스트가 그 표 안에
+#    없었다. 그 헤딩들은 대개 바로 뒤 표의 제목 역할을 한다.
+# ─────────────────────────────────────────────────────────────
+
+LEADING_BLANK_RE = re.compile(r"\A(?:[ \t]*\n)+")
+INLINE_HEADING_VALUE_RE = re.compile(r"^\s*[^:：=]+\s*[:：=]\s*\S+")
+
+
+def _produces_unit(kind: str, body: str) -> bool:
+    """이 블록이 청크 후보 단위(unit)를 만드는가.
+
+    ⚠️ 헤딩은 unit 을 만들지 않는다. 헤딩을 unit 으로 세면 "형제 헤딩이
+       뒤따르니 소실이 아니다"로 잘못 판정해 복원 대상이 대량으로 빠진다.
+    """
+    if kind == "heading":
+        return False
+    if kind in ("table", "pipe_table"):
+        return True
+    return any(p.strip() for p in re.split(r"\n\s*\n", body))
+
+
+def find_lost_headings(blocks, boiler_of):
+    """어떤 청크에도 남지 못하는 헤딩을 찾는다 → {블록 순번: 제목}, 별첨 제외 수
+
+    소실 판정 = 그 헤딩의 서브트리(다음에 나오는 level <= 자기 level 인 헤딩
+    직전까지) 안에서 unit 이 하나도 안 만들어짐. 그런 헤딩은 pop 될 때까지
+    아무 unit 도 거치지 않으므로 section_path 에 들어갈 기회 자체가 없다.
+
+    ⚠️ clean_heading 이 빈 문자열을 만든 줄은 제외한다. process_document 가
+       스택에 올리지도 않고(레벨 비교조차 하지 않는다) 살릴 제목도 없다.
+       그래서 서브트리 경계 계산에서도 그런 줄은 헤딩으로 세지 않는다.
+    ⚠️ 별첨·서식 구간(sidecar sections) 안의 헤딩도 제외한다. 살려도
+       retrieval_eligible=false 라 검색에 들어가지 않는다.
+    """
+    heads = []
+    for i, (kind, body, ln0, _ln1) in enumerate(blocks):
+        if kind != "heading":
+            continue
+        m = HEADING_RE.match(body)
+        title = clean_heading(m.group(2))
+        if not title:
+            continue
+        heads.append((i, len(m.group(1)), title, ln0))
+
+    lost, skipped = {}, 0
+    for n, (i, level, title, ln0) in enumerate(heads):
+        end = len(blocks)
+        for j in range(n + 1, len(heads)):
+            if heads[j][1] <= level:
+                end = heads[j][0]
+                break
+        if any(_produces_unit(blocks[k][0], blocks[k][1])
+               for k in range(i + 1, end)):
+            continue                      # 서브트리에 unit 있음 → 소실 아님
+        if boiler_of(ln0)[0] is not None:
+            skipped += 1
+            continue                      # 별첨·서식 구간
+        lost[i] = title
+    return lost, skipped
+
+
+def attach_lead(body: str, pending: list) -> str:
+    """문단 앞에 소실 헤딩 텍스트를 빈 줄 없이 이어 붙인다.
+
+    ⚠️ 빈 줄(\\n\\n)로 이으면 문단이 하나 늘어 para_no 가 밀린다.
+       원문 첫머리의 빈 줄도 걷어내야 한다. "제목" + "\\n" + "\\n\\n본문" 이면
+       결국 빈 줄이 생겨 같은 사고가 난다.
+    """
+    return "\n".join(pending) + "\n" + LEADING_BLANK_RE.sub("", body)
+
+
+def heading_has_inline_value(title: str) -> bool:
+    """제목 한 줄 자체가 ``항목: 값`` 형태의 사실인지 구조만으로 판정한다.
+
+    자연어 뜻을 추측하지 않는다. 콜론·전각 콜론·등호의 양쪽이 모두 채워진
+    경우만 다음 형제 헤딩까지 운반할 수 있는 독립 사실로 본다.
+    """
+    return bool(INLINE_HEADING_VALUE_RE.match(title or ""))
+
+
+def prune_pending_at_heading(pending: list, new_level: int):
+    """새 헤딩이 열릴 때 관계없는 이전 절의 제목이 넘어오지 않게 정리한다.
+
+    - 새 헤딩이 더 깊으면 기존 제목의 하위 절이므로 그대로 둔다.
+    - 같은 깊이에서는 ``항목: 값``인 독립 사실만 연속 목록으로 운반한다.
+    - 더 얕은 절로 나가면 어떤 제목도 운반하지 않는다.
+
+    반환값은 (남길 항목, 버린 개수)다. 항목은 (제목, 레벨, 독립사실 여부).
+    """
+    kept = []
+    dropped = 0
+    for item in pending:
+        _title, old_level, portable = item
+        if new_level > old_level or (new_level == old_level and portable):
+            kept.append(item)
+        else:
+            dropped += 1
+    return kept, dropped
+
+
 def para_label(path: tuple, doc_title: str, start: int, end: int) -> str:
     """C-3 ④ — 절 안의 문단 순번. 헤딩이 없으면 문서명을 0단 절로 쓴다."""
     where = path[-1] if path else doc_title
@@ -840,18 +1197,34 @@ def process_document(reg_row, md_dir, sidecar_dir, cfg, errors):
 
     blocks = split_blocks(md_text)
 
+    # 어떤 청크에도 남지 못하는 헤딩. 판정은 매 실행 런타임에 다시 계산한다.
+    lost_headings, lost_skipped_boiler = find_lost_headings(blocks, boiler_of)
+    pending_lead = []                            # (제목, 레벨, 독립사실 여부)
+    recov = {"text": 0, "table": 0, "boilerplate": lost_skipped_boiler,
+             "dropped_cross_section": 0}
+
     # 장절 경로 스택과 절 안 문단 순번
     stack = []                                   # [(level, title)]
     para_no = defaultdict(int)
     table_idx = 0
     units = []                                   # 청크 후보 단위
 
-    for kind, body, ln0, ln1 in blocks:
+    for bi, (kind, body, ln0, ln1) in enumerate(blocks):
         if kind == "heading":
             m = HEADING_RE.match(body)
             level, title = len(m.group(1)), clean_heading(m.group(2))
             if not title:
                 continue                        # 태그만 있던 줄은 헤딩으로 안 센다
+            # 관계없는 형제·상위 절로 넘어가는 구조 제목을 먼저 버린다.
+            # ``항목: 값``인 독립 사실은 같은 레벨의 연속 목록 안에서만 유지한다.
+            pending_lead, dropped = prune_pending_at_heading(pending_lead, level)
+            recov["dropped_cross_section"] += dropped
+            if bi in lost_headings:
+                # 스택에는 평소대로 올라가지만 어차피 unit 없이 pop 된다.
+                # 텍스트만 관계가 확인되는 뒤따르는 첫 문단·표로 실어 보낸다.
+                pending_lead.append(
+                    (lost_headings[bi], level,
+                     heading_has_inline_value(lost_headings[bi])))
             while stack and stack[-1][0] >= level:
                 stack.pop()
             stack.append((level, title))
@@ -862,17 +1235,29 @@ def process_document(reg_row, md_dir, sidecar_dir, cfg, errors):
 
         if kind in ("table", "pipe_table"):
             table_idx += 1
+            # 표 HTML 은 건드리지 않는다. 소실 헤딩 텍스트는 search_text 에만 실린다.
+            lead = "\n".join(item[0] for item in pending_lead) if pending_lead else None
+            if pending_lead:
+                recov["table"] += len(pending_lead)
+                pending_lead = []
             units.append({
                 "kind": "table", "html": body, "path": path,
                 "line_start": ln0, "line_end": ln1,
                 "table_idx": table_idx, "boiler_type": b_type, "boiler_label": b_label,
+                "lead_text": lead,
             })
         else:
+            # ⚠️ 문단 수는 '원문 기준으로' 먼저 센다. 복원 텍스트를 붙인 뒤에 세면
+            #    para_no 가 밀려 location_label 의 문단 번호가 통째로 바뀐다.
             n_paras = len([p for p in re.split(r"\n\s*\n", body) if p.strip()])
             if n_paras == 0:
-                continue
+                continue                        # 빈 블록 — pending 은 다음으로 넘긴다
             start_no = para_no[path] + 1
             para_no[path] += n_paras
+            if pending_lead:
+                body = attach_lead(body, [item[0] for item in pending_lead])
+                recov["text"] += len(pending_lead)
+                pending_lead = []
             units.append({
                 "kind": "text", "text": body, "path": path,
                 "line_start": ln0, "line_end": ln1,
@@ -926,6 +1311,10 @@ def process_document(reg_row, md_dir, sidecar_dir, cfg, errors):
                     "part": part, "of": of,
                     "blank_ratio": ratio, "blank_cells": blank, "total_cells": total,
                     "boiler_type": u["boiler_type"], "boiler_label": u["boiler_label"],
+                    # 표 제목 역할을 하던 소실 헤딩. 조각마다 반복한다 —
+                    # 머리글 반복(C-2 ③-a)과 같은 이유로, 조각 하나만 검색에
+                    # 걸려도 무슨 표인지 알 수 있어야 한다.
+                    "lead_text": u.get("lead_text"),
                     # C-2 ③-c — 자르지 못해 남긴 조각에만 표시한다.
                     # ⚠️ len(html) > budget 으로 재면 안 된다. 머리글 반복분 때문에
                     #    정상 분할된 조각도 넘을 수 있어 오탐이 생긴다(950자 조각이
@@ -948,6 +1337,9 @@ def process_document(reg_row, md_dir, sidecar_dir, cfg, errors):
 
         if c["kind"] == "table":
             body_search = table_search_text(c["content"])
+            if c.get("lead_text"):
+                # content(HTML)는 그대로 두고 검색 텍스트에만 얹는다.
+                body_search = c["lead_text"] + "\n" + body_search
             # C-2 ② degraded 판정은 검색 대상 표에만 적용한다
             degraded = bool(eligible and c["blank_ratio"] is not None
                             and c["blank_ratio"] > degraded_th)
@@ -1002,6 +1394,13 @@ def process_document(reg_row, md_dir, sidecar_dir, cfg, errors):
         "eligible": sum(1 for c in out if c["retrieval_eligible"]),
         "degraded": sum(1 for c in out if c["table_degraded"]),
         "oversize": sum(1 for c in out if c["oversize"]),
+        # 소실 헤딩 복원 내역. unrecovered 는 문서 끝까지 붙일 곳이 없던 것.
+        "heading_lost": len(lost_headings),
+        "heading_to_text": recov["text"],
+        "heading_to_table": recov["table"],
+        "heading_unrecovered": len(pending_lead),
+        "heading_skipped_boilerplate": recov["boilerplate"],
+        "heading_dropped_cross_section": recov["dropped_cross_section"],
     }
     return out, doc_stat
 
@@ -1024,10 +1423,40 @@ def main():
     ap.add_argument("--skip-extraction-check", action="store_true",
                     help="추출표 대조를 건너뛴다. C-5 ③ 안전장치를 끄는 것이므로 "
                          "사유를 기록해야 한다")
+    ap.add_argument("--verify-location", type=Path, default=None,
+                    help="이전 chunks.jsonl 과 location_label·section_path 를 전수 "
+                         "대조한다. 불일치가 있으면 산출물을 만들지 않고 중단 "
+                         "(팀 결정 2026-09-03)")
+    ap.add_argument("--verify-location-strict", action="store_true",
+                    help="--verify-location 대조에 같은 라벨의 '개수'까지 포함한다")
+    ap.add_argument("--allow-unverified-location", action="store_true",
+                    help="location 참조본이 없는 최초 생성에만 쓰는 명시적 예외. "
+                         "--unverified-location-reason 이 반드시 필요하다")
+    ap.add_argument("--unverified-location-reason", default=None,
+                    help="location 대조를 생략하는 구체적인 이유")
     ap.add_argument("--tokenize", action="store_true",
                     help="토큰 길이 집계까지 수행 (tiktoken 필요)")
     ap.add_argument("--repo-root", type=Path, default=None)
     args = ap.parse_args()
+
+    # location 대조는 기본 의무다. 참조본이 없는 최초 생성만 이유를 남기고
+    # 명시적으로 예외 처리한다. 아무 옵션도 안 준 실행은 조용히 진행하지 않는다.
+    if args.verify_location and args.allow_unverified_location:
+        die("--verify-location 과 --allow-unverified-location 을 함께 쓸 수 없습니다.")
+    if not args.verify_location and not args.allow_unverified_location:
+        die("location 대조 방식이 지정되지 않았습니다. --verify-location 으로 "
+            "이전 청크를 대조하세요. 참조본이 없는 최초 생성만 "
+            "--allow-unverified-location 과 --unverified-location-reason 을 "
+            "명시할 수 있습니다.")
+    if args.allow_unverified_location and not str(
+            args.unverified_location_reason or "").strip():
+        die("--allow-unverified-location 에는 --unverified-location-reason 이 필요합니다.")
+    if args.unverified_location_reason and not args.allow_unverified_location:
+        die("--unverified-location-reason 은 --allow-unverified-location 과 함께 써야 합니다.")
+
+    # argparse 로는 의존관계를 표현할 수 없어 여기서 막는다.
+    if args.verify_location_strict and not args.verify_location:
+        die("--verify-location-strict 는 --verify-location 과 함께 써야 합니다.")
 
     rag_root = os.environ.get("RAG_ROOT")
     if not rag_root:
@@ -1120,6 +1549,17 @@ def main():
                 " / ".join(f"{k}: {a} → {b}" for k, (a, b) in changed.items()) +
                 "\n       전체 청킹을 실행하세요.")
 
+    # ── location 대조 참조 파일 (팀 결정 2026-09-03)
+    #    처리 루프보다 앞에서 읽는다. 경로나 버전이 틀린 실행이 100문서를 다 돌고
+    #    나서 죽으면 몇 분을 버린다.
+    prev_loc, prev_meta = None, None
+    if args.verify_location:
+        prev_loc, prev_meta = load_prev_locations(args.verify_location, cfg, errors)
+        print(f"location 대조 참조: {args.verify_location}\n"
+              f"  청크 {prev_meta['locations_prev']} / 문서 {prev_meta['documents_prev']}건 "
+              f"· chunking {prev_meta['reference_chunking_version']} "
+              f"· corpus {prev_meta['reference_corpus_version']}")
+
     started = datetime.now(timezone.utc)
     all_chunks, per_doc = [], {}
     for r in targets:
@@ -1149,6 +1589,68 @@ def main():
         die(f"처리 오류 {len(hard_errors)}건. 기존 산출물을 보존하고 중단합니다. "
             f"errors.jsonl 확인.")
 
+    # ── location 전수 대조 (팀 결정 2026-09-03)
+    #    ⚠️ 반드시 .tmp 쓰기 '전에' 한다. .tmp 와 replace() 사이에서 죽으면 공식
+    #       폴더에 chunks.jsonl.tmp 잔재가 남고, 2만 줄을 쓴 것도 헛일이 된다.
+    #       --tokenize 앞이기도 해서 버릴 산출물에 tiktoken 을 돌리지 않는다.
+    #    ⚠️ hard_errors 뒤여야 한다. 파싱 실패한 문서가 청크를 못 만든 것을
+    #       "location 대규모 회귀"로 오해하게 만들면 안 된다.
+    loc_report = ({
+        "result": "skipped_explicit",
+        "reason": str(args.unverified_location_reason).strip(),
+    } if args.allow_unverified_location else None)
+    if prev_loc is not None:
+        details, counts = compare_locations(
+            prev_loc, index_locations(merged), only, args.verify_location_strict)
+        blocking = list(BLOCKING_KINDS)
+        if args.verify_location_strict:
+            blocking.append("count_changed")
+        n_block = sum(counts[k] for k in blocking)
+
+        summary = dict(prev_meta)
+        summary.update({
+            "level": "error" if n_block else "info",
+            "stage": "verify_location",
+            "kind": "summary",
+            "mode": "strict" if args.verify_location_strict else "set",
+            "documents_compared": len(set(prev_loc) | {c["document_id"] for c in merged}),
+            "locations_new": len(merged),
+            "document_missing": counts["document_missing"],
+            "document_added": counts["document_added"],
+            "location_missing": counts["location_missing"],
+            "location_added": counts["location_added"],
+            "eligible_changed": counts["eligible_changed"],
+            "count_changed": counts["count_changed"],
+            "details_written": len(details),
+            "details_truncated": sum(counts.values()) > len(details),
+            "msg": (f"location 대조 불일치 {n_block}건 — 산출물을 만들지 않고 중단"
+                    if n_block else "location 대조 이상 없음"),
+        })
+        errors.extend(details)
+        errors.append(summary)
+
+        if n_block:
+            with (out_dir / "errors.jsonl").open("w", encoding="utf-8") as f:
+                for e in errors:
+                    f.write(json.dumps(e, ensure_ascii=False) + "\n")
+            die(f"location 대조에서 불일치 {n_block}건이 나왔습니다 "
+                f"(문서 {counts['document_missing'] + counts['document_added']} / "
+                f"없어짐 {counts['location_missing']} / "
+                f"새로 생김 {counts['location_added']} / "
+                f"검색대상 변경 {counts['eligible_changed']}"
+                + (f" / 개수 변화 {counts['count_changed']}"
+                   if args.verify_location_strict else "") + "). "
+                f"기존 산출물을 보존하고 중단합니다. "
+                f"{out_dir / 'errors.jsonl'} 확인.", code=4)
+
+        loc_report = {k: v for k, v in summary.items()
+                      if k not in ("level", "stage", "kind", "msg")}
+        loc_report["result"] = "ok"
+        print(f"location 대조: {prev_meta['reference_chunking_version']} "
+              f"{prev_meta['locations_prev']}청크 대조 — 이상 없음"
+              + (f" (개수 변화 {counts['count_changed']}건 — 라벨 값은 그대로)"
+                 if counts["count_changed"] else ""))
+
     written = len(merged)
 
     # ── 집계
@@ -1163,6 +1665,13 @@ def main():
         "config": {k: cfg[k] for k in REQUIRED_KEYS},
         "embedding": {k: cfg.get(k) for k in OPTIONAL_KEYS},
         "extraction_check": ext_report,
+        "location_verification": loc_report,
+        "heading_recovery": {
+            k: sum(s.get(k, 0) for s in per_doc.values())
+            for k in ("heading_lost", "heading_to_text", "heading_to_table",
+                      "heading_unrecovered", "heading_skipped_boilerplate",
+                      "heading_dropped_cross_section")
+        } if per_doc else None,
         "git": gi,
         "mode": "partial" if only else "full",
         "documents_in_file": len({c["document_id"] for c in all_chunks}),
@@ -1270,6 +1779,29 @@ def tokenize_stats(chunks, errors, model: str, max_len):
 
 
 def render_version(cfg, gi, stats, registry_path, corpus_dir, table_dir):
+    lv = stats.get("location_verification")
+    if lv and lv.get("result") == "ok":
+        loc_line = (f"location 대조 : {lv['reference_chunking_version']} "
+                    f"{lv['locations_prev']}청크 대조 이상 없음"
+                    + (f" (개수 변화 {lv['count_changed']}건)"
+                       if lv["count_changed"] else ""))
+    elif lv and lv.get("result") == "skipped_explicit":
+        loc_line = f"location 대조 : 명시적 예외 ({lv['reason']})"
+    else:
+        # 새 코드는 이 상태로 산출물을 만들 수 없다. 예전 산출물 렌더링과
+        # 방어적 호환을 위해 문구만 남긴다.
+        loc_line = "location 대조 : 기록 없음"
+
+    hr = stats.get("heading_recovery")
+    if hr:
+        head_line = (f"소실 헤딩 복원: {hr['heading_to_text'] + hr['heading_to_table']}건 "
+                     f"(문단 {hr['heading_to_text']} / 표 search_text "
+                     f"{hr['heading_to_table']}) · 미복원 {hr['heading_unrecovered']} "
+                     f"· 별첨 제외 {hr['heading_skipped_boilerplate']} "
+                     f"· 관계없는 절 유입 차단 {hr.get('heading_dropped_cross_section', 0)}")
+    else:
+        head_line = "소실 헤딩 복원: 해당 없음"
+
     lines = [
         "# RFP 검색용 청크",
         f"chunking version   : {cfg['chunking_version']}",
@@ -1306,6 +1838,8 @@ def render_version(cfg, gi, stats, registry_path, corpus_dir, table_dir):
          f"{stats['token_len']['median']} / p95 {stats['token_len']['p95']} / "
          f"최대 {stats['token_len']['max']}"
          if stats.get("token_len") else "토큰 길이     : 미측정 (--tokenize 미사용)"),
+        loc_line,
+        head_line,
         "",
         "⚠️ chunk_size·chunk_overlap 은 baseline 시작값이다.",
         "   최종 확정은 토큰 측정과 검색 평가 후 (C-1 · 4-7).",
@@ -1328,9 +1862,11 @@ def render_version(cfg, gi, stats, registry_path, corpus_dir, table_dir):
         " - C-3 ⑤ 별첨·서식 구간은 청크 생성 후 검색 제외",
         " - C-5 ① 등록부 document_id 순서로 처리 (재현성)",
         " - C-5 ③ document_version 불일치 시 중단",
+        " - 팀 결정 2026-09-03 location 전수 대조 (--verify-location)",
     ]
     return "\n".join(lines) + "\n"
 
 
 if __name__ == "__main__":
     main()
+
