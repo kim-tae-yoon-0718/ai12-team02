@@ -82,6 +82,13 @@ class TestSafeFieldDecisions:
         )
         assert decision["status"] == C.FIELD_REVIEW
 
+    def test_even_exact_certification_text_is_not_participation_confirmation(self):
+        decision = C.evaluate_certification(
+            C.CompanyProfile("A", certifications=["정보통신공사업 등록증"]),
+            row(C.CERT_FIELD, answer="정보통신공사업 등록증"),
+        )
+        assert decision["status"] == C.FIELD_REVIEW
+
     @pytest.mark.parametrize(
         "text",
         [

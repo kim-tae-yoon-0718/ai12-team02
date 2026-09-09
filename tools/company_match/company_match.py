@@ -280,10 +280,9 @@ def evaluate_certification(profile: CompanyProfile, row: dict[str, Any] | None) 
         return _decision(FIELD_NOT_STATED, "추출표에 참가 자격 조건이 명시되지 않았습니다.", row)
     if row.get("status") != "value_present":
         return _decision(FIELD_REVIEW, "참가 자격 자료의 상태가 확정값이 아니어서 사람이 확인해야 합니다.", row)
-    value = _compact(_row_text(row))
-    registered = {_compact(item) for item in profile.certifications if _compact(item)}
-    if value and value in registered:
-        return _decision(FIELD_CONFIRMED, "참가 자격 값 전체가 회사가 입력한 자격 값과 정확히 같습니다.", row)
+    # 회사가 입력한 '자격증 이름'과 공고의 '참가 자격 전체 문장'은 자료의 종류가
+    # 다르다. 문자열이 우연히 같아도 법령·실적·유효기간 충족을 뜻하지 않으므로
+    # 자격 조건은 자동 확인하지 않는다.
     return _decision(
         FIELD_REVIEW,
         "참가 자격은 법령·실적·유효기간 등 여러 조건이 섞일 수 있어 단어가 겹쳐도 자동 충족 처리하지 않습니다.",
