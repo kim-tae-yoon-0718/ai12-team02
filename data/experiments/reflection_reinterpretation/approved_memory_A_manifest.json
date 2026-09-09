@@ -1,0 +1,12 @@
+{
+  "schema_version": "reflection_memory.v1",
+  "created_at": "2026-09-07T14:41:11.039556+00:00",
+  "embedding_model": "text-embedding-3-small",
+  "record_count": 10,
+  "vector_dimension": 1536,
+  "records_sha256": "9a607ffde9fc31dcfe9d7d8f1fd30b3bf0313411b0ead252d0cd6842c02c5ccb",
+  "vectors_sha256": "079edbf934e346d523407485e4176a1796b802fe824b281feab65bbbfdc1e332",
+  "embedding_requests": 1,
+  "embedding_tokens": 478,
+  "contains_only_approved_records": true
+}

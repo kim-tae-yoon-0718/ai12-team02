@@ -50,7 +50,7 @@ from table_query import (  # noqa: E402
     detect_field, detect_fields, needs_explanation, lookup_field, FIELD_KEYWORDS,
     detect_deadline_question, detect_deadline_eligibility_question, needs_deadline_data,
     classify_region_restriction, classify_consortium, NON_VALUE_STATUS,
-    KIND_SEMANTIC,
+    KIND_SEMANTIC, SelectionParse,
 )
 from document_registry import (  # noqa: E402
     RegistryScope, load_registry_scope, DocumentRegistryError,
@@ -67,6 +67,12 @@ from doc_resolver import (  # noqa: E402
     RESOLVE_NONE, RESOLVE_ACTIVE,
 )
 from pricing import Usage  # noqa: E402
+from stage1_plan import Stage1Plan, validate_plan  # noqa: E402
+from stage1_planner import Stage1Planner  # noqa: E402
+from stage2_agent import (  # noqa: E402
+    STAGE2_VERSION, Stage2Agent, Stage2AgentError, Stage2Decision,
+    Stage2ResponseTruncated, decisions_structurally_equal,
+)
 
 # ---------------------------------------------------------------------------
 # 내부 실행 경로(route) — 평가셋 라벨(task_type)과 별개인 기록용 값
@@ -140,6 +146,10 @@ class Answer:
     latency_ms: int | None = None
     cost_usd: float | None = None
     cost_detail: dict | None = None
+    # Stage 1 실험 진단. 응답 계약에는 넣지 않고 details.jsonl에만 기록한다.
+    execution_plan: dict | None = None
+    # Stage 3 실험 진단. 규칙 빠른 경로의 수락·거부 이유를 남긴다.
+    stage3_fast_path: dict | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -789,6 +799,7 @@ def answer_qa_or_extract_by_search(
     document_id: str | None = None,
     structured: list[StructuredEvidence] | None = None,
     task_type: str = "qa",
+    format_instruction: str | None = None,
 ) -> Answer:
     """G(검색) → I(컨텍스트) → J(생성) → K(출처).
     structured가 있으면 공식 확정 값을 프롬프트에 함께 넣고, 코드가 만든
@@ -876,7 +887,8 @@ def answer_qa_or_extract_by_search(
     structured_context = "\n".join(ev.prompt_text for ev in structured if ev.prompt_text) or None
     generated = gen_client.generate(
         question, context_texts, structured_context=structured_context,
-        format_instruction=format_instruction_for(question),
+        format_instruction=(format_instruction if format_instruction is not None
+                            else format_instruction_for(question)),
     )
     if not isinstance(generated, str) or not generated.strip():
         # 빈 응답은 정답도 정상 기권도 아니다. 상위 오류 처리로 실제 실패를 기록한다.
@@ -1510,6 +1522,896 @@ def answer_qa(
 
 
 # ---------------------------------------------------------------------------
+# Stage 1 — LLM one-shot plan → one deterministic tool execution
+# ---------------------------------------------------------------------------
+
+def _stage1_format_instruction(answer_mode: str) -> str:
+    """Map a validated enum to an output instruction; do not inspect the question."""
+    return {
+        "value": "간결하게 값만 답하고 근거에 없는 설명을 더하지 마세요.",
+        "list": "근거에 있는 항목만 빠짐없이 목록으로 답하세요.",
+        "summary": "근거에 있는 내용만 간결하게 요약하세요.",
+        "comparison": "비교 대상을 섞지 말고 근거에 있는 차이만 답하세요.",
+        "unanswerable": "근거가 없으면 확인할 수 없다고 답하세요.",
+        "document_set": "문서 집합을 빠뜨리지 말고 답하세요.",
+        "clarification": "필요한 정보 한 가지만 간결하게 되물으세요.",
+    }[answer_mode]
+
+
+def _stage1_lookup(
+    plan: Stage1Plan, table: list[dict], cfg: dict[str, Any],
+    identity: IdentityIndex | None, locator: ChunkLocator | None,
+) -> Answer:
+    doc_id = plan.document_ids[0]
+    evidence = [
+        _field_evidence(doc_id, field_name, table, cfg, identity, locator)
+        for field_name in plan.requested_fields
+    ]
+    return Answer(
+        text=_structured_lead(evidence), task_type=plan.task_type,
+        abstained=any(ev.abstained for ev in evidence),
+        sources=[f"{doc_id} ({ev.used_source.get('source')}: {ev.field_name})"
+                 for ev in evidence],
+        condition_query=[{"field": ev.field_name, "document_id": doc_id,
+                          "status": ev.status, "route": "stage1_one_shot"}
+                         for ev in evidence],
+        condition_result_doc_ids=[doc_id],
+        route=ROUTE_EXTRACT_VALUE,
+        structured_answer=_merge_structured(evidence),
+        citations=[citation for ev in evidence for citation in ev.citations],
+        selected_document_ids=[doc_id],
+        used_sources=[ev.used_source for ev in evidence],
+        resolution={"method": "llm_plan", "candidates": [doc_id]},
+    )
+
+
+def _stage1_compare(
+    plan: Stage1Plan, table: list[dict], cfg: dict[str, Any],
+    identity: IdentityIndex | None, locator: ChunkLocator | None,
+) -> Answer:
+    structured: dict[str, dict[str, Any]] = {doc_id: {} for doc_id in plan.document_ids}
+    evidence_detail: dict[str, dict[str, Any]] = {doc_id: {} for doc_id in plan.document_ids}
+    citations: list[dict] = []
+    sections: list[str] = []
+    abstained = False
+    used_sources: list[dict] = []
+    for field_name in plan.requested_fields:
+        lines: list[str] = []
+        for doc_id in plan.document_ids:
+            ev = _field_evidence(doc_id, field_name, table, cfg, identity, locator)
+            value = (ev.short_text or ev.answer_text).replace("\r\n", "\n").replace("\r", "\n")
+            value = value.replace("|", "\\|").replace("\n", "<br>")
+            lines.append(f"| {doc_id} | {value} |")
+            structured[doc_id][field_name] = ev.answer_text
+            evidence_detail[doc_id][field_name] = ev.structured
+            citations.extend(ev.citations)
+            used_sources.append(ev.used_source)
+            abstained = abstained or ev.abstained
+        sections.append(
+            f"[{field_name}] 비교\n| 문서 | 값 |\n|---|---|\n" + "\n".join(lines))
+    # Keep first-seen source order while removing exact duplicate dictionaries.
+    unique_sources: list[dict] = []
+    seen: set[str] = set()
+    for source in used_sources:
+        key = json.dumps(source, ensure_ascii=False, sort_keys=True)
+        if key not in seen:
+            seen.add(key)
+            unique_sources.append(source)
+    return Answer(
+        text="\n\n".join(sections), task_type=plan.task_type,
+        sources=[f"{doc_id} ({field_name})" for field_name in plan.requested_fields
+                 for doc_id in plan.document_ids],
+        abstained=abstained,
+        condition_query=[{"fields": plan.requested_fields,
+                          "document_ids": plan.document_ids,
+                          "route": "stage1_one_shot"}],
+        condition_result_doc_ids=list(plan.document_ids),
+        route=ROUTE_COMPARE,
+        structured_answer=structured,
+        citation_diagnostics={"protocol": "structured_only",
+                              "evidence_detail": evidence_detail},
+        selected_document_ids=list(plan.document_ids),
+        citations=citations,
+        used_sources=unique_sources,
+    )
+
+
+def answer_stage1_one_shot(
+    question: str, store: VectorStore,
+    get_embed_client: "Callable[[], EmbeddingClient]",
+    get_gen_client: "Callable[[], GenerationClient]",
+    get_stage1_planner: "Callable[[], Stage1Planner]",
+    table: list[dict], cfg: dict[str, Any],
+    identity: IdentityIndex | None = None,
+    session: SessionState | None = None,
+    locator: ChunkLocator | None = None,
+    registry_scope: RegistryScope | None = None,
+) -> Answer:
+    """Interpret once and execute once. There is no result-driven re-planning."""
+    planner = get_stage1_planner()
+    active = session.active_document_id if session else None
+    plan = planner.plan(question, session_document_id=active)
+    valid_ids = (set(registry_scope.eligible_ids) if registry_scope is not None
+                 else set(identity.document_ids()) if identity is not None else set())
+    plan = validate_plan(plan, valid_ids, session_document_id=active)
+
+    if plan.action == "table_select":
+        parsed = SelectionParse(
+            conditions=[condition.to_query() for condition in plan.conditions],
+            has_request_marker=True, has_plural_marker=True, has_global_scope=True,
+        )
+        result = answer_select_by_table(
+            question, table, cfg, identity=identity, locator=locator,
+            registry_scope=registry_scope, parse=parsed)
+        result.route = ROUTE_SELECT
+    elif plan.action == "table_lookup":
+        result = _stage1_lookup(plan, table, cfg, identity, locator)
+        if session is not None:
+            session.active_document_id = plan.document_ids[0]
+    elif plan.action == "table_compare":
+        result = _stage1_compare(plan, table, cfg, identity, locator)
+    elif plan.action == "vector_search":
+        document_id = plan.document_ids[0] if plan.document_ids else None
+        result = answer_qa_or_extract_by_search(
+            plan.search_query, store, get_embed_client(), get_gen_client(), cfg,
+            document_id=document_id, structured=[], task_type=plan.task_type,
+            format_instruction=_stage1_format_instruction(plan.answer_mode),
+        )
+        result.route = ROUTE_SEARCH_LLM
+        if document_id and session is not None:
+            session.active_document_id = document_id
+    else:
+        result = Answer(
+            text=plan.clarification or "질문을 더 구체적으로 알려주세요.",
+            task_type=plan.task_type, abstained=True, route=ROUTE_CLARIFY,
+        )
+
+    result.execution_plan = plan.as_dict()
+    result.route_matched_rule = f"stage1_one_shot:{plan.action}"
+    result.route_is_fallback = False
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Stage 2 — bounded StructGPT loop: decide → observe → decide
+# ---------------------------------------------------------------------------
+
+def _stage2_search_tool(
+    plan: Stage1Plan, store: VectorStore, embed_client: EmbeddingClient,
+    cfg: dict[str, Any],
+) -> Answer:
+    """Retrieve evidence only.  Final wording belongs to the Stage 2 agent."""
+    document_id = plan.document_ids[0] if plan.document_ids else None
+    results = _search(plan.search_query, store, embed_client, cfg, document_id)
+    normal = [(meta, score) for meta, score in results
+              if not meta.table_degraded and (meta.text or "").strip()]
+    contexts = [chunk_to_record(meta) for meta, _ in normal]
+    citations = [chunk_to_citation(meta) for meta, _ in normal]
+    selected_ids = list(dict.fromkeys(meta.document_id for meta, _ in normal))
+    text = ("\n\n".join(
+        f"[{index}] {format_source(meta)}\n{meta.text}"
+        for index, (meta, _) in enumerate(normal, 1)
+    ) if normal else "검색 가능한 원문 근거를 찾지 못했습니다.")
+    return Answer(
+        text=text,
+        task_type=plan.task_type,
+        route=ROUTE_SEARCH_LLM,
+        abstained=not bool(normal),
+        sources=[format_source(meta) for meta, _ in normal],
+        structured_answer=contexts,
+        contexts=contexts,
+        retrieved=contexts,
+        citations=citations,
+        retrieved_chunk_ids=[meta.chunk_id for meta, _ in results],
+        retrieved_scores=[score for _, score in results],
+        selected_document_ids=selected_ids,
+        used_sources=[_source_tag(cfg, "chunks")] if results else [],
+        resolution={"method": "llm_structgpt", "candidates": selected_ids},
+    )
+
+
+def _stage2_observation(
+    observation_id: str, plan: Stage1Plan, result: Answer,
+) -> dict[str, Any]:
+    tool_input = {
+        "action": plan.action,
+        "task_type": plan.task_type,
+        "document_scope": plan.document_scope,
+        "document_ids": list(plan.document_ids),
+        "requested_fields": list(plan.requested_fields),
+        "condition_logic": plan.condition_logic,
+        "conditions": [condition.to_query().__dict__ for condition in plan.conditions],
+        "search_query": plan.search_query,
+        "answer_mode": plan.answer_mode,
+    }
+    if plan.action == "table_select":
+        # The complete deterministic result stays in the private Answer object
+        # used by _stage2_finalize. Sending every row, citation and value back
+        # to the model duplicated hundreds of kilobytes and could exceed the
+        # context window. The controller only needs the exact ID set and count.
+        return {
+            "observation_id": observation_id,
+            "tool": plan.action,
+            "tool_input": tool_input,
+            "document_ids": list(result.selected_document_ids),
+            "requested_fields": list(plan.requested_fields),
+            "answer_mode_requested": plan.answer_mode,
+            "answer_text": f"선별 결과 {len(result.selected_document_ids)}건",
+            "structured_result": {
+                "document_count": len(result.selected_document_ids),
+            },
+            "abstained": result.abstained,
+            "evidence": [],
+        }
+
+    evidence: list[dict[str, Any]] = []
+    context_texts = [str(item.get("search_text") or "") for item in result.contexts]
+    for index, citation in enumerate(result.citations, 1):
+        content = (context_texts[index - 1]
+                   if index - 1 < len(context_texts) else result.text)
+        evidence.append({
+            "evidence_id": f"{observation_id}:E{index}",
+            "citation": citation,
+            "content": content,
+        })
+    return {
+        "observation_id": observation_id,
+        "tool": plan.action,
+        "tool_input": tool_input,
+        "document_ids": list(result.selected_document_ids),
+        "requested_fields": list(plan.requested_fields),
+        "answer_mode_requested": plan.answer_mode,
+        # Evidence content is the single textual observation. The previous
+        # payload repeated the same chunks in three different fields.
+        "answer_text": "",
+        "structured_result": None,
+        "abstained": result.abstained,
+        "evidence": evidence,
+    }
+
+
+def _dedupe_dicts(items: list[dict]) -> list[dict]:
+    out: list[dict] = []
+    seen: set[str] = set()
+    for item in items:
+        key = json.dumps(item, ensure_ascii=False, sort_keys=True)
+        if key not in seen:
+            seen.add(key)
+            out.append(item)
+    return out
+
+
+_STRUCTURED_UNRESOLVED_STATUSES = {
+    "row_missing", "external_reference", "not_disclosed", "extraction_failed",
+    "review_required", "conflict", "identity_missing",
+}
+_TOP_LEVEL_NUMBERED_ITEM = re.compile(r"^\s*(?:\(?\d{1,2}\s*[.)]|[①-⑳])\s*")
+_LOWER_LEVEL_KOREAN_ITEM = re.compile(r"^\s*[가-힣]\s*[.)]\s*")
+_BARE_ENUMERATOR = re.compile(r"^\s*(?:[가-힣]|\d{1,2})\s*[.)]\s*$")
+
+
+def _deterministic_list_units(structured: dict[str, Any]) -> list[str]:
+    """Build answer units from a table row without interpreting the question.
+
+    The LLM has already selected the document, field and answer shape. This
+    function only preserves the table's explicit list structure. When a row
+    contains numbered top-level items and lettered children, only the numbered
+    items are returned; children are not promoted into extra top-level answers.
+    """
+    raw = str(structured.get("answer_raw") or "").strip()
+    raw_lines = [line.strip() for line in raw.splitlines() if line.strip()]
+    numbered = [line for line in raw_lines if _TOP_LEVEL_NUMBERED_ITEM.match(line)]
+    has_children = any(_LOWER_LEVEL_KOREAN_ITEM.match(line) for line in raw_lines)
+    if len(numbered) >= 2 and has_children:
+        candidates = numbered
+    elif raw_lines:
+        candidates = raw_lines
+    else:
+        items = structured.get("items")
+        candidates = ([str(item).strip() for item in items]
+                      if isinstance(items, list) else [])
+
+    units: list[str] = []
+    for item in candidates:
+        if not item or _BARE_ENUMERATOR.fullmatch(item):
+            continue
+        cleaned = _TOP_LEVEL_NUMBERED_ITEM.sub("", item)
+        cleaned = _LOWER_LEVEL_KOREAN_ITEM.sub("", cleaned).strip()
+        if cleaned:
+            units.append(cleaned)
+    return units
+
+
+def _dedupe_answer_units(items: list[str]) -> list[str]:
+    """Remove only mechanically identical or fully contained duplicate units."""
+    kept: list[str] = []
+
+    def key(value: str) -> str:
+        return re.sub(r"[\s\W_]+", "", value, flags=re.UNICODE).casefold()
+
+    for item in items:
+        current = key(item)
+        if not current:
+            continue
+        replaced = False
+        for index, prior in enumerate(kept):
+            previous = key(prior)
+            if current == previous or current in previous:
+                replaced = True
+                break
+            if previous in current:
+                kept[index] = item
+                replaced = True
+                break
+        if not replaced:
+            kept.append(item)
+    return kept
+
+
+def _stage2_deterministic_extraction(
+    decision: Stage2Decision,
+    records: list[tuple[dict[str, Any], Answer]],
+) -> Answer | None:
+    """Assemble a typed extraction answer from a formally complete table result.
+
+    The LLM-owned plan supplies task type, document, requested fields and answer
+    mode. Code checks only the result contract: one table lookup exists, every
+    requested field has a table state, and none is unresolved. Otherwise the
+    ordinary LLM finalisation path remains in charge.
+    """
+    if (decision.task_type != "extract"
+            or decision.answer_mode not in {"value", "list", "unanswerable"}
+            or decision.result_assessment != "sufficient"):
+        return None
+
+    by_id = {public["observation_id"]: (public, answer)
+             for public, answer in records}
+    selected = [by_id[obs_id] for obs_id in decision.used_observation_ids
+                if obs_id in by_id]
+    table_records = [(public, answer) for public, answer in selected
+                     if public.get("tool") == "table_lookup"]
+    if len(table_records) != 1:
+        return None
+    public, table_answer = table_records[0]
+    if table_answer.abstained or len(table_answer.selected_document_ids) != 1:
+        return None
+
+    requested_fields = list(public.get("requested_fields") or [])
+    structured_answer = table_answer.structured_answer
+    field_values: list[tuple[str, dict[str, Any]]] = []
+    if len(requested_fields) == 1 and isinstance(structured_answer, list):
+        status = next((str(item.get("status")) for item in
+                       (table_answer.condition_query or [])
+                       if item.get("field") == requested_fields[0]), "")
+        if status in _STRUCTURED_UNRESOLVED_STATUSES or not status:
+            return None
+        field_values.append((requested_fields[0], {
+            "status": status,
+            "items": list(structured_answer),
+            "answer_raw": "\n".join(str(item) for item in structured_answer),
+        }))
+    elif isinstance(structured_answer, dict):
+        for field_name in requested_fields:
+            value = structured_answer.get(field_name)
+            if not isinstance(value, dict):
+                return None
+            status = str(value.get("status") or "")
+            if not status or status in _STRUCTURED_UNRESOLVED_STATUSES:
+                return None
+            field_values.append((field_name, value))
+    else:
+        return None
+
+    if len(field_values) != len(requested_fields) or not field_values:
+        return None
+
+    statuses = [str(value.get("status") or "") for _, value in field_values]
+    all_confirmed_absent = bool(statuses) and all(
+        status == "field_absent" for status in statuses)
+    list_units_by_field = [
+        _deterministic_list_units(value) for _, value in field_values
+    ]
+    # The answer shape is normally LLM-owned. Two table contracts are stronger
+    # than that free-form label: an explicit list with at least two units is a
+    # list, and confirmed field_absent is an answer rather than an inability to
+    # answer. This uses typed tool output only, never Korean question parsing.
+    table_declares_list = any(len(units) >= 2 for units in list_units_by_field)
+    effective_mode = (
+        "value" if all_confirmed_absent
+        else "list" if table_declares_list
+        else decision.answer_mode
+    )
+
+    if effective_mode == "unanswerable":
+        return None
+    if effective_mode == "list":
+        units: list[str] = []
+        for (_, value), value_units in zip(field_values, list_units_by_field):
+            if str(value.get("status") or "") == "field_absent":
+                continue
+            units.extend(value_units)
+        units = _dedupe_answer_units(units)
+        if not units:
+            return None
+        text = "\n".join(units)
+        result_structured: Any = units
+    else:
+        rendered: list[str] = []
+        for field_name, value in field_values:
+            status = str(value.get("status") or "")
+            if status == "field_absent":
+                rendered.append(
+                    f"이 문서에는 {field_name} 항목이 별도로 명시되어 있지 않습니다.")
+            else:
+                raw = value.get("answer_raw")
+                normalized = value.get("answer_normalized")
+                display = clean_value_text(raw if not _empty_value(raw) else normalized)
+                if not display:
+                    return None
+                rendered.append(display if len(field_values) == 1
+                                else f"{field_name}: {display}")
+        text = "\n".join(rendered)
+        result_structured = text
+
+    return Answer(
+        text=text,
+        task_type=decision.task_type,
+        route=ROUTE_EXTRACT_VALUE,
+        abstained=False,
+        sources=list(table_answer.sources),
+        structured_answer=result_structured,
+        contexts=list(table_answer.contexts),
+        retrieved=list(table_answer.retrieved),
+        citations=list(table_answer.citations),
+        condition_query=table_answer.condition_query,
+        condition_result_doc_ids=list(table_answer.condition_result_doc_ids),
+        selected_document_ids=list(table_answer.selected_document_ids),
+        used_sources=list(table_answer.used_sources),
+        citation_diagnostics={
+            "protocol": "stage2_deterministic_extraction_assembly",
+            "used_observation_ids": [public["observation_id"]],
+            "ignored_free_form_final_answer": True,
+            "llm_answer_mode": decision.answer_mode,
+            "effective_answer_mode": effective_mode,
+        },
+        resolution={"method": "llm_structgpt_deterministic_assembly",
+                    "candidates": list(table_answer.selected_document_ids)},
+    )
+
+
+def _stage2_finalize(
+    decision: Stage2Decision,
+    records: list[tuple[dict[str, Any], Answer]],
+) -> Answer:
+    by_id = {public["observation_id"]: (public, answer)
+             for public, answer in records}
+    selected = [by_id[obs_id] for obs_id in decision.used_observation_ids]
+    evidence_map = {
+        evidence["evidence_id"]: evidence["citation"]
+        for public, _ in selected for evidence in public.get("evidence", [])
+    }
+    citations = _dedupe_dicts([
+        evidence_map[evidence_id] for evidence_id in decision.used_evidence_ids
+    ])
+
+    if decision.answer_mode == "document_set":
+        candidates = [answer for public, answer in selected
+                      if public["tool"] == "table_select"]
+        if len(candidates) != 1:
+            raise Stage2AgentError("document_set 종료에는 table_select 결과 하나가 필요합니다.")
+        result = candidates[0]
+        result.task_type = decision.task_type
+        return result
+    if decision.answer_mode == "comparison":
+        candidates = [answer for public, answer in selected
+                      if public["tool"] == "table_compare"]
+        if len(candidates) != 1:
+            raise Stage2AgentError("comparison 종료에는 table_compare 결과 하나가 필요합니다.")
+        result = candidates[0]
+        result.task_type = decision.task_type
+        return result
+
+    answers = [answer for _, answer in selected]
+    has_search = any(public["tool"] == "vector_search" for public, _ in selected)
+    has_table = any(public["tool"].startswith("table_") for public, _ in selected)
+    if has_search and has_table:
+        route_name = ROUTE_STRUCTURED_LLM
+    elif has_search:
+        route_name = ROUTE_SEARCH_LLM
+    else:
+        route_name = answers[-1].route if answers else ROUTE_CLARIFY
+
+    if decision.answer_mode == "list":
+        text = "\n".join(decision.final_items)
+        structured_answer: Any = list(decision.final_items)
+    else:
+        text = decision.final_answer
+        structured_answer = decision.final_answer
+
+    selected_document_ids = list(dict.fromkeys(
+        document_id for answer in answers for document_id in answer.selected_document_ids
+    ))
+    used_sources = _dedupe_dicts([
+        source for answer in answers for source in answer.used_sources
+    ])
+    contexts = _dedupe_dicts([
+        context for answer in answers for context in answer.contexts
+    ])
+    retrieved = _dedupe_dicts([
+        item for answer in answers for item in answer.retrieved
+    ])
+    sources = list(dict.fromkeys(
+        source for answer in answers for source in answer.sources
+    ))
+    condition_query: list[dict] = []
+    for answer in answers:
+        condition_query.extend(answer.condition_query or [])
+    return Answer(
+        text=text,
+        task_type=decision.task_type,
+        route=route_name,
+        abstained=decision.answer_mode == "unanswerable",
+        sources=sources,
+        structured_answer=structured_answer,
+        contexts=contexts,
+        retrieved=retrieved,
+        citations=citations,
+        retrieved_chunk_ids=list(dict.fromkeys(
+            chunk_id for answer in answers for chunk_id in answer.retrieved_chunk_ids
+        )),
+        retrieved_scores=[score for answer in answers for score in answer.retrieved_scores],
+        condition_query=condition_query or None,
+        condition_result_doc_ids=list(dict.fromkeys(
+            document_id for answer in answers
+            for document_id in answer.condition_result_doc_ids
+        )),
+        selected_document_ids=selected_document_ids,
+        used_sources=used_sources,
+        citation_diagnostics={
+            "protocol": "stage2_declared_evidence",
+            "used_observation_ids": list(decision.used_observation_ids),
+            "used_evidence_ids": list(decision.used_evidence_ids),
+        },
+        resolution={"method": "llm_structgpt", "candidates": selected_document_ids},
+    )
+
+
+def _execute_stage2_tool(
+    question: str, plan: Stage1Plan, store: VectorStore,
+    get_embed_client: "Callable[[], EmbeddingClient]", table: list[dict],
+    cfg: dict[str, Any], identity: IdentityIndex | None,
+    locator: ChunkLocator | None, registry_scope: RegistryScope | None,
+) -> Answer:
+    """Execute one validated read-only tool plan without interpreting text."""
+    if plan.action == "table_select":
+        parsed = SelectionParse(
+            conditions=[condition.to_query() for condition in plan.conditions],
+            has_request_marker=True, has_plural_marker=True, has_global_scope=True,
+        )
+        result = answer_select_by_table(
+            question, table, cfg, identity=identity, locator=locator,
+            registry_scope=registry_scope, parse=parsed)
+        result.route = ROUTE_SELECT
+        return result
+    if plan.action == "table_lookup":
+        return _stage1_lookup(plan, table, cfg, identity, locator)
+    if plan.action == "table_compare":
+        return _stage1_compare(plan, table, cfg, identity, locator)
+    if plan.action == "vector_search":
+        return _stage2_search_tool(plan, store, get_embed_client(), cfg)
+    raise Stage2AgentError(f"지원하지 않는 도구: {plan.action}")
+
+
+def _stage2_terminal_preview(decision: Stage2Decision) -> dict[str, Any]:
+    """Expose a terminal candidate to the adjudicator without executing it."""
+    return {
+        "terminal": True,
+        "action": decision.action,
+        "answer_mode": decision.answer_mode,
+        "clarification": decision.clarification,
+        "final_answer": decision.final_answer,
+    }
+
+
+def answer_stage2_structgpt(
+    question: str, store: VectorStore,
+    get_embed_client: "Callable[[], EmbeddingClient]",
+    get_stage2_agent: "Callable[[], Stage2Agent]",
+    table: list[dict], cfg: dict[str, Any],
+    identity: IdentityIndex | None = None,
+    session: SessionState | None = None,
+    locator: ChunkLocator | None = None,
+    registry_scope: RegistryScope | None = None,
+) -> Answer:
+    """Run independent interpretations, execution-guided choice and a bounded loop."""
+    agent = get_stage2_agent()
+    prepare_question = getattr(agent, "prepare_question", None)
+    if prepare_question is not None:
+        prepare_question(question)
+    active = session.active_document_id if session else None
+    max_tool_calls = int(cfg.get("stage2_max_tool_calls", 3))
+    if max_tool_calls < 1 or max_tool_calls > 5:
+        raise Stage2AgentError("stage2_max_tool_calls는 1~5여야 합니다.")
+
+    records: list[tuple[dict[str, Any], Answer]] = []
+    decisions: list[dict[str, Any]] = []
+    seen_calls: set[str] = set()
+    initial_task_type: str | None = None
+    initial_answer_mode: str | None = None
+    plan_revision_count = 0
+    actual_tool_calls = 0
+    initial_plan_proposal: dict[str, Any] | None = None
+    initial_plan_verification: dict[str, Any] | None = None
+    initial_candidates: dict[str, Any] | None = None
+    structural_agreement: bool | None = None
+    disagreement_results: dict[str, Any] | None = None
+    initial_adjudication: dict[str, Any] | None = None
+    invalid_initial_candidates: dict[str, str] = {}
+    preset_decision: Stage2Decision | None = None
+
+    def trace() -> dict[str, Any]:
+        return {
+            "schema_version": STAGE2_VERSION,
+            "decisions": decisions,
+            "raw_decisions": list(getattr(agent, "raw_decisions", [])),
+            "raw_independent_decisions": list(
+                getattr(agent, "raw_independent_decisions", [])),
+            "raw_adjudications": list(getattr(agent, "raw_adjudications", [])),
+            "observations": [public for public, _ in records],
+            "tool_calls": actual_tool_calls,
+            "selected_path_tool_calls": len(records),
+            "max_tool_calls": max_tool_calls,
+            "plan_revision_count": plan_revision_count,
+            "initial_plan_proposal": initial_plan_proposal,
+            "initial_plan_verification": initial_plan_verification,
+            "raw_verifications": list(getattr(agent, "raw_verifications", [])),
+            "initial_candidates": initial_candidates,
+            "initial_structural_agreement": structural_agreement,
+            "disagreement_results": disagreement_results,
+            "initial_adjudication": initial_adjudication,
+            "invalid_initial_candidates": invalid_initial_candidates,
+            "retrieved_memory_A": list(
+                getattr(agent, "current_memory_A", [])),
+        }
+
+    def finish(result: Answer, rule: str) -> Answer:
+        result.execution_plan = trace()
+        result.route_matched_rule = rule
+        result.route_is_fallback = False
+        return result
+
+    try:
+        if cfg.get("stage2_dual_interpretation_enabled", False):
+            candidate_a: Stage2Decision | None = None
+            candidate_b: Stage2Decision | None = None
+            try:
+                candidate_a = agent.decide(
+                    question, [], session_document_id=active)
+            except Stage2AgentError as exc:
+                invalid_initial_candidates["candidate_a"] = (
+                    f"{type(exc).__name__}: {exc}")
+            try:
+                candidate_b = agent.independent_decide(
+                    question, session_document_id=active)
+            except Stage2AgentError as exc:
+                invalid_initial_candidates["candidate_b"] = (
+                    f"{type(exc).__name__}: {exc}")
+            initial_candidates = {
+                "candidate_a": (candidate_a.as_dict() if candidate_a else {
+                    "invalid": True,
+                    "error": invalid_initial_candidates.get("candidate_a"),
+                }),
+                "candidate_b": (candidate_b.as_dict() if candidate_b else {
+                    "invalid": True,
+                    "error": invalid_initial_candidates.get("candidate_b"),
+                }),
+            }
+            valid_candidates = {
+                label: candidate for label, candidate in (
+                    ("candidate_a", candidate_a), ("candidate_b", candidate_b),
+                ) if candidate is not None
+            }
+            if not valid_candidates:
+                return finish(Answer(
+                    text="두 독립 해석 모두 실행 가능한 계획을 만들지 못했습니다. 질문을 더 구체적으로 알려주세요.",
+                    task_type="qa", abstained=True, route=ROUTE_CLARIFY,
+                ), "stage2_dual:both_candidates_invalid")
+            if len(valid_candidates) == 1:
+                chosen_label, preset_decision = next(iter(valid_candidates.items()))
+                initial_adjudication = {
+                    "selected_candidate": chosen_label,
+                    "checked_requirements": ["structured_contract"],
+                    "decision_note": "다른 독립 후보가 실행 계약을 통과하지 못함.",
+                    "clarification": None,
+                    "selection_method": "structural_validity",
+                }
+            else:
+                assert candidate_a is not None and candidate_b is not None
+                structural_agreement = decisions_structurally_equal(
+                    candidate_a, candidate_b)
+                if structural_agreement:
+                    preset_decision = candidate_a
+                else:
+                    candidate_records: dict[str, tuple[dict[str, Any], Answer] | None] = {}
+                    disagreement_results = {}
+                    for label, candidate in (
+                        ("candidate_a", candidate_a), ("candidate_b", candidate_b),
+                    ):
+                        if candidate.tool_plan is None:
+                            preview = _stage2_terminal_preview(candidate)
+                            candidate_records[label] = None
+                        else:
+                            if actual_tool_calls >= max_tool_calls:
+                                raise Stage2AgentError(
+                                    "후보 계획 비교 중 최대 도구 호출 수에 도달했습니다.")
+                            tool_result = _execute_stage2_tool(
+                                question, candidate.tool_plan, store, get_embed_client,
+                                table, cfg, identity, locator, registry_scope)
+                            actual_tool_calls += 1
+                            preview = _stage2_observation(
+                                "O1", candidate.tool_plan, tool_result)
+                            candidate_records[label] = (preview, tool_result)
+                        disagreement_results[label] = preview
+
+                    adjudication = agent.adjudicate_initial_plans(
+                        question, candidate_a, candidate_b,
+                        disagreement_results["candidate_a"],
+                        disagreement_results["candidate_b"],
+                        session_document_id=active)
+                    initial_adjudication = adjudication.as_dict()
+                    if adjudication.selected_candidate == "clarify":
+                        return finish(Answer(
+                            text=adjudication.clarification or "질문을 더 구체적으로 알려주세요.",
+                            task_type=candidate_a.task_type,
+                            abstained=True, route=ROUTE_CLARIFY,
+                        ), "stage2_dual:adjudicator_clarify")
+                    chosen_label = adjudication.selected_candidate
+                    preset_decision = (candidate_a if chosen_label == "candidate_a"
+                                       else candidate_b)
+                    chosen_record = candidate_records[chosen_label]
+                    if preset_decision.tool_plan is not None and chosen_record is not None:
+                        decisions.append(preset_decision.as_dict())
+                        initial_task_type = preset_decision.task_type
+                        initial_answer_mode = preset_decision.answer_mode
+                        records.append(chosen_record)
+                        seen_calls.add(json.dumps(
+                            preset_decision.tool_plan.as_dict(), ensure_ascii=False,
+                            sort_keys=True))
+                        if (preset_decision.document_ids and session is not None
+                                and preset_decision.action in {"table_lookup", "vector_search"}):
+                            session.active_document_id = preset_decision.document_ids[0]
+                            active = preset_decision.document_ids[0]
+                        preset_decision = None
+        # With dual interpretation disabled, retain the earlier single-plan path.
+    except Stage2ResponseTruncated:
+        return finish(Answer(
+            text="응답 길이 제한으로 답을 완성하지 못했습니다.",
+            task_type=initial_task_type or "qa",
+            abstained=True, route=ROUTE_CLARIFY,
+        ), "stage2_dual:response_truncated")
+    except Stage2AgentError as exc:
+        invalid_initial_candidates["adjudicator"] = (
+            f"{type(exc).__name__}: {exc}")
+        return finish(Answer(
+            text="독립 해석을 안전하게 선택하지 못해 답변을 보류합니다.",
+            task_type=initial_task_type or "qa",
+            abstained=True, route=ROUTE_CLARIFY,
+        ), "stage2_dual:adjudicator_contract_failure")
+    except Exception as exc:
+        setattr(exc, "stage2_trace", trace())
+        raise
+
+    while len(decisions) <= max_tool_calls + 1:
+        public_observations = [public for public, _ in records]
+        try:
+            if preset_decision is not None:
+                decision = preset_decision
+                preset_decision = None
+            else:
+                decision = agent.decide(
+                    question, public_observations, session_document_id=active,
+                    locked_task_type=initial_task_type,
+                    locked_answer_mode=initial_answer_mode,
+                    # The two independent pre-execution plans own semantic
+                    # interpretation.  Follow-up turns may choose another tool,
+                    # but cannot silently redefine task or answer shape.
+                    allow_plan_revision=False)
+            if not records and initial_plan_proposal is None:
+                initial_plan_proposal = decision.as_dict()
+                if (not cfg.get("stage2_dual_interpretation_enabled", False)
+                        and cfg.get("stage2_plan_verifier_enabled", False)):
+                    verification = agent.verify_initial_plan(
+                        question, decision, session_document_id=active)
+                    initial_plan_verification = verification.as_dict()
+                    decision = verification.verified_plan
+        except Stage2ResponseTruncated as exc:
+            return finish(Answer(
+                text="응답 길이 제한으로 답을 완성하지 못했습니다.",
+                task_type=initial_task_type or "qa",
+                abstained=True, route=ROUTE_CLARIFY,
+            ), "stage2_structgpt:response_truncated")
+        except Stage2AgentError as exc:
+            invalid_initial_candidates["followup"] = (
+                f"{type(exc).__name__}: {exc}")
+            return finish(Answer(
+                text="도구 결과를 안전한 답변 형식으로 정리하지 못해 답변을 보류합니다.",
+                task_type=initial_task_type or "qa",
+                abstained=True, route=ROUTE_CLARIFY,
+            ), "stage2_structgpt:followup_contract_failure")
+        except Exception as exc:
+            setattr(exc, "stage2_trace", trace())
+            raise
+
+        decisions.append(decision.as_dict())
+        if initial_task_type is None:
+            initial_task_type = decision.task_type
+            initial_answer_mode = decision.answer_mode
+        elif decision.result_assessment == "plan_wrong":
+            if plan_revision_count >= 1:
+                raise Stage2AgentError("최초 계획 수정은 한 번만 허용됩니다.")
+            plan_revision_count += 1
+            initial_task_type = decision.task_type
+            initial_answer_mode = decision.answer_mode
+        else:
+            if decision.task_type != initial_task_type:
+                raise Stage2AgentError(
+                    f"최초 계획 오류 선언 없이 task_type이 바뀌었습니다: "
+                    f"{initial_task_type} → {decision.task_type}")
+            if (initial_answer_mode is not None
+                    and decision.answer_mode not in {initial_answer_mode, "unanswerable"}):
+                raise Stage2AgentError(
+                    f"최초 계획 오류 선언 없이 answer_mode가 바뀌었습니다: "
+                    f"{initial_answer_mode} → {decision.answer_mode}")
+
+        if decision.action == "clarify":
+            return finish(Answer(
+                text=decision.clarification or "질문을 더 구체적으로 알려주세요.",
+                task_type=decision.task_type,
+                abstained=True, route=ROUTE_CLARIFY,
+            ), "stage2_structgpt:clarify")
+
+        if (decision.result_assessment == "sufficient"
+                and decision.action in {"table_select", "table_compare"}
+                and decision.answer_mode in {"document_set", "comparison"}):
+            return finish(
+                _stage2_finalize(decision, records),
+                "stage2_structgpt:sufficient_result")
+
+        if decision.action == "finalize":
+            if cfg.get("stage2_deterministic_extraction_assembly", False):
+                deterministic = _stage2_deterministic_extraction(decision, records)
+                if deterministic is not None:
+                    return finish(
+                        deterministic,
+                        "stage2_structgpt:deterministic_extraction_assembly")
+            return finish(
+                _stage2_finalize(decision, records),
+                "stage2_structgpt:finalize")
+
+        if actual_tool_calls >= max_tool_calls:
+            raise Stage2AgentError("최대 도구 호출 수에 도달했지만 종료하지 않았습니다.")
+        plan = decision.tool_plan
+        if plan is None:
+            raise Stage2AgentError("도구 계획이 비어 있습니다.")
+        fingerprint = json.dumps(plan.as_dict(), ensure_ascii=False, sort_keys=True)
+        if fingerprint in seen_calls:
+            raise Stage2AgentError("같은 도구를 같은 입력으로 반복 호출했습니다.")
+        seen_calls.add(fingerprint)
+        tool_result = _execute_stage2_tool(
+            question, plan, store, get_embed_client, table, cfg,
+            identity, locator, registry_scope)
+        actual_tool_calls += 1
+        if (plan.document_ids and session is not None
+                and plan.action in {"table_lookup", "vector_search"}):
+            session.active_document_id = plan.document_ids[0]
+            active = plan.document_ids[0]
+        observation_id = f"O{len(records) + 1}"
+        records.append((_stage2_observation(observation_id, plan, tool_result), tool_result))
+
+    raise Stage2AgentError("Stage 2 결정 횟수 제한 안에 종료하지 못했습니다.")
+
+
+# ---------------------------------------------------------------------------
 # 오케스트레이션
 # ---------------------------------------------------------------------------
 
@@ -1530,6 +2432,161 @@ def sanitize_error(detail: str | None) -> str | None:
     return out
 
 
+def _stage3_fast_path(
+    question: str,
+    store: VectorStore,
+    get_embed_client: "Callable[[], EmbeddingClient]",
+    get_gen_client: "Callable[[], GenerationClient]",
+    table: list[dict],
+    cfg: dict[str, Any],
+    identity: IdentityIndex | None = None,
+    session: SessionState | None = None,
+    locator: ChunkLocator | None = None,
+    registry_scope: RegistryScope | None = None,
+) -> tuple[Answer | None, dict[str, Any]]:
+    """보수적인 규칙 경로가 질문을 완전히 처리할 때만 API 없이 답한다.
+
+    이 함수는 규칙 기반 베이스라인 전체를 되살리는 경로가 아니다. 규칙 파서가
+    발견한 필드와 실제 조건으로 변환한 필드가 정확히 같고, 문서·출력 형태까지
+    하나로 확정된 경우만 수락한다. 하나라도 불확실하면 기존 Stage 2 LLM 경로가
+    질문 전체를 처음부터 처리한다.
+    """
+    rule_cfg = dict(cfg)
+    rule_cfg["routing_method"] = "rule_based"
+    routed = route(question, rule_cfg)
+    diagnostic: dict[str, Any] = {
+        "enabled": True,
+        "accepted": False,
+        "rule_task_type": routed.task_type,
+        "matched_rule": routed.matched_rule,
+        "reason": None,
+    }
+
+    def reject(reason: str, **extra: Any) -> tuple[None, dict[str, Any]]:
+        diagnostic["reason"] = reason
+        diagnostic.update(extra)
+        return None, diagnostic
+
+    if routed.task_type == "no_search_needed":
+        if routed.no_search_kind == NO_SEARCH_SYSTEM_HELP:
+            result = Answer(text=SYSTEM_HELP_TEXT, task_type=routed.task_type,
+                            route=ROUTE_SYSTEM_HELP)
+        else:
+            result = Answer(
+                text=("안녕하세요! RFP 관련 질문을 도와드릴게요. "
+                      "무엇을 물어볼 수 있는지 궁금하시면 \"사용법 알려줘\"라고 "
+                      "말씀해 주세요."),
+                task_type=routed.task_type, route=ROUTE_GREETING)
+        diagnostic.update(accepted=True, reason="closed_no_search_contract")
+        result.stage3_fast_path = diagnostic
+        result.route_matched_rule = f"stage3_fastpath:{routed.matched_rule}"
+        return result, diagnostic
+
+    if routed.task_type == "select":
+        parsed = parse_selection(question)
+        detected_fields = set(detect_fields(question))
+        parsed_fields = {condition.field for condition in parsed.conditions}
+        diagnostic.update(
+            detected_fields=sorted(detected_fields),
+            parsed_fields=sorted(parsed_fields),
+            condition_count=len(parsed.conditions),
+        )
+        if not is_selection_question(question, parsed, identity=identity):
+            return reject("identity_aware_selection_check_failed")
+        if not parsed.conditions:
+            return reject("no_complete_selection_condition")
+        if parsed.unresolved or parsed.unsupported_or:
+            return reject(
+                "selection_parser_reported_uncertainty",
+                unresolved=list(parsed.unresolved),
+                unsupported_or=bool(parsed.unsupported_or),
+            )
+        if detected_fields != parsed_fields:
+            return reject("detected_and_parsed_fields_differ")
+        result = answer_select_by_table(
+            question, table, cfg, identity=identity, locator=locator,
+            registry_scope=registry_scope, parse=parsed,
+        )
+        if result.route != ROUTE_SELECT or not isinstance(result.structured_answer, list):
+            return reject("selection_output_contract_not_complete")
+        diagnostic.update(accepted=True, reason="complete_selection_contract")
+        result.stage3_fast_path = diagnostic
+        result.route_matched_rule = f"stage3_fastpath:{routed.matched_rule}"
+        result.route_is_fallback = False
+        return result, diagnostic
+
+    if routed.task_type == "extract":
+        fields = _requested_fields(question)
+        diagnostic["detected_fields"] = list(fields)
+        if len(fields) != 1:
+            return reject("scalar_extract_requires_exactly_one_field")
+        if needs_explanation(question):
+            return reject("explanation_requires_llm")
+        active = session.active_document_id if session else None
+        resolution = resolve_document(question, identity, active_document_id=active)
+        diagnostic.update(
+            resolved_document_id=resolution.document_id,
+            resolution_method=resolution.method,
+            candidates=list(resolution.candidates),
+        )
+        if resolution.document_id is None:
+            return reject("document_not_uniquely_resolved")
+        # 거부된 탐침이 실제 대화 상태를 바꾸지 않도록 임시 세션을 사용한다.
+        probe_session = SessionState(active_document_id=active)
+        result = answer_extract_by_table(
+            question, table, store, get_embed_client, get_gen_client, cfg,
+            session=probe_session, identity=identity, locator=locator,
+        )
+        if result.route not in {ROUTE_EXTRACT_VALUE, ROUTE_IDENTITY_VALUE}:
+            return reject("extract_route_requires_generation_or_clarification")
+        if result.abstained or result.error_stage:
+            return reject("extract_result_not_confirmed")
+        # 목록은 경계·계층 판단이 필요하므로 Stage 2의 결정적 조립에 맡긴다.
+        if isinstance(result.structured_answer, list):
+            return reject("list_shape_requires_stage2")
+        statuses = [
+            row.get("status") for row in (result.condition_query or [])
+            if isinstance(row, dict) and row.get("status")
+        ]
+        if statuses and any(status not in {"value_present", "field_absent"}
+                            for status in statuses):
+            return reject("extract_status_not_final", statuses=statuses)
+        if session is not None:
+            session.active_document_id = probe_session.active_document_id
+        diagnostic.update(accepted=True, reason="confirmed_scalar_extract_contract",
+                          statuses=statuses)
+        result.stage3_fast_path = diagnostic
+        result.route_matched_rule = f"stage3_fastpath:{routed.matched_rule}"
+        result.route_is_fallback = False
+        return result, diagnostic
+
+    if routed.task_type == "compare":
+        doc_ids, unknown_orgs = resolve_documents_for_compare(question, identity)
+        fields = _requested_fields(question)
+        scope_issue = comparison_scope_issue(
+            question, identity, resolved_doc_ids=doc_ids)
+        diagnostic.update(
+            resolved_document_ids=list(doc_ids),
+            detected_fields=list(fields),
+            unknown_orgs=list(unknown_orgs),
+            scope_issue=scope_issue,
+        )
+        if scope_issue or unknown_orgs or len(doc_ids) < 2 or not fields:
+            return reject("comparison_contract_not_complete")
+        result = answer_compare_by_table(
+            question, table, cfg, identity=identity, locator=locator)
+        if (result.route != ROUTE_COMPARE or result.abstained
+                or not isinstance(result.structured_answer, dict)):
+            return reject("comparison_output_contract_not_complete")
+        diagnostic.update(accepted=True, reason="complete_comparison_contract")
+        result.stage3_fast_path = diagnostic
+        result.route_matched_rule = f"stage3_fastpath:{routed.matched_rule}"
+        result.route_is_fallback = False
+        return result, diagnostic
+
+    return reject("rule_path_requires_language_generation")
+
+
 def answer(
     question: str, store: VectorStore,
     get_embed_client: "Callable[[], EmbeddingClient]",
@@ -1539,7 +2596,66 @@ def answer(
     session: SessionState | None = None,
     locator: ChunkLocator | None = None,
     registry_scope: RegistryScope | None = None,
+    get_stage1_planner: "Callable[[], Stage1Planner] | None" = None,
+    get_stage2_agent: "Callable[[], Stage2Agent] | None" = None,
 ) -> Answer:
+    stage3_diagnostic = None
+    if cfg.get("stage3_rule_fast_path_enabled", False):
+        try:
+            fast_result, stage3_diagnostic = _stage3_fast_path(
+                question, store, get_embed_client, get_gen_client,
+                table, cfg, identity=identity, session=session,
+                locator=locator, registry_scope=registry_scope,
+            )
+            if fast_result is not None:
+                return fast_result
+        except Exception as e:  # noqa: BLE001
+            # 빠른 경로는 선택적 최적화다. 실패를 성공처럼 감추지는 않되, 원 질문을
+            # 기존 Stage 2가 온전히 처리하도록 이유를 진단에 남기고 넘긴다.
+            stage3_diagnostic = {
+                "enabled": True,
+                "accepted": False,
+                "reason": "fast_path_internal_error",
+                "error": sanitize_error(f"{type(e).__name__}: {e}"),
+            }
+
+    if cfg.get("routing_method") == "llm_structgpt":
+        try:
+            if get_stage2_agent is None:
+                raise RuntimeError("llm_structgpt 실행에 Stage 2 agent가 연결되지 않았습니다.")
+            result = answer_stage2_structgpt(
+                question, store, get_embed_client, get_stage2_agent,
+                table, cfg, identity=identity, session=session,
+                locator=locator, registry_scope=registry_scope,
+            )
+        except Exception as e:  # noqa: BLE001
+            detail = sanitize_error(f"{type(e).__name__}: {e}")
+            result = Answer(
+                text="도구 선택 또는 실행 중 오류가 발생했습니다.", task_type="qa",
+                abstained=True, error_stage="stage2_structgpt",
+                error_detail=detail, failure=detail,
+                execution_plan=getattr(e, "stage2_trace", None),
+            )
+        result.stage3_fast_path = stage3_diagnostic
+        return result
+
+    if cfg.get("routing_method") == "llm_one_shot":
+        try:
+            if get_stage1_planner is None:
+                raise RuntimeError("llm_one_shot 실행에 Stage 1 planner가 연결되지 않았습니다.")
+            return answer_stage1_one_shot(
+                question, store, get_embed_client, get_gen_client,
+                get_stage1_planner, table, cfg, identity=identity, session=session,
+                locator=locator, registry_scope=registry_scope,
+            )
+        except Exception as e:  # noqa: BLE001
+            detail = sanitize_error(f"{type(e).__name__}: {e}")
+            return Answer(
+                text="질문 계획 또는 실행 중 오류가 발생했습니다.", task_type="qa",
+                abstained=True, error_stage="stage1_one_shot",
+                error_detail=detail, failure=detail,
+            )
+
     r: RouteResult = route(question, cfg)
 
     # 라우터는 identity 없이 잠정 판단을 한다. 여기서 identity(기관명·사업명)를 넣어
@@ -1805,16 +2921,34 @@ def main() -> None:
         cache["gen"].reset_usage()
         return cache["gen"]
 
+    def get_stage1_planner() -> Stage1Planner:
+        if "planner" not in cache:
+            eligible = (rt["registry_scope"].eligible_ids
+                        if rt["registry_scope"] is not None else None)
+            cache["planner"] = Stage1Planner(cfg, rt["identity"], eligible)
+        cache["planner"].reset_usage()
+        return cache["planner"]
+
+    def get_stage2_agent() -> Stage2Agent:
+        if "agent2" not in cache:
+            eligible = (rt["registry_scope"].eligible_ids
+                        if rt["registry_scope"] is not None else None)
+            cache["agent2"] = Stage2Agent(cfg, rt["identity"], eligible)
+        cache["agent2"].reset_usage()
+        return cache["agent2"]
+
     import time
     from pricing import compute_cost
     t0 = time.perf_counter()
     result = answer(args.question, rt["store"], get_embed_client, get_gen_client,
                     rt["table"], cfg, identity=rt["identity"], session=session,
-                    locator=rt["locator"], registry_scope=rt["registry_scope"])
+                    locator=rt["locator"], registry_scope=rt["registry_scope"],
+                    get_stage1_planner=get_stage1_planner,
+                    get_stage2_agent=get_stage2_agent)
     result.latency_ms = round((time.perf_counter() - t0) * 1000)
 
     usage = Usage()
-    for key in ("gen", "embed"):
+    for key in ("planner", "agent2", "gen", "embed"):
         client = cache.get(key)
         if client is not None:
             u = client.usage
@@ -1840,6 +2974,7 @@ def main() -> None:
         "error_detail": sanitize_error(result.error_detail),
         "cost_detail": result.cost_detail,
         "citation_diagnostics": result.citation_diagnostics,
+        "execution_plan": result.execution_plan,
         "index_check": rt["index_check"],
     })
     print(json.dumps(payload, ensure_ascii=False, indent=2))

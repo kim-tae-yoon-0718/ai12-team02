@@ -1,0 +1,7 @@
+name: stage1-one-shot-structured-planner
+routing_method: "llm_one_shot"
+stage1_planner_model: "gpt-5-mini"
+stage1_planner_prompt: "stage1_plan_v1.txt"
+stage1_planner_max_completion_tokens: 4096
+stage1_planner_temperature: null
+api_max_retries: 0
