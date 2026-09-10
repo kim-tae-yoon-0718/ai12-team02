@@ -28,6 +28,8 @@ from answer_pipeline import (
     load_config,
     EmbeddingClient,
     GenerationClient,
+    Stage1Planner,
+    Stage2Agent,
 )
 
 # 기능 추가 - 고객 회사 정보 및 추천 공고
@@ -424,6 +426,33 @@ def on_match(
     return priority_md, review_md, urgent_md
 
 
+_STAGE_CACHE: dict = {}
+
+
+def _stage1_planner() -> Stage1Planner:
+    eligible = (
+        _RT["registry_scope"].eligible_ids
+        if _RT["registry_scope"] is not None
+        else None
+    )
+    if "planner" not in _STAGE_CACHE:
+        _STAGE_CACHE["planner"] = Stage1Planner(_CFG, _RT["identity"], eligible)
+    _STAGE_CACHE["planner"].reset_usage()
+    return _STAGE_CACHE["planner"]
+
+
+def _stage2_agent() -> Stage2Agent:
+    eligible = (
+        _RT["registry_scope"].eligible_ids
+        if _RT["registry_scope"] is not None
+        else None
+    )
+    if "agent2" not in _STAGE_CACHE:
+        _STAGE_CACHE["agent2"] = Stage2Agent(_CFG, _RT["identity"], eligible)
+    _STAGE_CACHE["agent2"].reset_usage()
+    return _STAGE_CACHE["agent2"]
+
+
 # 채팅 세션 기억 유지
 def respond(message: str, history: list, session: SessionState | None):
     if not message or not message.strip():
@@ -431,6 +460,7 @@ def respond(message: str, history: list, session: SessionState | None):
 
     if session is None:
         session = SessionState()  # 대화 첫 턴에만 생성
+
     try:
         result = answer(
             message,
@@ -443,6 +473,8 @@ def respond(message: str, history: list, session: SessionState | None):
             session=session,
             locator=_RT["locator"],
             registry_scope=_RT["registry_scope"],
+            get_stage1_planner=_stage1_planner,
+            get_stage2_agent=_stage2_agent,
         )
         resp = answer_to_response(message, result)
     except Exception as e:
@@ -465,22 +497,6 @@ def build_ui() -> gr.Blocks:
         session_state = gr.State(None)  # 대화별 SessionState 저장
 
         with gr.Tabs():
-            with gr.Tab("질문하기"):
-                with gr.Row():
-                    with gr.Column(scale=3):
-                        chatbot = gr.Chatbot(height=480)
-                        msg = gr.Textbox(
-                            placeholder="예: 오늘 등록된 사업 찾아줘",
-                            label="질문",
-                            elem_id="question-box",
-                        )
-                    with gr.Column(scale=2):
-                        gr.Markdown("### 근거 (Sources)")
-                        sources_box = gr.Markdown(
-                            "_질문에 대한 근거는 여기 표시됩니다._",
-                            elem_id="sources-panel",
-                        )
-
             with gr.Tab("회사 매칭"):
                 gr.Markdown("회사 정보를 입력하면 알맞은 입찰 공고를 추천합니다.")
                 with gr.Row():
@@ -511,6 +527,22 @@ def build_ui() -> gr.Blocks:
                             elem_id="cm-review",
                         )
                         cm_urgent = gr.Markdown("_마감 임박 공고_", elem_id="cm-urgent")
+
+            with gr.Tab("질문하기"):
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        chatbot = gr.Chatbot(height=480)
+                        msg = gr.Textbox(
+                            placeholder="예: 오늘 등록된 사업 찾아줘",
+                            label="질문",
+                            elem_id="question-box",
+                        )
+                    with gr.Column(scale=2):
+                        gr.Markdown("### 근거 (Sources)")
+                        sources_box = gr.Markdown(
+                            "_질문에 대한 근거는 여기 표시됩니다._",
+                            elem_id="sources-panel",
+                        )
 
         def submit(message, chat_history, session):
             answer_text, sources_md, new_session = respond(
