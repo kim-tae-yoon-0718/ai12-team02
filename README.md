@@ -7,6 +7,9 @@
 > 코드잇 AI 스프린트 중급 프로젝트 2팀  
 > 일반적인 top-k 검색만으로 놓치기 쉬운 <ins>전체 문서 조건 계산</ins>은 **추출표와 코드**가, <ins>문맥 설명과 예외 처리</ins>는 **원문 검색과 LLM이 담당**합니다.
 
+## 데모 영상
+<video src="https://github.com/user-attachments/assets/9f28c66a-3748-45df-93ef-a931f3886f43" controls width="100%"></video>
+
 ## 핵심 성과
 
 ### 고정 조건에서 진행한 모델 구조 실험
