@@ -11,6 +11,10 @@
   <img src="https://img.shields.io/badge/UI-Gradio-F97316?logo=gradio&logoColor=white" alt="Gradio">
 </p>
 
+<p align="center">
+  <img src="docs/images/stage3-hybrid-routing.svg" width="100%" alt="질문을 규칙 기반 빠른 경로와 LLM 안전망으로 나누어 처리하는 입찰메이트 3단계 구조">
+</p>
+
 > 코드잇 AI 스프린트 중급 프로젝트 2팀  
 > 일반적인 top-k 검색만으로 놓치기 쉬운 **전체 문서 조건 계산**은 추출표와 코드가, **문맥 설명과 예외 처리**는 원문 검색과 LLM이 담당합니다.
 
