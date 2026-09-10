@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="360" viewBox="0 0 1100 360" role="img" aria-labelledby="title desc">
+  <title id="title">입찰메이트 3단계 하이브리드 라우팅 구조</title>
+  <desc id="desc">질문을 확실성 검사 후 규칙 기반 빠른 경로와 LLM 안전망으로 나누어 처리하고 근거가 있는 답변으로 합치는 구조</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#64748B"/>
+    </marker>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8FAFC"/>
+      <stop offset="1" stop-color="#EFF6FF"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="1" y="1" width="1098" height="358" rx="22" fill="url(#bg)" stroke="#CBD5E1"/>
+
+  <text x="550" y="44" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Arial, sans-serif" font-size="27" font-weight="700" fill="#0F172A">
+    확실한 질문은 코드로 빠르게, 복잡한 질문만 LLM으로 신중하게
+  </text>
+
+  <rect x="24" y="128" width="140" height="72" rx="15" fill="#FFFFFF" stroke="#94A3B8" stroke-width="1.6"/>
+  <text x="94" y="157" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Arial, sans-serif" font-size="16" font-weight="700" fill="#0F172A">사용자 질문</text>
+  <text x="94" y="181" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Arial, sans-serif" font-size="13" fill="#64748B">RFP 검색·비교·설명</text>
+
+  <line x1="164" y1="164" x2="190" y2="164" stroke="#64748B" stroke-width="2.2" marker-end="url(#arrow)"/>
+
+  <rect x="202" y="117" width="160" height="94" rx="17" fill="#E0E7FF" stroke="#818CF8" stroke-width="1.6"/>
+  <text x="282" y="154" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Arial, sans-serif" font-size="17" font-weight="700" fill="#312E81">지원 여부 검사</text>
+  <text x="282" y="181" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Arial, sans-serif" font-size="13" fill="#4F46E5">확실할 때만 빠르게</text>
+
+  <path d="M362 157 C382 157 376 119 396 119" fill="none" stroke="#64748B" stroke-width="2.2" marker-end="url(#arrow)"/>
+  <path d="M362 171 C382 171 376 251 396 251" fill="none" stroke="#64748B" stroke-width="2.2" marker-end="url(#arrow)"/>
+
+  <rect x="408" y="67" width="320" height="116" rx="18" fill="#ECFDF5" stroke="#34D399" stroke-width="1.7"/>
+  <rect x="429" y="83" width="139" height="29" rx="14.5" fill="#059669"/>
+  <text x="498.5" y="103" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">빠른 경로 · 32/50</text>
+  <text x="429" y="138" font-family="Pretendard, Noto Sans KR, Arial, sans-serif" font-size="14" font-weight="600" fill="#065F46">전체 선별 · 한 값 조회 · 문서 비교</text>
+  <text x="429" y="163" font-family="Pretendard, Noto Sans KR, Arial, sans-serif" font-size="13" fill="#047857">추출표 + 코드로 처리 · API 호출 0</text>
+
+  <rect x="408" y="195" width="320" height="116" rx="18" fill="#FFF7ED" stroke="#FB923C" stroke-width="1.7"/>
+  <rect x="429" y="211" width="156" height="29" rx="14.5" fill="#EA580C"/>
+  <text x="507" y="231" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">LLM 안전망 · 18/50</text>
+  <text x="429" y="266" font-family="Pretendard, Noto Sans KR, Arial, sans-serif" font-size="14" font-weight="600" fill="#9A3412">독립 해석 → 적절한 도구 선택</text>
+  <text x="429" y="291" font-family="Pretendard, Noto Sans KR, Arial, sans-serif" font-size="13" fill="#C2410C">결과가 부족하면 추가 조회 후 답변</text>
+
+  <path d="M728 125 C749 125 747 155 768 155" fill="none" stroke="#64748B" stroke-width="2.2" marker-end="url(#arrow)"/>
+  <path d="M728 253 C749 253 747 177 768 177" fill="none" stroke="#64748B" stroke-width="2.2" marker-end="url(#arrow)"/>
+
+  <rect x="780" y="116" width="296" height="100" rx="18" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.8"/>
+  <text x="928" y="154" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Arial, sans-serif" font-size="19" font-weight="700" fill="#1E3A8A">근거가 있는 최종 답변</text>
+  <text x="928" y="183" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Arial, sans-serif" font-size="13" fill="#475569">검색 결과 · 출처 · 누락 여부를 함께 확인</text>
+
+  <rect x="780" y="232" width="92" height="48" rx="12" fill="#DBEAFE"/>
+  <rect x="882" y="232" width="92" height="48" rx="12" fill="#DCFCE7"/>
+  <rect x="984" y="232" width="92" height="48" rx="12" fill="#FEF3C7"/>
+  <text x="826" y="251" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Arial, sans-serif" font-size="11" fill="#1E40AF">내용 점수</text>
+  <text x="826" y="269" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Arial, sans-serif" font-size="13" font-weight="700" fill="#1E3A8A">0.8000 유지</text>
+  <text x="928" y="251" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Arial, sans-serif" font-size="11" fill="#166534">API 비용</text>
+  <text x="928" y="269" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Arial, sans-serif" font-size="13" font-weight="700" fill="#14532D">50.96% ↓</text>
+  <text x="1030" y="251" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Arial, sans-serif" font-size="11" fill="#92400E">실행 시간</text>
+  <text x="1030" y="269" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Arial, sans-serif" font-size="13" font-weight="700" fill="#78350F">52.98% ↓</text>
+
+  <text x="928" y="311" text-anchor="middle" font-family="Pretendard, Noto Sans KR, Arial, sans-serif" font-size="11.5" fill="#64748B">
+    동일 평가셋·채점기·추출표(v2/v2/v4)에서 2단계－1·2·3차와 비교
+  </text>
+</svg>
