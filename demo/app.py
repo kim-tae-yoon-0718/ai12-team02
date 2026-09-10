@@ -272,10 +272,16 @@ def _decorate(resp: dict) -> str:
     if route != "추출테이블_값조회":
         return raw
 
-    sa = resp.get("structured_answer") or {}
-    if not sa:
+    sa = resp.get("structured_answer")
+    # 목록형 필드(참가 자격·필수 제출 서류·평가 배점·과업 범위·컨소시엄 요건 등)를
+    # 단건 조회하면 계약상 structured_answer가 dict가 아니라 배열 그대로
+    # 포장은 단일 필드 dict({field: {status, ...}}) 모양에서만 의미가 있으므로,
+    # 그 밖의 모양(list·빈 값 등)은 원본 answer 텍스트를 그대로 보여준다.
+    if not isinstance(sa, dict) or not sa:
         return raw
     field_name, detail = next(iter(sa.items()))
+    if not isinstance(detail, dict):
+        return raw
     status = detail.get("status")
 
     if status == "value_present":

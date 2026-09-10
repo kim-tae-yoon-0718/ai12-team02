@@ -2774,6 +2774,38 @@ def _stage2_terminal_preview(decision: Stage2Decision) -> dict[str, Any]:
     }
 
 
+def _looks_like_broad_selection(question: str, cfg: dict[str, Any]) -> bool:
+    """전체 문서를 조건으로 거르는 선별형 질문인지, 규칙 라우터로 값싸게 미리 본다.
+
+    ⚠️ _stage3_fast_path와 같은 이유로 route()에 rule_based를 강제한다 — route()는
+    그 값이 아니면 바로 NotImplementedError를 낸다. 여기서는 그 판정 자체가
+    아니라 "전체 선별형처럼 보이는가"만 참고하므로, 판정 실패는 조용히 무시하고
+    보수적으로 False(=편향 억제 안 함)로 둔다.
+    """
+    try:
+        rule_cfg = dict(cfg)
+        rule_cfg["routing_method"] = "rule_based"
+        return route(question, rule_cfg).task_type == "select"
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _stage2_clarify_document_id(
+    decision: "Stage2Decision", valid_document_ids: set[str]
+) -> str | None:
+    """clarify로 끝나는 턴에서도, 모델이 이미 특정한 문서 하나가 공식 목록에
+    있으면 세션에 남긴다.
+
+    ⚠️ 도구를 실행한 결과가 아니라 모델의 판단이므로 validate_plan()의 카탈로그
+    검증만 재사용하고, 그 밖의 값(여러 건·빈 값)은 신뢰하지 않는다 — clarify의
+    나머지 칸이 "inert"(stage2_agent.parse_decision)인 것과 같은 이유다.
+    """
+    document_ids = list(getattr(decision, "document_ids", None) or [])
+    if len(document_ids) == 1 and document_ids[0] in valid_document_ids:
+        return document_ids[0]
+    return None
+
+
 def answer_stage2_structgpt(
     question: str,
     store: VectorStore,
@@ -2792,6 +2824,13 @@ def answer_stage2_structgpt(
     if prepare_question is not None:
         prepare_question(question)
     active = session.active_document_id if session else None
+    if active and _looks_like_broad_selection(question, cfg):
+        # ⚠️ 멀티턴 데모에서만 드러나는 문제: CLI 단발 질문은 세션이 항상 비어
+        #   있어 이 편향이 생길 조건 자체가 없었다. 프롬프트에도 session_document_id를
+        #   전체 선별형 질문에 적용하지 말라고 지침을 추가했지만, 모델이 그 지침을
+        #   놓쳐도 안전하도록 여기서 결정적으로 한 번 더 막는다. session 자체는
+        #   손대지 않는다 — 이번 턴 모델 입력에서만 지운다.
+        active = None
     max_tool_calls = int(cfg.get("stage2_max_tool_calls", 3))
     if max_tool_calls < 1 or max_tool_calls > 5:
         raise Stage2AgentError("stage2_max_tool_calls는 1~5여야 합니다.")
@@ -2958,6 +2997,15 @@ def answer_stage2_structgpt(
                     )
                     initial_adjudication = adjudication.as_dict()
                     if adjudication.selected_candidate == "clarify":
+                        # 두 독립 해석이 되묻기로 갈렸어도, 문서 자체는 같은
+                        # 곳을 가리켰다면(둘 다 동일한 공식 문서 1건) 그 부분만은
+                        # 확정된 것이다 — 다음 턴을 위해 남긴다.
+                        valid_ids = set(getattr(agent, "valid_document_ids", None) or [])
+                        doc_a = _stage2_clarify_document_id(candidate_a, valid_ids)
+                        doc_b = _stage2_clarify_document_id(candidate_b, valid_ids)
+                        if doc_a and doc_a == doc_b and session is not None:
+                            session.active_document_id = doc_a
+                            active = doc_a
                         return finish(
                             Answer(
                                 text=adjudication.clarification
@@ -3136,6 +3184,12 @@ def answer_stage2_structgpt(
                 )
 
         if decision.action == "clarify":
+            doc_id = _stage2_clarify_document_id(
+                decision, set(getattr(agent, "valid_document_ids", None) or [])
+            )
+            if doc_id and session is not None:
+                session.active_document_id = doc_id
+                active = doc_id
             return finish(
                 Answer(
                     text=decision.clarification or "질문을 더 구체적으로 알려주세요.",
