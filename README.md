@@ -249,7 +249,6 @@ ai12-team02/
 - [응답 계약](docs/response_contract.md)
 - [채점 방식](docs/scoring.md)
 - [검증 규칙](docs/validation.md)
-- [기존 상세 실험 기록 README 보관본](https://app.notion.com/p/3d79556c393781f3a944f50da91bcc4c)
 
 ## 팀원별 작업일지
 
