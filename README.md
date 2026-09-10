@@ -266,7 +266,7 @@ flowchart LR
 ~~~bash
 git clone https://github.com/kim-tae-yoon-0718/ai12-team02.git
 cd ai12-team02
-git checkout dev
+git checkout main
 
 python3 -m venv .venv
 source .venv/bin/activate

@@ -1,0 +1,6 @@
+scorer: v3
+status: official
+supersedes: v2
+released: 2026-09-08
+change: GPT-5가 temperature를 거부하는 경우 해당 인자를 제거하고 한 번만 재시도
+unchanged: 목록형 정답 판정 규칙을 포함한 나머지 채점 규칙
