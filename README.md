@@ -250,6 +250,9 @@ ai12-team02/
 - [채점 방식](docs/scoring.md)
 - [검증 규칙](docs/validation.md)
 
+## 팀 보고서
+- [2팀 R.F.P 2tem 최종 보고서](https://drive.google.com/file/d/19znXtHS0sqmKO_t_QCTEogU-S7t5Abbf/view?usp=drive_link)
+
 ## 팀원별 작업일지
 
 | 팀원 | 주요 담당 | 작업일지 |
