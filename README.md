@@ -294,12 +294,9 @@ ai12-team02/
 
 ## 문서
 
-- [시스템 구조](docs/architecture.md)
 - [응답 계약](docs/response_contract.md)
 - [채점 방식](docs/scoring.md)
 - [검증 규칙](docs/validation.md)
-- [데이터 출처 추적](docs/provenance.md)
-- [세부 실행 가이드](src/README.md)
 
 ---
 
