@@ -261,7 +261,7 @@ ai12-team02/
 | 김태윤 | 구조화 추출표, 모델 실험, 최종 경로 통합 | [작업·실험일지](https://app.notion.com/p/3c19556c393780bfa177d2a3065208a6) |
 | 임현진 | 평가셋 구축, 데모 구현·통합 | [작업일지](https://app.notion.com/p/3c7c6fc04696811eb166db9e257d1c96) |
 | 김하루 | 다층 채점기, 출처·기권·회귀 진단 | [작업일지](https://app.notion.com/p/3c75532982f380b8a948c1f3809c78f9) |
-| 이태민 | 검색·생성 베이스라인, 회사 정보 기반 공고 추천 | [작업일지](https://splendid-dewberry-887.notion.site/3d696d9eeef280e88ac7d2630c44a6f7?source=copy_link) |
+| 이태민 | 검색·생성 베이스라인, 회사 정보 기반 공고 추천 | [작업일지](https://app.notion.com/p/3c7b13f77dbd80279748ec558c606b6e?source=copy_link) |
 
 ## 협업일지
 
