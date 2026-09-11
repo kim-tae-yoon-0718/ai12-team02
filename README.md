@@ -257,7 +257,7 @@ ai12-team02/
 
 | 팀원 | 주요 담당 | 작업일지 |
 |---|---|---|
-| 박예진 | 문서 전처리, 구조 보존 청킹, 인덱스 생성·검증 | 업로드 예정 |
+| 박예진 | 문서 전처리, 구조 보존 청킹, 인덱스 생성·검증 | [협업일지](https://steep-bakery-b7e.notion.site/Daily-3c6b3367ba1e80218647eb537abe004b?source=copy_link), [작업일지](https://steep-bakery-b7e.notion.site/3c8b3367ba1e80178d6ed265ee2cb25a?source=copy_link) |
 | 김태윤 | 구조화 추출표, 모델 실험, 최종 경로 통합 | [작업·실험일지](https://app.notion.com/p/3c19556c393780bfa177d2a3065208a6) |
 | 임현진 | 평가셋 구축, 데모 구현·통합 | [작업일지](https://app.notion.com/p/3c7c6fc04696811eb166db9e257d1c96) |
 | 김하루 | 다층 채점기, 출처·기권·회귀 진단 | [작업일지](https://app.notion.com/p/3c75532982f380b8a948c1f3809c78f9) |
